@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 开启沙盒 -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- 允许访问用户通过对话框手动选择的文件/目录。诊断导出需要写入用户选择的 JSON 文件。 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- 允许使用 app-scoped bookmarks 持久化访问用户选择的目录 -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- Tauri/WebKit 沙盒运行需要网络客户端权限，否则 WebView 可能只显示空壳。ASeek 业务逻辑不上传索引数据。 -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>
