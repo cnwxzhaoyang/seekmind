@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { Cpu, FileText, FolderOpen, Layers3, RefreshCw } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
@@ -13,6 +14,8 @@ import type {
   IndexDirView,
   ParserRuntimeView,
 } from "../types/docmind";
+
+const { t } = useI18n();
 
 const route = useRoute();
 const router = useRouter();
@@ -175,7 +178,7 @@ const loadDocuments = async () => {
   try {
     documents.value = await docmindApi.listDocumentsInDir(selectedDirPath.value);
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "文档列表加载失败");
+    errorMessage.value = formatDocmindError(error, t("page.chunks.section.docList"));
     console.error("[DocMind] listDocumentsInDir failed", error);
     documents.value = [];
   } finally {
@@ -193,7 +196,7 @@ const loadChunks = async () => {
   try {
     chunks.value = await docmindApi.listDocumentChunks(selectedDocPath.value);
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "切片加载失败");
+    errorMessage.value = formatDocmindError(error, t("page.chunks.section.chunkDetail"));
     console.error("[DocMind] listDocumentChunks failed", error);
     chunks.value = [];
   } finally {
@@ -303,7 +306,7 @@ const processRefreshQueue = async () => {
           };
           errorMessage.value = formatDocmindError(
             refreshResult.message,
-            `重新切片失败：${doc.file_name}`,
+            `${t("page.chunks.btn.reslice")}：${doc.file_name}`,
           );
         }
       } catch (error) {
@@ -318,7 +321,7 @@ const processRefreshQueue = async () => {
         clearActiveRefreshSource(doc.path);
         const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
         refreshWarnings.value = rest;
-        errorMessage.value = formatDocmindError(error, `重新切片失败：${doc.file_name}`);
+        errorMessage.value = formatDocmindError(error, `${t("page.chunks.btn.reslice")}：${doc.file_name}`);
         console.error("[DocMind] refreshDocument failed", error);
       }
     }
@@ -362,7 +365,7 @@ const syncSelection = async () => {
 
     await loadChunks();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "切片页面加载失败");
+    errorMessage.value = formatDocmindError(error, t("page.chunks.title"));
     console.error("[DocMind] chunks syncSelection failed", error);
   } finally {
     loading.value = false;
@@ -390,39 +393,39 @@ const selectDoc = async (path: string) => {
 
 const refreshStateLabel = (path: string) => {
   if (refreshOutcomes.value[path] === "failed") {
-    return "重试切片";
+    return t("page.chunks.btn.retrySlice");
   }
   if (hasRefreshOutcome(path)) {
-    return "重新切片";
+    return t("page.chunks.btn.reslice");
   }
 
   const state = refreshStates.value[path] ?? "idle";
   if (state === "running") {
     const source = refreshActiveSources.value[path];
-    return source === "python" ? "Python 切片中" : source === "rust" ? "Rust 切片中" : "切片中";
+    return source === "python" ? t("page.chunks.refreshState.pythonSlicing") : source === "rust" ? t("page.chunks.refreshState.rustSlicing") : t("page.chunks.refreshState.slicing");
   }
   if (state === "queued") {
-    return "已排队";
+    return t("page.chunks.refreshState.queued");
   }
   if (state === "completed") {
-    return "重新切片";
+    return t("page.chunks.btn.reslice");
   }
   if (state === "failed") {
-    return "重试切片";
+    return t("page.chunks.btn.retrySlice");
   }
-  return "重新切片";
+  return t("page.chunks.btn.reslice");
 };
 
 const refreshOutcomeLabel = (path: string) => {
   const outcome = refreshOutcomes.value[path];
   if (outcome === "python") {
-    return "Python 完成";
+    return t("page.chunks.refreshState.pythonDone");
   }
   if (outcome === "rust") {
-    return "Rust 回退";
+    return t("page.chunks.refreshState.rustFallback");
   }
   if (outcome === "failed") {
-    return "已失败";
+    return t("page.chunks.refreshState.failed");
   }
   return "";
 };
@@ -470,17 +473,17 @@ watch(
   <div class="h-full overflow-y-auto p-8">
     <div class="mb-7 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-950">文档切片</h1>
-        <p class="mt-1 text-sm text-slate-500">按目录选择文档，直接查看 docMind 如何把内容切成段落块。</p>
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-950">{{ t("page.chunks.title") }}</h1>
+        <p class="mt-1 text-sm text-slate-500">{{ t("page.chunks.subtitle") }}</p>
         <p class="mt-1 text-xs text-slate-400">
-          当前解析器：
-          <span class="font-medium text-slate-600">{{ parserRuntime?.active === "python" ? "Python" : "Rust" }}</span>
-          ；点击“重新切片”会优先使用当前启用的解析链路。
+          {{ t("page.chunks.parserInfo") }}
+          <span class="font-medium text-slate-600">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
+          {{ t("page.chunks.parserInfo2") }}
         </p>
       </div>
       <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
         <Cpu class="mr-1" :size="13" />
-        {{ parserRuntime?.active === 'python' ? "Python 解析" : "Rust 回退" }}
+        {{ parserRuntime?.active === 'python' ? t("page.chunks.badgePython") : t("page.chunks.badgeRust") }}
       </DocMindBadge>
     </div>
 
@@ -491,14 +494,14 @@ watch(
     <div class="grid min-h-[calc(100vh-180px)] grid-cols-[280px_minmax(340px,0.95fr)_minmax(420px,1.1fr)] gap-4">
       <section class="min-h-0 overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="mb-4 flex items-center justify-between">
-          <div class="text-sm font-semibold text-slate-900">索引目录</div>
+          <div class="text-sm font-semibold text-slate-900">{{ t("page.chunks.section.indexDirs") }}</div>
           <DocMindBadge tone="default">
             <FolderOpen class="mr-1" :size="13" />
             {{ dirs.length }}
           </DocMindBadge>
         </div>
 
-        <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">正在读取目录...</div>
+        <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">{{ t("page.chunks.empty.dirs") }}</div>
 
         <div v-else class="space-y-2">
           <button
@@ -510,8 +513,8 @@ watch(
           >
             <div class="truncate text-sm font-medium text-slate-900">{{ dir.path }}</div>
             <div class="mt-1 flex items-center justify-between text-xs text-slate-500">
-              <span>{{ dir.docs }} 文档 · {{ dir.chunks.toLocaleString() }} 切片</span>
-              <span>{{ dir.enabled ? "启用" : "禁用" }}</span>
+              <span>{{ t("page.chunks.docStats", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</span>
+              <span>{{ dir.enabled ? t("page.chunks.status.enabled") : t("page.chunks.status.disabled") }}</span>
             </div>
           </button>
         </div>
@@ -520,8 +523,8 @@ watch(
       <section class="min-h-0 overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="mb-4 flex items-center justify-between">
           <div>
-            <div class="text-sm font-semibold text-slate-900">文档列表</div>
-            <div class="mt-1 text-xs text-slate-500">{{ selectedDirPath || "请选择一个索引目录" }}</div>
+            <div class="text-sm font-semibold text-slate-900">{{ t("page.chunks.section.docList") }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
           </div>
           <div class="flex items-center gap-2">
             <DocMindBadge tone="default">
@@ -530,7 +533,7 @@ watch(
             </DocMindBadge>
             <DocMindBadge v-if="refreshTaskCount > 0" tone="warning">
               <RefreshCw class="mr-1" :size="13" />
-              队列 {{ refreshTaskCount }}
+              {{ t("page.chunks.btn.queue", { count: refreshTaskCount }) }}
             </DocMindBadge>
           </div>
         </div>
@@ -538,12 +541,12 @@ watch(
         <input
           v-model="docFilter"
           class="mb-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none focus:border-slate-300"
-          placeholder="过滤文件名或路径..."
+          :placeholder="t('page.chunks.filterPlaceholder')"
         />
 
-        <div v-if="loadingDocs" class="text-sm text-slate-500">正在读取文档...</div>
+        <div v-if="loadingDocs" class="text-sm text-slate-500">{{ t("page.chunks.readingDocs") }}</div>
         <div v-else-if="filteredDocuments.length === 0" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-          当前目录没有已解析文档。
+          {{ t("page.chunks.empty.docs") }}
         </div>
         <div v-else class="space-y-2">
           <div
@@ -561,7 +564,7 @@ watch(
                 <div class="truncate text-sm font-medium text-slate-900">{{ doc.file_name }}</div>
                 <div class="mt-1 truncate text-xs text-slate-500">{{ doc.path }}</div>
                 <div class="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                  <span>{{ doc.chunks }} 切片</span>
+                  <span>{{ t("page.chunks.chunkStats", { count: doc.chunks }) }}</span>
                   <span>·</span>
                   <span>{{ doc.modified }}</span>
                 </div>
@@ -572,7 +575,7 @@ watch(
                     ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
                     : 'border-amber-100 bg-amber-50 text-amber-700'"
                 >
-                  {{ refreshOutcomes[doc.path] === 'python' ? 'Python 完成' : 'Rust 回退' }}
+                  {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
                 </div>
                 <div
                   v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
@@ -600,9 +603,9 @@ watch(
       <section class="min-h-0 overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="mb-4 flex items-center justify-between">
           <div>
-            <div class="text-sm font-semibold text-slate-900">切片详情</div>
+            <div class="text-sm font-semibold text-slate-900">{{ t("page.chunks.section.chunkDetail") }}</div>
             <div class="mt-1 text-xs text-slate-500">
-              {{ currentDocument?.file_name || "请选择一个文档" }}
+              {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
             </div>
             <div
               v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
@@ -631,13 +634,13 @@ watch(
             @click="void syncSelection()"
           >
             <RefreshCw :size="14" />
-            刷新
+            {{ t("page.chunks.btn.refresh") }}
           </button>
         </div>
 
-        <div v-if="loadingChunks" class="text-sm text-slate-500">正在读取切片...</div>
+        <div v-if="loadingChunks" class="text-sm text-slate-500">{{ t("page.chunks.readingChunks") }}</div>
         <div v-else-if="!currentDocument" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-          选中文档后，这里会显示它被切成的每个段落块。
+          {{ t("page.chunks.empty.selectDocToView") }}
         </div>
         <div v-else class="space-y-3">
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -645,12 +648,12 @@ watch(
             <div class="mt-1 break-all text-xs text-slate-500">{{ currentDocument.path }}</div>
             <div class="mt-2 flex flex-wrap gap-2">
               <DocMindBadge>{{ currentDocument.ext.toUpperCase() }}</DocMindBadge>
-              <DocMindBadge>{{ currentDocument.chunks }} 个切片</DocMindBadge>
+              <DocMindBadge>{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</DocMindBadge>
             </div>
           </div>
 
           <div v-if="chunks.length === 0" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            该文档暂未生成切片。
+            {{ t("page.chunks.empty.chunks") }}
           </div>
 
           <div v-else class="space-y-3">
@@ -658,7 +661,7 @@ watch(
               <div class="mb-2 flex items-center justify-between gap-2">
                 <div class="text-sm font-medium text-slate-900">{{ chunk.heading }}</div>
                 <DocMindBadge tone="default">
-                  {{ chunk.page ? `第 ${chunk.page} 页` : `第 ${chunk.paragraph ?? 0} 段` }}
+                  {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
                 </DocMindBadge>
               </div>
               <p class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>

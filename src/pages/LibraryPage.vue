@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight } from "lucide-vue-next";
@@ -7,6 +8,8 @@ import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import type { IndexDirView, IndexRefreshProgressView, IndexStatusView } from "../types/docmind";
+
+const { t } = useI18n();
 
 const dirs = ref<IndexDirView[]>([]);
 const status = ref<IndexStatusView | null>(null);
@@ -22,17 +25,17 @@ let unlistenIndexRefreshProgress: null | (() => void) = null;
 const taskDisplayState = computed(() => {
   const task = status.value?.current_task;
   if (!task) {
-    return { label: "空闲", tone: "default" as const, spinning: false };
+    return { label: t("status.idle"), tone: "default" as const, spinning: false };
   }
 
   if (task.state === "paused") {
-    return { label: "已暂停", tone: "default" as const, spinning: false };
+    return { label: t("status.paused"), tone: "default" as const, spinning: false };
   }
   if (task.state === "running") {
-    return { label: "运行中", tone: "warning" as const, spinning: true };
+    return { label: t("status.running"), tone: "warning" as const, spinning: true };
   }
 
-  return { label: task.state || "处理中", tone: "warning" as const, spinning: true };
+  return { label: task.state || t("status.processing"), tone: "warning" as const, spinning: true };
 });
 
 const loadDirs = async () => {
@@ -42,7 +45,7 @@ const loadDirs = async () => {
   try {
     dirs.value = await docmindApi.listIndexDirs();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "目录加载失败");
+    errorMessage.value = formatDocmindError(error, t("page.library.title"));
     console.error("[DocMind] loadDirs failed", error);
   } finally {
     loading.value = false;
@@ -100,7 +103,7 @@ const chooseAndAddDir = async () => {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: "选择要索引的目录",
+    title: t("page.library.dialogTitle"),
   });
 
   if (typeof selected !== "string" || selected.trim().length === 0) {
@@ -110,11 +113,11 @@ const chooseAndAddDir = async () => {
   busyPath.value = selected;
   try {
     await docmindApi.addIndexDir(selected);
-    infoMessage.value = `已添加目录: ${selected}`;
+    infoMessage.value = t("page.library.info.added", { path: selected });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "添加目录失败");
+    errorMessage.value = formatDocmindError(error, t("page.library.error.addDir"));
     console.error("[DocMind] addIndexDir failed", error);
   } finally {
     busyPath.value = null;
@@ -130,12 +133,12 @@ const refreshIndex = async () => {
     const started = await docmindApi.refreshIndex();
     const finished = await waitForIndexRefreshJob(started.job_id);
     if (finished.state === "failed") {
-      throw new Error(finished.message || "重新索引失败");
+      throw new Error(finished.message || t("page.library.error.rebuild"));
     }
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "重新索引失败");
+    errorMessage.value = formatDocmindError(error, t("page.status.btn.reindex"));
     console.error("[DocMind] refreshIndex failed", error);
   } finally {
     refreshing.value = false;
@@ -151,13 +154,13 @@ const refreshSingleDir = async (path: string) => {
     const started = await docmindApi.refreshIndexDir(path);
     const finished = await waitForIndexRefreshJob(started.job_id);
     if (finished.state === "failed") {
-      throw new Error(finished.message || "目录重建失败");
+      throw new Error(finished.message || t("page.library.error.rebuild"));
     }
-    infoMessage.value = `已重新索引: ${path}`;
+    infoMessage.value = t("page.library.info.reindexed", { path });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "目录重建失败");
+    errorMessage.value = formatDocmindError(error, t("page.library.error.rebuild"));
     console.error("[DocMind] refreshIndexDir failed", error);
   } finally {
     busyPath.value = null;
@@ -171,11 +174,11 @@ const toggleDir = async (dir: IndexDirView) => {
 
   try {
     await docmindApi.setIndexDirEnabled(dir.path, !dir.enabled);
-    infoMessage.value = dir.enabled ? `已禁用: ${dir.path}` : `已启用: ${dir.path}`;
+    infoMessage.value = dir.enabled ? t("page.library.info.disabled", { path: dir.path }) : t("page.library.info.enabled", { path: dir.path });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "目录状态更新失败");
+    errorMessage.value = formatDocmindError(error, t("page.library.error.toggleDir"));
     console.error("[DocMind] setIndexDirEnabled failed", error);
   } finally {
     busyPath.value = null;
@@ -183,7 +186,7 @@ const toggleDir = async (dir: IndexDirView) => {
 };
 
 const removeDir = async (path: string) => {
-  if (!window.confirm(`确认删除索引目录？\n${path}`)) {
+  if (!window.confirm(t("page.library.confirmRemove", { path }))) {
     return;
   }
 
@@ -193,11 +196,11 @@ const removeDir = async (path: string) => {
 
   try {
     await docmindApi.removeIndexDir(path);
-    infoMessage.value = `已删除目录: ${path}`;
+    infoMessage.value = t("page.library.info.deleted", { path });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "删除目录失败");
+    errorMessage.value = formatDocmindError(error, t("page.library.error.deleteDir"));
     console.error("[DocMind] removeIndexDir failed", error);
   } finally {
     busyPath.value = null;
@@ -225,8 +228,8 @@ onBeforeUnmount(() => {
   <div class="h-full overflow-y-auto p-8">
     <div class="mb-7 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-950">文档目录</h1>
-        <p class="mt-1 text-sm text-slate-500">添加需要索引的文件夹，docMind 会在本地解析和建立索引。</p>
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-950">{{ t("page.library.title") }}</h1>
+        <p class="mt-1 text-sm text-slate-500">{{ t("page.library.subtitle") }}</p>
       </div>
       <button
         class="flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
@@ -234,14 +237,14 @@ onBeforeUnmount(() => {
         @click="chooseAndAddDir"
       >
         <FolderPlus :size="17" />
-        添加目录
+        {{ t("page.library.btn.addDir") }}
       </button>
     </div>
 
     <DocMindTaskCard
       :task="status?.current_task ?? null"
-      title="当前索引任务"
-      :description="status?.current_task?.details ?? '正在同步索引状态'"
+      :title="t('page.library.taskTitle')"
+      :description="status?.current_task?.details ?? t('page.library.taskSyncing')"
       :badge-label="taskDisplayState.label"
       :badge-tone="taskDisplayState.tone"
       :badge-spinning="taskDisplayState.spinning"
@@ -257,7 +260,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="loading" class="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-      正在读取索引目录...
+      {{ t("page.library.loading") }}
     </div>
 
     <div v-else class="space-y-3">
@@ -269,18 +272,18 @@ onBeforeUnmount(() => {
             </div>
             <div class="min-w-0">
               <div class="truncate text-sm font-semibold text-slate-900">{{ dir.path }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ dir.docs }} 个文档 · {{ dir.chunks.toLocaleString() }} 个段落</div>
+              <div class="mt-1 text-xs text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
             </div>
           </div>
 
           <div class="flex items-center gap-2">
             <DocMindBadge v-if="dir.status === 'indexing'" tone="warning">
               <Loader2 class="mr-1 animate-spin" :size="13" />
-              索引中
+              {{ t("page.library.status.indexing") }}
             </DocMindBadge>
             <DocMindBadge v-else tone="success">
               <CheckCircle2 class="mr-1" :size="13" />
-              已完成
+              {{ t("page.library.status.completed") }}
             </DocMindBadge>
             <button
               class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
@@ -310,8 +313,8 @@ onBeforeUnmount(() => {
 
     <div class="mt-8 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
       <FolderPlus class="mx-auto mb-3 text-slate-400" :size="28" />
-      <div class="text-sm font-medium text-slate-700">支持添加、启停和删除索引目录</div>
-      <div class="mt-1 text-xs text-slate-500">建议优先添加 Documents、Downloads 或你的项目资料目录。</div>
+      <div class="text-sm font-medium text-slate-700">{{ t("page.library.emptyState.title") }}</div>
+      <div class="mt-1 text-xs text-slate-500">{{ t("page.library.emptyState.subtitle") }}</div>
     </div>
   </div>
 </template>

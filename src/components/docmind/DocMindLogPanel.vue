@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { ChevronDown, ChevronUp, RefreshCw, NotebookText, FileText, Database, Sparkles, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import type { DocumentRefreshProgressView, IndexRefreshProgressView, SemanticRebuildProgressView } from "../../types/docmind";
+
+const { t } = useI18n();
 
 type LogScope = "index" | "document" | "semantic";
 type LogLevel = "info" | "success" | "warning" | "error";
@@ -25,10 +28,10 @@ let unlistenIndex: null | (() => void) = null;
 let unlistenDocument: null | (() => void) = null;
 let unlistenSemantic: null | (() => void) = null;
 
-const scopeMeta: Record<LogScope, { label: string; icon: typeof Database }> = {
-  index: { label: "索引", icon: Database },
-  document: { label: "切片", icon: FileText },
-  semantic: { label: "语义", icon: Sparkles },
+const scopeMeta: Record<LogScope, { label: string; taskLabel: string; icon: typeof Database }> = {
+  index: { label: "logPanel.scope.index", taskLabel: "logPanel.scopeLabel.index", icon: Database },
+  document: { label: "logPanel.scope.document", taskLabel: "logPanel.scopeLabel.document", icon: FileText },
+  semantic: { label: "logPanel.scope.semantic", taskLabel: "logPanel.scopeLabel.semantic", icon: Sparkles },
 };
 
 const levelTone: Record<LogLevel, "default" | "success" | "warning" | "danger"> = {
@@ -48,7 +51,7 @@ const pushLog = (entry: Omit<LogEntry, "id" | "timestamp">) => {
 
 const formatTime = (timestamp: string) => {
   const date = new Date(timestamp);
-  return date.toLocaleTimeString("zh-CN", { hour12: false });
+  return date.toLocaleTimeString([], { hour12: false });
 };
 
 const installListeners = async () => {
@@ -63,9 +66,9 @@ const installListeners = async () => {
     pushLog({
       scope,
       level,
-      title: `${scopeMeta[scope].label}任务`,
+      title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: payload.scope === "dir" && payload.path ? `目录：${payload.path}` : "全量索引",
+      details: payload.scope === "dir" && payload.path ? t("logPanel.details.dir", { path: payload.path }) : t("logPanel.details.fullIndex"),
     });
   });
 
@@ -83,9 +86,9 @@ const installListeners = async () => {
     pushLog({
       scope,
       level,
-      title: `${scopeMeta[scope].label}任务`,
+      title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: `${payload.file_name}${payload.warning ? ` · ${payload.parser_source.toUpperCase()} 回退` : ` · ${payload.parser_source.toUpperCase()}`}`,
+      details: `${payload.file_name}${payload.warning ? ` · ${payload.parser_source.toUpperCase()} ${t("logPanel.details.fallback")}` : ` · ${payload.parser_source.toUpperCase()}`}`,
     });
   });
 
@@ -96,9 +99,9 @@ const installListeners = async () => {
     pushLog({
       scope,
       level,
-      title: `${scopeMeta[scope].label}任务`,
+      title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: payload.current_document || "正在重建向量",
+      details: payload.current_document || t("logPanel.details.rebuilding"),
     });
   });
 };
@@ -140,8 +143,8 @@ onBeforeUnmount(() => {
         <div class="flex items-center gap-2">
           <NotebookText class="text-slate-700" :size="16" />
           <div>
-            <div class="text-sm font-semibold text-slate-900">日志</div>
-            <div class="text-[11px] text-slate-500">索引 / 切片 / 语义事件</div>
+            <div class="text-sm font-semibold text-slate-900">{{ t("logPanel.title") }}</div>
+            <div class="text-[11px] text-slate-500">{{ t("logPanel.desc") }}</div>
           </div>
         </div>
         <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-slate-500" />
@@ -149,14 +152,14 @@ onBeforeUnmount(() => {
 
       <div v-if="expanded" class="max-h-[460px] overflow-hidden">
         <div class="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
-          <div>{{ entries.length }} 条事件</div>
+          <div>{{ t("logPanel.events", { count: entries.length }) }}</div>
           <button class="inline-flex items-center gap-1 hover:text-slate-700" @click="clearLogs">
-            <Trash2 :size="13" /> 清空
+            <Trash2 :size="13" /> {{ t("logPanel.clear") }}
           </button>
         </div>
         <div class="max-h-[400px] overflow-y-auto p-2">
           <div v-if="entries.length === 0" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            暂无日志，执行索引、切片或语义任务后会自动显示事件。
+            {{ t("logPanel.empty") }}
           </div>
           <div v-else class="space-y-2">
             <div
@@ -167,7 +170,7 @@ onBeforeUnmount(() => {
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
-                    <DocMindBadge :tone="levelTone[entry.level]">{{ scopeMeta[entry.scope].label }}</DocMindBadge>
+                    <DocMindBadge :tone="levelTone[entry.level]">{{ t(scopeMeta[entry.scope].label) }}</DocMindBadge>
                     <div class="truncate text-sm font-medium text-slate-900">{{ entry.title }}</div>
                   </div>
                   <div class="mt-1 text-xs leading-5 text-slate-600">{{ entry.message }}</div>

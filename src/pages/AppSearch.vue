@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { CheckCircle2, Clock, Cpu, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import { docmindApi } from "../services/docmindApi";
+
+const { t } = useI18n();
 import type {
   FavoriteView,
   IndexDirView,
@@ -149,7 +152,7 @@ const runSearch = async () => {
     results.value = [];
     selectedId.value = "";
     expandedGroups.value = {};
-    errorMessage.value = error instanceof Error ? error.message : "搜索失败";
+    errorMessage.value = error instanceof Error ? error.message : t("page.appSearch.searchFailed");
     debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20).catch(() => null);
     await loadQuickPanels();
   } finally {
@@ -233,17 +236,17 @@ watch(
     <header class="border-b border-slate-200 bg-white/70 px-8 py-5 backdrop-blur-xl">
         <div class="mb-4 flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-semibold tracking-tight text-slate-950">搜索文档内容</h1>
-            <p class="mt-1 text-sm text-slate-500">输入关键词，定位到文档中的具体段落。</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-slate-950">{{ t("page.appSearch.title") }}</h1>
+            <p class="mt-1 text-sm text-slate-500">{{ t("page.appSearch.subtitle") }}</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <DocMindBadge tone="success">
               <CheckCircle2 class="mr-1" :size="13" />
-              已索引 {{ status?.indexed_docs ?? 0 }} 个文档
+               {{ t("page.appSearch.indexedDocs", { count: status?.indexed_docs ?? 0 }) }}
             </DocMindBadge>
             <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
               <Cpu class="mr-1" :size="13" />
-              {{ parserRuntime?.active === 'python' ? 'Python 解析' : 'Rust 回退' }}
+              {{ parserRuntime?.active === 'python' ? t("page.appSearch.parserPython") : t("page.appSearch.parserRust") }}
             </DocMindBadge>
           </div>
         </div>
@@ -252,37 +255,37 @@ watch(
         <Search :size="20" class="text-slate-400" />
         <input
           v-model="query"
-          placeholder="搜索文档内容、标题或文件名..."
+          :placeholder="t('page.appSearch.placeholder')"
           class="flex-1 bg-transparent text-base outline-none placeholder:text-slate-400"
         />
         <button class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white" :disabled="loading">
-          {{ loading ? "搜索中..." : "搜索" }}
+          {{ loading ? t("page.appSearch.searching") : t("page.appSearch.search") }}
         </button>
       </form>
 
       <div v-if="debugReport" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">SQLite 文档 / 段落</div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.documents") }}</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">
             {{ debugReport.sqlite_documents }} / {{ debugReport.sqlite_chunks }}
           </div>
         </div>
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">Tantivy 文档</div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.paragraphs") }}</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">{{ debugReport.tantivy_documents }}</div>
         </div>
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">归一化查询</div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.normalizedQueryLabel") }}</div>
           <div class="mt-1 break-words text-sm font-medium text-slate-900">
-            {{ debugReport.normalized_terms.join(" · ") || "空" }}
+            {{ debugReport.normalized_terms.join(" · ") || t("common.none") }}
           </div>
         </div>
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">命中数量</div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.hitCount") }}</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">{{ debugReport.hit_count }}</div>
         </div>
         <div v-if="selected" class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">摘要裁剪</div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.trim") }}</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">
             {{ selected.snippet_window_start }} - {{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}
           </div>
@@ -294,9 +297,9 @@ watch(
         <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
             <History :size="13" />
-            最近搜索
+            {{ t("page.appSearch.section.recentSearch") }}
           </div>
-          <div v-if="searchHistory.length === 0" class="text-xs text-slate-400">暂无历史</div>
+          <div v-if="searchHistory.length === 0" class="text-xs text-slate-400">{{ t("page.appSearch.section.noHistory") }}</div>
           <div v-else class="flex flex-wrap gap-2">
             <button
               v-for="item in searchHistory"
@@ -312,9 +315,9 @@ watch(
         <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
             <FileText :size="13" />
-            最近打开
+            {{ t("page.appSearch.section.recentOpen") }}
           </div>
-          <div v-if="recentDocuments.length === 0" class="text-xs text-slate-400">暂无最近文档</div>
+          <div v-if="recentDocuments.length === 0" class="text-xs text-slate-400">{{ t("page.appSearch.section.noRecent") }}</div>
           <div v-else class="space-y-2">
             <button
               v-for="item in recentDocuments"
@@ -331,10 +334,10 @@ watch(
         <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
             <Star :size="13" />
-            收藏结果
+            {{ t("page.appSearch.section.favorites") }}
           </div>
           <div v-if="favoriteResults.length === 0" class="text-xs text-slate-400">
-            暂无收藏
+            {{ t("page.appSearch.section.noFavorites") }}
           </div>
           <div v-else class="space-y-2">
             <button
@@ -352,9 +355,9 @@ watch(
         <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
             <FolderOpen :size="13" />
-            常用目录
+            {{ t("page.appSearch.section.quickDirs") }}
           </div>
-          <div v-if="quickDirs.length === 0" class="text-xs text-slate-400">暂无索引目录</div>
+          <div v-if="quickDirs.length === 0" class="text-xs text-slate-400">{{ t("page.appSearch.section.noDirs") }}</div>
           <div v-else class="space-y-2">
             <button
               v-for="dir in quickDirs"
@@ -363,7 +366,7 @@ watch(
               @click="openLibrary"
             >
               <div class="truncate font-medium text-slate-900">{{ dir.path }}</div>
-              <div class="mt-1 text-[11px] text-slate-400">{{ dir.docs }} 文档 · {{ dir.chunks }} 段落</div>
+              <div class="mt-1 text-[11px] text-slate-400">{{ t("page.appSearch.section.dirStats", { docs: dir.docs, chunks: dir.chunks }) }}</div>
             </button>
           </div>
         </section>
@@ -374,12 +377,11 @@ watch(
       <section class="min-h-0 overflow-y-auto border-r border-slate-200 bg-slate-50/50 p-5">
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm text-slate-500">
-            找到 <span class="font-semibold text-slate-800">{{ groupedResults.length }}</span> 个相关文档，
-            共 <span class="font-semibold text-slate-800">{{ results.length }}</span> 个相关段落
+            {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
           </div>
           <button class="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">
             <Filter :size="14" />
-            筛选
+            {{ t("page.appSearch.filter") }}
           </button>
         </div>
 
@@ -388,7 +390,7 @@ watch(
         </div>
 
         <div v-if="!results.length && !loading" class="rounded-3xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center text-sm text-slate-500">
-          没有找到相关段落
+          {{ t("page.appSearch.noResults") }}
         </div>
 
         <div class="space-y-3">
@@ -421,43 +423,43 @@ watch(
 
           <div class="mb-4 flex flex-wrap gap-2">
             <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
-            <DocMindBadge>{{ selected.page ? `第 ${selected.page} 页` : `第 ${selected.paragraph} 段` }}</DocMindBadge>
-            <DocMindBadge tone="success">命中：{{ matchedFieldLabel }}</DocMindBadge>
-            <DocMindBadge tone="default">摘要：{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
-            <DocMindBadge tone="default">切片数 {{ selectedChunkCount ?? "..." }}</DocMindBadge>
+            <DocMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</DocMindBadge>
+            <DocMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</DocMindBadge>
+            <DocMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
+            <DocMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</DocMindBadge>
             <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
           </div>
 
           <div class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-            <div class="mb-2 text-sm font-medium text-slate-700">命中段落</div>
+            <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.hitParagraph") }}</div>
             <p class="text-sm leading-7 text-slate-700">
               <DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
             </p>
           </div>
 
           <div class="mt-5 rounded-3xl border border-slate-200 bg-white p-5">
-            <div class="mb-2 text-sm font-medium text-slate-700">上下文预览</div>
-            <p class="text-sm leading-7 text-slate-500">上一段：构建离线仓库时，需要先解析项目的 parent POM、BOM 以及 build plugins。</p>
+            <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.contextPreview") }}</div>
+            <p class="text-sm leading-7 text-slate-500">{{ t("page.appSearch.detail.previousPara") }}</p>
             <p class="mt-3 text-sm leading-7 text-slate-800">
-              当前段：<DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
+              {{ t("page.appSearch.detail.currentPara") }}<DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
             </p>
-            <p class="mt-3 text-sm leading-7 text-slate-500">下一段：生成后的 .offline-repo 可以通过 settings.xml 指定为本地仓库路径。</p>
-            <p class="mt-3 text-xs text-slate-400">摘要来自原文字符区间 {{ selected.snippet_window_start }} - {{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</p>
+            <p class="mt-3 text-sm leading-7 text-slate-500">{{ t("page.appSearch.detail.nextPara") }}</p>
+            <p class="mt-3 text-xs text-slate-400">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
           </div>
 
           <div class="mt-6 grid grid-cols-2 gap-3">
             <button class="flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-medium text-white" @click="openSelectedFile">
               <ExternalLink :size="16" />
-              打开文件
+              {{ t("common.openFile") }}
             </button>
             <button class="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700" @click="viewChunks">
               <FileText :size="16" />
-              查看切片
+              {{ t("common.viewChunks") }}
             </button>
           </div>
         </div>
         <div v-else class="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          请输入关键词开始搜索。
+          {{ t("page.appSearch.enterQuery") }}
         </div>
       </aside>
     </main>

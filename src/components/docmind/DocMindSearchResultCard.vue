@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Clock, Heart } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import DocMindHighlightedText from "./DocMindHighlightedText.vue";
 import DocMindFileIcon from "./DocMindFileIcon.vue";
 import type { SearchResultView } from "../../types/docmind";
+
+const { t } = useI18n();
 
 interface Props {
   item: SearchResultView;
@@ -24,11 +27,18 @@ const emit = defineEmits<{
   toggleFavorite: [];
 }>();
 
-const locationLabel = computed(() => (props.item.page ? `第 ${props.item.page} 页` : `第 ${props.item.paragraph ?? 0} 段`));
+const locationLabel = computed(() => {
+  if (props.item.page) {
+    return t("searchResultCard.page", { page: props.item.page });
+  }
+  return t("searchResultCard.paragraph", { para: props.item.paragraph ?? 0 });
+});
 
 const matchedFieldLabel = computed(() => {
-  return props.item.match_origin || "正文摘要命中";
+  return props.item.match_origin || t("searchResultCard.hitParagraph");
 });
+
+const favoriteTitle = computed(() => props.favorited ? t("searchResultCard.unfavorite") : t("searchResultCard.favorite"));
 </script>
 
 <template>
@@ -48,7 +58,7 @@ const matchedFieldLabel = computed(() => {
             <button
               class="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-950"
               type="button"
-              :title="props.favorited ? '取消收藏' : '收藏结果'"
+              :title="favoriteTitle"
               @click.stop="emit('toggleFavorite')"
             >
               <Heart :size="14" :class="props.favorited ? 'fill-rose-500 text-rose-500' : ''" />
@@ -64,13 +74,13 @@ const matchedFieldLabel = computed(() => {
           <DocMindBadge>
             <DocMindHighlightedText :text="item.heading" :query="props.query" />
           </DocMindBadge>
-          <span>命中：{{ matchedFieldLabel }}</span>
+          <span>{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</span>
           <span>·</span>
           <span>{{ item.snippet_window_start }}-{{ item.snippet_window_end }} / {{ item.snippet_source_len }}</span>
           <span>·</span>
           <span>{{ locationLabel }}</span>
           <span>·</span>
-          <span>命中片段</span>
+          <span>{{ t("searchResultCard.hitSnippet") }}</span>
           <span>·</span>
           <span><Clock class="mr-1 inline" :size="12" />{{ item.modified }}</span>
         </div>

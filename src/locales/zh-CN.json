@@ -1,0 +1,422 @@
+{
+  "common": {
+    "search": "搜索",
+    "searching": "搜索中...",
+    "save": "保存设置",
+    "saving": "保存中...",
+    "cancel": "取消",
+    "confirm": "确认",
+    "clear": "清空",
+    "refresh": "刷新",
+    "pause": "暂停",
+    "resume": "恢复",
+    "rebuild": "重建",
+    "reindex": "重新索引",
+    "openFile": "打开文件",
+    "viewChunks": "查看切片",
+    "loading": "正在加载...",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "yes": "是",
+    "no": "否",
+    "none": "无",
+    "error": "错误",
+    "unknown": "未知",
+    "available": "可用",
+    "unavailable": "不可用",
+    "of": "·"
+  },
+
+  "status": {
+    "idle": "空闲",
+    "running": "运行中",
+    "processing": "处理中",
+    "paused": "已暂停",
+    "pausing": "暂停中",
+    "resuming": "恢复中",
+    "completed": "已完成",
+    "failed": "已失败",
+    "queued": "已排队",
+    "noRecentRun": "暂无最近运行",
+    "parser": {
+      "python": "Python 解析",
+      "pythonFallback": "Rust 回退"
+    },
+    "localOnly": "仅本地",
+    "localEffective": "本地生效",
+    "savedLocally": "已保存到本地"
+  },
+
+  "sidebar": {
+    "search": "搜索",
+    "chunks": "文档切片",
+    "library": "文档目录",
+    "status": "索引状态",
+    "settings": "设置",
+    "localFirst": "本地优先",
+    "localFirstDesc": "文档只在当前 Mac 上解析和索引，不上传云端。"
+  },
+
+  "page": {
+    "appSearch": {
+      "title": "搜索文档内容",
+      "subtitle": "输入关键词，定位到文档中的具体段落。",
+      "placeholder": "搜索文档内容、标题或文件名...",
+      "search": "搜索",
+      "searching": "搜索中...",
+      "searchFailed": "搜索失败",
+      "filter": "筛选",
+      "noResults": "没有找到相关段落",
+      "enterQuery": "请输入关键词开始搜索。",
+      "indexedDocs": "已索引 {count} 个文档",
+      "parserPython": "Python 解析",
+      "parserRust": "Rust 回退",
+      "stats": {
+        "foundDocs": "找到 {count} 个相关文档，共 {total} 个相关段落",
+        "documents": "SQLite 文档 / 段落",
+        "paragraphs": "Tantivy 文档",
+        "trim": "摘要裁剪",
+        "hitCount": "命中数量",
+        "normalizedQueryLabel": "归一化查询"
+      },
+      "section": {
+        "recentSearch": "最近搜索",
+        "recentOpen": "最近打开",
+        "favorites": "收藏结果",
+        "quickDirs": "常用目录",
+        "noHistory": "暂无历史",
+        "noRecent": "暂无最近文档",
+        "noFavorites": "暂无收藏",
+        "noDirs": "暂无索引目录",
+        "dirStats": "{docs} 文档 · {chunks} 段落"
+      },
+      "detail": {
+        "hitParagraph": "命中段落",
+        "contextPreview": "上下文预览",
+        "previousPara": "上一段：构建离线仓库时，需要先解析项目的 parent POM、BOM 以及 build plugins。",
+        "currentPara": "当前段：",
+        "nextPara": "下一段：生成后的 .offline-repo 可以通过 settings.xml 指定为本地仓库路径。",
+        "snippetSource": "摘要来自原文字符区间 {start} - {end} / {length}",
+        "chunkCount": "切片数 {count}"
+      }
+    },
+
+    "chunks": {
+      "title": "文档切片",
+      "subtitle": "按目录选择文档，直接查看 docMind 如何把内容切成段落块。",
+      "parserInfo": "当前解析器：",
+      "parserInfo2": "；点击\"重新切片\"会优先使用当前启用的解析链路。",
+      "parserPython": "Python",
+      "parserRust": "Rust",
+      "badgePython": "Python 解析",
+      "badgeRust": "Rust 回退",
+      "section": {
+        "indexDirs": "索引目录",
+        "docList": "文档列表",
+        "chunkDetail": "切片详情"
+      },
+      "selectDir": "请选择一个索引目录",
+      "selectDoc": "请选择一个文档",
+      "empty": {
+        "dirs": "正在读取目录...",
+        "docs": "当前目录没有已解析文档。",
+        "chunks": "该文档暂未生成切片。",
+        "selectDocToView": "选中文档后，这里会显示它被切成的每个段落块。"
+      },
+      "filterPlaceholder": "过滤文件名或路径...",
+      "btn": {
+        "refresh": "刷新",
+        "queue": "队列 {count}",
+        "retrySlice": "重试切片",
+        "reslice": "重新切片"
+      },
+      "refreshState": {
+        "queued": "已排队",
+        "slicing": "切片中",
+        "pythonSlicing": "Python 切片中",
+        "rustSlicing": "Rust 切片中",
+        "pythonDone": "Python 完成",
+        "rustFallback": "Rust 回退",
+        "failed": "已失败"
+      },
+      "docStats": "{docs} 文档 · {chunks} 切片",
+      "chunkStats": "{count} 个切片",
+      "page": "第 {page} 页",
+      "paragraph": "第 {para} 段",
+      "dirDocs": "{docs} 个文档 · {chunks} 个段落",
+      "readingDocs": "正在读取文档...",
+      "readingChunks": "正在读取切片..."
+    },
+
+    "library": {
+      "title": "文档目录",
+      "subtitle": "添加需要索引的文件夹，docMind 会在本地解析和建立索引。",
+      "btn": {
+        "addDir": "添加目录"
+      },
+      "dialogTitle": "选择要索引的目录",
+      "taskTitle": "当前索引任务",
+      "taskSyncing": "正在同步索引状态",
+      "emptyState": {
+        "title": "支持添加、启停和删除索引目录",
+        "subtitle": "建议优先添加 Documents、Downloads 或你的项目资料目录。"
+      },
+      "loading": "正在读取索引目录...",
+      "info": {
+        "added": "已添加目录: {path}",
+        "reindexed": "已重新索引: {path}",
+        "disabled": "已禁用: {path}",
+        "enabled": "已启用: {path}",
+        "deleted": "已删除目录: {path}"
+      },
+      "error": {
+        "addDir": "添加目录失败",
+        "rebuild": "目录重建失败",
+        "deleteDir": "删除目录失败",
+        "toggleDir": "目录状态更新失败"
+      },
+      "status": {
+        "indexing": "索引中",
+        "completed": "已完成"
+      },
+      "confirmRemove": "确认删除索引目录？\n{path}"
+    },
+
+    "status": {
+      "title": "索引状态",
+      "subtitle": "查看当前索引进度、失败文件和可重新处理的项目。",
+      "btn": {
+        "pause": "暂停索引",
+        "pausing": "暂停中...",
+        "resume": "恢复索引",
+        "resuming": "恢复中...",
+        "reindex": "重新索引",
+        "rebuilding": "重建中..."
+      },
+      "section": {
+        "taskOps": "任务操作",
+        "taskOpsDesc": "暂停、恢复或重新索引当前任务。",
+        "incrementalSummary": "本次增量摘要",
+        "incrementalDesc": "最近一次索引执行后的增量结果，任务结束后也会保留。",
+        "parserStatus": "解析器状态",
+        "parserDesc": "当前索引默认使用哪条解析链路。",
+        "indexDirs": "索引目录",
+        "indexDirsDesc": "当前本地正在管理的索引位置。",
+        "failedFiles": "解析失败"
+      },
+      "stats": {
+        "scanned": "已扫描文档",
+        "indexed": "已索引文档",
+        "chunks": "段落块",
+        "failed": "失败文件"
+      },
+      "incremental": {
+        "updated": "更新",
+        "skipped": "跳过",
+        "deleted": "删除",
+        "scannedCandidates": "扫描候选",
+        "successFail": "成功 / 失败",
+        "none": "还没有形成最近一次增量摘要。"
+      },
+      "parser": {
+        "enabled": "启用 Python",
+        "available": "Python 可用",
+        "pythonBin": "Python Bin",
+        "timeout": "超时",
+        "script": "Script: {path}"
+      },
+      "failed": {
+        "noFailed": "当前没有失败项",
+        "retryGroup": "组内重试",
+        "retrying": "处理中...",
+        "retryFile": "重新处理",
+        "code": "代码 {code}",
+        "retryCount": "重试 {count} 次"
+      },
+      "emptyDirs": "当前没有可索引目录，请先到\"文档目录\"页添加一个目录。",
+      "dirStats": "{docs} 个文档 · {chunks} 个段落",
+      "error": {
+        "loadStatus": "状态加载失败",
+        "loadDirs": "目录加载失败",
+        "loadParser": "解析器状态加载失败",
+        "reindex": "重新索引失败",
+        "pause": "暂停索引失败",
+        "resume": "恢复索引失败",
+        "retryFile": "重新处理失败",
+        "retryGroup": "批量重新处理失败"
+      }
+    },
+
+    "settings": {
+      "title": "设置",
+      "subtitle": "配置索引排除规则、最大文件大小，并管理本地索引数据。",
+      "btn": {
+        "reset": "恢复默认",
+        "save": "保存设置",
+        "saving": "保存中...",
+        "clear": "清空全部索引",
+        "clearing": "清空中..."
+      },
+      "section": {
+        "rules": "索引规则",
+        "instructions": "操作说明",
+        "danger": "危险操作"
+      },
+      "rulesDesc": "目录名和扩展名会按逗号、分号或换行分隔，扩展名无需输入点号。",
+      "label": {
+        "excludeDirs": "排除目录",
+        "excludeExts": "排除扩展名",
+        "maxFileSize": "最大文件大小（MB）",
+        "currentStatus": "当前状态"
+      },
+      "status": {
+        "changed": "有未保存修改",
+        "synced": "配置已同步"
+      },
+      "instructions": {
+        "dirs": "排除目录按目录名匹配，例如 node_modules、.git。",
+        "exts": "排除扩展名按文件后缀匹配，例如 log、png。",
+        "maxSize": "超过最大文件大小的文件会在扫描阶段被跳过，并记录原因。",
+        "effective": "这些设置会在下次扫描时生效。"
+      },
+      "danger": {
+        "desc": "清空本地索引，不会删除原始文档。",
+        "detail": "这会删除当前本地 SQLite 数据和 Tantivy 索引，适合排查初始化和索引异常。"
+      },
+      "placeholder": {
+        "dirs": "node_modules, .git, target",
+        "exts": "log, tmp, png"
+      },
+      "loading": "正在读取设置...",
+      "saved": "设置已保存",
+      "resetDone": "已恢复默认配置，记得点击保存",
+      "cleared": "已清空全部索引",
+      "confirmClear": "确认清空全部索引？这不会删除原始文件，只会清理本地索引数据。",
+      "confirmRemoveDir": "确认删除索引目录？\n{path}",
+      "language": "界面语言",
+      "error": {
+        "load": "加载设置失败",
+        "save": "保存设置失败",
+        "clear": "清空全部索引失败"
+      }
+    }
+  },
+
+  "logPanel": {
+    "title": "日志",
+    "desc": "索引 / 切片 / 语义事件",
+    "scopeLabel": {
+      "index": "索引任务",
+      "document": "切片任务",
+      "semantic": "语义任务"
+    },
+    "scope": {
+      "index": "索引",
+      "document": "切片",
+      "semantic": "语义"
+    },
+    "empty": "暂无日志，执行索引、切片或语义任务后会自动显示事件。",
+    "clear": "清空",
+    "events": "{count} 条事件",
+    "details": {
+      "fullIndex": "全量索引",
+      "rebuilding": "正在重建向量",
+      "dir": "目录：{path}",
+      "fallback": "回退"
+    }
+  },
+
+  "semantic": {
+    "title": "语义模型",
+    "desc": "当前语义索引的模型状态和重建入口。",
+    "loading": "正在读取语义状态...",
+    "defaultModel": "默认模型",
+    "rebuildProgress": "语义重建进度",
+    "completed": "已完成",
+    "currentDirDoc": "当前目录 / 文档",
+    "currentChunk": "当前块",
+    "processed": "已处理",
+    "embedded": "已向量化",
+    "embeddedShort": "已向量化",
+    "pendingRebuild": "待重建",
+    "model": "模型：{name}",
+    "provider": "提供方：{provider} · {dim} 维",
+    "dimension": "{dim} 维",
+    "availability": "可用性：{status}",
+    "lastIndexed": "最近索引：{time}",
+    "lastError": "最后错误：{msg}",
+    "btn": {
+      "setDefault": "设为默认模型",
+      "rebuild": "重建语义向量",
+      "processing": "处理中..."
+    },
+    "debug": {
+      "title": "语义调试",
+      "desc": "输入一个查询词，查看向量生成和语义召回情况。",
+      "onlyLocal": "仅本地",
+      "placeholder": "例如：离线仓库 / 语义搜索 / Markdown 切片",
+      "debugging": "调试中...",
+      "debug": "调试",
+      "vectorDim": "向量维度",
+      "hitCount": "命中数",
+      "normalizedQuery": "归一化查询：{query}",
+      "empty": "空",
+      "noHitHeading": "未命中标题",
+      "status": "状态：{status} · {error}"
+    },
+    "info": {
+      "rebuildStarted": "语义向量重建已启动",
+      "modelUpdated": "默认语义模型已更新",
+      "rebuilt": "语义向量已重新构建"
+    },
+    "error": {
+      "rebuildFailed": "重建语义向量失败",
+      "switchModelFailed": "切换默认语义模型失败",
+      "debugFailed": "语义调试失败",
+      "selectModel": "请选择一个 embedding 模型"
+    },
+    "none": "暂无",
+    "yes": "是",
+    "no": "否",
+    "noError": "无"
+  },
+
+  "searchResultCard": {
+    "favorite": "收藏结果",
+    "unfavorite": "取消收藏",
+    "hitParagraph": "正文摘要命中",
+    "hitHeading": "未命中标题",
+    "page": "第 {page} 页",
+    "paragraph": "第 {para} 段",
+    "hitSnippet": "命中片段",
+    "matchField": "命中：{field}"
+  },
+
+  "searchResultGroupCard": {
+    "expand": "展开片段",
+    "collapse": "收起片段",
+    "openFirst": "打开首段",
+    "docGroup": "文档聚合",
+    "hitSnippets": "命中片段 {count} 个",
+    "totalScore": "总分 {score}%",
+    "score": "{score}%",
+    "segments": "{count} 段"
+  },
+
+  "taskCard": {
+    "defaultTitle": "当前任务",
+    "defaultDesc": "正在同步任务状态",
+    "currentDir": "当前目录",
+    "currentFile": "当前文件",
+    "cumulativeSuccess": "累计成功",
+    "cumulativeFailed": "累计失败",
+    "thisUpdate": "本次更新",
+    "thisSkipped": "本次跳过",
+    "thisDeleted": "本次删除",
+    "processed": "已处理",
+    "queueRemaining": "队列剩余",
+    "noDir": "暂无目录",
+    "noFile": "暂无文件",
+    "files": "{count} 个文件"
+  }
+}

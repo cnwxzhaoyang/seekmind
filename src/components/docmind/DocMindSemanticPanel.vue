@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { RefreshCw, Save, Search, Sparkles } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "./DocMindBadge.vue";
@@ -10,6 +11,8 @@ import type {
   SemanticModelStatusView,
   SemanticRebuildProgressView,
 } from "../../types/docmind";
+
+const { t } = useI18n();
 
 const semanticStatus = ref<SemanticModelStatusView | null>(null);
 const embeddingModels = ref<EmbeddingModelView[]>([]);
@@ -65,7 +68,7 @@ const rebuildSemanticEmbeddings = async () => {
     semanticRebuildProgress.value = {
       job_id: started.job_id,
       state: "running",
-      message: "语义向量重建已启动",
+      message: t("semantic.info.rebuildStarted"),
       model: started.status.model,
       total_chunks: started.status.sqlite_chunks,
       processed_chunks: 0,
@@ -76,9 +79,9 @@ const rebuildSemanticEmbeddings = async () => {
       last_error: "",
       updated_at: new Date().toISOString(),
     };
-    infoMessage.value = "语义向量重建已启动";
+    infoMessage.value = t("semantic.info.rebuildStarted");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "重建语义向量失败");
+    errorMessage.value = formatDocmindError(error, t("semantic.error.rebuildFailed"));
     console.error("[DocMind] rebuildSemanticEmbeddings failed", error);
   } finally {
     saving.value = false;
@@ -90,16 +93,16 @@ const setDefaultEmbeddingModel = async () => {
   infoMessage.value = "";
 
   if (!selectedEmbeddingModelId.value) {
-    errorMessage.value = "请选择一个 embedding 模型";
+    errorMessage.value = t("semantic.error.selectModel");
     return;
   }
 
   saving.value = true;
   try {
     semanticStatus.value = await docmindApi.setDefaultEmbeddingModel(selectedEmbeddingModelId.value);
-    infoMessage.value = "默认语义模型已更新";
+    infoMessage.value = t("semantic.info.modelUpdated");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "切换默认语义模型失败");
+    errorMessage.value = formatDocmindError(error, t("semantic.error.switchModelFailed"));
     console.error("[DocMind] setDefaultEmbeddingModel failed", error);
   } finally {
     saving.value = false;
@@ -114,7 +117,7 @@ const runSemanticDebug = async () => {
   try {
     semanticDebug.value = await docmindApi.getSemanticDebugReport(semanticQuery.value, 8);
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, "语义调试失败");
+    errorMessage.value = formatDocmindError(error, t("semantic.error.debugFailed"));
     console.error("[DocMind] getSemanticDebugReport failed", error);
   } finally {
     loadingSemanticDebug.value = false;
@@ -149,11 +152,11 @@ const installSemanticProgressListener = async () => {
 
       if (payload.state === "completed") {
         semanticRebuildJobId.value = "";
-        infoMessage.value = "语义向量已重新构建";
+        infoMessage.value = t("semantic.info.rebuilt");
         void refreshAll();
       } else if (payload.state === "failed") {
         semanticRebuildJobId.value = "";
-        errorMessage.value = payload.last_error || payload.message || "重建语义向量失败";
+        errorMessage.value = payload.last_error || payload.message || t("semantic.error.rebuildFailed");
         void refreshAll();
       }
     },
@@ -177,8 +180,8 @@ onBeforeUnmount(() => {
   <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <div class="mb-4 flex items-center justify-between">
       <div>
-        <div class="text-sm font-semibold text-slate-900">语义模型</div>
-        <div class="mt-1 text-xs text-slate-500">当前语义索引的模型状态和重建入口。</div>
+        <div class="text-sm font-semibold text-slate-900">{{ t("semantic.title") }}</div>
+        <div class="mt-1 text-xs text-slate-500">{{ t("semantic.desc") }}</div>
       </div>
       <DocMindBadge tone="default">{{ semanticStatus?.index_status || "idle" }}</DocMindBadge>
     </div>
@@ -192,18 +195,18 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="loading" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-      正在读取语义状态...
+      {{ t("semantic.loading") }}
     </div>
 
     <div v-else-if="semanticStatus" class="space-y-4 text-sm">
       <label class="block">
-        <div class="mb-2 text-xs text-slate-500">默认模型</div>
+        <div class="mb-2 text-xs text-slate-500">{{ t("semantic.defaultModel") }}</div>
         <select
           v-model="selectedEmbeddingModelId"
           class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
         >
           <option v-for="model in embeddingModels" :key="model.id" :value="model.id">
-            {{ model.name }} · {{ model.provider }} · {{ model.dimension }} 维
+            {{ model.name }} · {{ model.provider }} · {{ t("semantic.dimension", { dim: model.dimension }) }}
           </option>
         </select>
       </label>
@@ -211,9 +214,9 @@ onBeforeUnmount(() => {
       <div v-if="semanticRebuildProgress" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <div class="text-xs text-slate-500">语义重建进度</div>
+            <div class="text-xs text-slate-500">{{ t("semantic.rebuildProgress") }}</div>
             <div class="mt-1 text-sm font-medium text-slate-900">
-              {{ semanticRebuildProgress.state === "completed" ? "已完成" : semanticRebuildProgress.message }}
+              {{ semanticRebuildProgress.state === "completed" ? t("semantic.completed") : semanticRebuildProgress.message }}
             </div>
           </div>
           <DocMindBadge tone="default">{{ semanticRebuildProgress.percent }}%</DocMindBadge>
@@ -228,25 +231,25 @@ onBeforeUnmount(() => {
 
         <div class="mt-3 grid gap-3 text-xs text-slate-600 md:grid-cols-2">
           <div>
-            <div class="text-slate-500">当前目录 / 文档</div>
+            <div class="text-slate-500">{{ t("semantic.currentDirDoc") }}</div>
             <div class="mt-1 break-all text-slate-900">
-              {{ semanticRebuildProgress.current_document || "暂无" }}
+              {{ semanticRebuildProgress.current_document || t("semantic.none") }}
             </div>
           </div>
           <div>
-            <div class="text-slate-500">当前块</div>
+            <div class="text-slate-500">{{ t("semantic.currentChunk") }}</div>
             <div class="mt-1 break-all text-slate-900">
-              {{ semanticRebuildProgress.current_chunk || "暂无" }}
+              {{ semanticRebuildProgress.current_chunk || t("semantic.none") }}
             </div>
           </div>
           <div>
-            <div class="text-slate-500">已处理</div>
+            <div class="text-slate-500">{{ t("semantic.processed") }}</div>
             <div class="mt-1 text-slate-900">
               {{ semanticRebuildProgress.processed_chunks }} / {{ semanticRebuildProgress.total_chunks }}
             </div>
           </div>
           <div>
-            <div class="text-slate-500">已向量化</div>
+            <div class="text-slate-500">{{ t("semantic.embedded") }}</div>
             <div class="mt-1 text-slate-900">{{ semanticRebuildProgress.embedded_chunks }}</div>
           </div>
         </div>
@@ -254,23 +257,23 @@ onBeforeUnmount(() => {
 
       <div class="grid grid-cols-2 gap-3">
         <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-xs text-slate-500">已向量化</div>
+          <div class="text-xs text-slate-500">{{ t("semantic.embeddedShort") }}</div>
           <div class="mt-1 font-medium text-slate-900">{{ semanticStatus.embedded_chunks }}</div>
         </div>
         <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-xs text-slate-500">待重建</div>
+          <div class="text-xs text-slate-500">{{ t("semantic.pendingRebuild") }}</div>
           <div class="mt-1 font-medium text-slate-900">
-            {{ semanticStatus.needs_rebuild ? "是" : "否" }}
+            {{ semanticStatus.needs_rebuild ? t("semantic.yes") : t("semantic.no") }}
           </div>
         </div>
       </div>
 
       <div class="rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        <div>模型：{{ semanticStatus.model.name }}</div>
-        <div class="mt-1">提供方：{{ semanticStatus.model.provider }} · {{ semanticStatus.model.dimension }} 维</div>
-        <div class="mt-1">可用性：{{ semanticStatus.model.available ? "可用" : "不可用" }}</div>
-        <div class="mt-1">最近索引：{{ semanticStatus.last_indexed_at || "暂无" }}</div>
-        <div class="mt-1">最后错误：{{ semanticStatus.last_error || "无" }}</div>
+        <div>{{ t("semantic.model", { name: semanticStatus.model.name }) }}</div>
+        <div class="mt-1">{{ t("semantic.provider", { provider: semanticStatus.model.provider, dim: semanticStatus.model.dimension }) }}</div>
+        <div class="mt-1">{{ t("semantic.availability", { status: semanticStatus.model.available ? t("semantic.yes") : t("semantic.no") }) }}</div>
+        <div class="mt-1">{{ t("semantic.lastIndexed", { time: semanticStatus.last_indexed_at || t("semantic.none") }) }}</div>
+        <div class="mt-1">{{ t("semantic.lastError", { msg: semanticStatus.last_error || t("semantic.noError") }) }}</div>
       </div>
 
       <div class="grid gap-2 md:grid-cols-2">
@@ -280,7 +283,7 @@ onBeforeUnmount(() => {
           @click="setDefaultEmbeddingModel"
         >
           <Save :size="16" />
-          设为默认模型
+          {{ t("semantic.btn.setDefault") }}
         </button>
         <button
           class="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
@@ -288,7 +291,7 @@ onBeforeUnmount(() => {
           @click="rebuildSemanticEmbeddings"
         >
           <Sparkles :size="16" />
-          {{ saving ? "处理中..." : "重建语义向量" }}
+          {{ saving ? t("semantic.btn.processing") : t("semantic.btn.rebuild") }}
         </button>
       </div>
     </div>
@@ -296,10 +299,10 @@ onBeforeUnmount(() => {
     <div class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
       <div class="mb-4 flex items-center justify-between">
         <div>
-          <div class="text-sm font-semibold text-slate-900">语义调试</div>
-          <div class="mt-1 text-xs text-slate-500">输入一个查询词，查看向量生成和语义召回情况。</div>
+          <div class="text-sm font-semibold text-slate-900">{{ t("semantic.debug.title") }}</div>
+          <div class="mt-1 text-xs text-slate-500">{{ t("semantic.debug.desc") }}</div>
         </div>
-        <DocMindBadge tone="success">仅本地</DocMindBadge>
+        <DocMindBadge tone="success">{{ t("semantic.debug.onlyLocal") }}</DocMindBadge>
       </div>
 
       <div class="flex gap-2">
@@ -307,7 +310,7 @@ onBeforeUnmount(() => {
           v-model="semanticQuery"
           type="text"
           class="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
-          placeholder="例如：离线仓库 / 语义搜索 / Markdown 切片"
+          :placeholder="t('semantic.debug.placeholder')"
           @keyup.enter="runSemanticDebug"
         />
         <button
@@ -316,26 +319,26 @@ onBeforeUnmount(() => {
           @click="runSemanticDebug"
         >
           <Search :size="16" />
-          {{ loadingSemanticDebug ? "调试中..." : "调试" }}
+          {{ loadingSemanticDebug ? t("semantic.debug.debugging") : t("semantic.debug.debug") }}
         </button>
       </div>
 
       <div v-if="semanticDebug" class="mt-4 space-y-3">
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div class="rounded-2xl bg-white px-4 py-3">
-            <div class="text-xs text-slate-500">向量维度</div>
+            <div class="text-xs text-slate-500">{{ t("semantic.debug.vectorDim") }}</div>
             <div class="mt-1 font-medium text-slate-900">{{ semanticDebug.query_vector_dim }}</div>
           </div>
           <div class="rounded-2xl bg-white px-4 py-3">
-            <div class="text-xs text-slate-500">命中数</div>
+            <div class="text-xs text-slate-500">{{ t("semantic.debug.hitCount") }}</div>
             <div class="mt-1 font-medium text-slate-900">{{ semanticDebug.hit_count }}</div>
           </div>
         </div>
 
         <div class="rounded-2xl bg-white px-4 py-3 text-xs text-slate-600">
-          <div>归一化查询：{{ semanticDebug.normalized_query || "空" }}</div>
-          <div class="mt-1">模型：{{ semanticDebug.model.name }} / {{ semanticDebug.model.provider }}</div>
-          <div class="mt-1">状态：{{ semanticDebug.index_status || "idle" }} · {{ semanticDebug.last_error || "无错误" }}</div>
+          <div>{{ t("semantic.debug.normalizedQuery", { query: semanticDebug.normalized_query || t("semantic.debug.empty") }) }}</div>
+          <div class="mt-1">{{ t("semantic.model", { name: semanticDebug.model.name }) }} / {{ semanticDebug.model.provider }}</div>
+          <div class="mt-1">{{ t("semantic.debug.status", { status: semanticDebug.index_status || "idle", error: semanticDebug.last_error || t("semantic.noError") }) }}</div>
         </div>
 
         <div v-if="semanticDebug.hits.length > 0" class="space-y-2">
@@ -348,7 +351,7 @@ onBeforeUnmount(() => {
               <div class="font-medium text-slate-900">{{ hit.file_name }}</div>
               <DocMindBadge tone="default">{{ hit.score.toFixed(3) }}</DocMindBadge>
             </div>
-            <div class="mt-1 text-xs text-slate-500">{{ hit.heading || "未命中标题" }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ hit.heading || t("semantic.debug.noHitHeading") }}</div>
             <div class="mt-2 line-clamp-2 text-slate-600">{{ hit.snippet }}</div>
           </div>
         </div>

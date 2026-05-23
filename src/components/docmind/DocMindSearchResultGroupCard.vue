@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { ChevronDown, ChevronRight } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import DocMindFileIcon from "./DocMindFileIcon.vue";
 import DocMindHighlightedText from "./DocMindHighlightedText.vue";
 import DocMindSearchResultCard from "./DocMindSearchResultCard.vue";
 import type { SearchResultView } from "../../types/docmind";
+
+const { t } = useI18n();
 
 interface SearchResultGroup {
   path: string;
@@ -63,18 +66,18 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
             </div>
             <div class="text-right text-xs text-slate-400">
               <div>{{ Math.round(group.topResult.score * 100) }}%</div>
-              <div class="mt-1">{{ group.count }} 段</div>
+              <div class="mt-1">{{ t("searchResultGroupCard.segments", { count: group.count }) }}</div>
             </div>
           </div>
         </div>
 
         <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <DocMindBadge>{{ group.ext.toUpperCase() }}</DocMindBadge>
-          <span>文档聚合</span>
+          <span>{{ t("searchResultGroupCard.docGroup") }}</span>
           <span>·</span>
-          <span>命中片段 {{ group.count }} 个</span>
+          <span>{{ t("searchResultGroupCard.hitSnippets", { count: group.count }) }}</span>
           <span>·</span>
-          <span>总分 {{ Math.round(group.totalScore * 100) }}%</span>
+          <span>{{ t("searchResultGroupCard.totalScore", { score: Math.round(group.totalScore * 100) }) }}</span>
         </div>
 
         <div class="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
@@ -89,14 +92,14 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
           >
             <ChevronDown v-if="props.expanded" :size="14" />
             <ChevronRight v-else :size="14" />
-            {{ props.expanded ? "收起片段" : "展开片段" }}
+            {{ props.expanded ? t("searchResultGroupCard.collapse") : t("searchResultGroupCard.expand") }}
           </button>
           <button
             class="rounded-xl px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
             type="button"
             @click="emit('select', group.topResult.id)"
           >
-            打开首段
+            {{ t("searchResultGroupCard.openFirst") }}
           </button>
         </div>
       </div>

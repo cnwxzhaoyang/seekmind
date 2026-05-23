@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Database, FolderOpen, Layers3, Search, Settings } from "lucide-vue-next";
 import { useRoute } from "vue-router";
 
+const { t } = useI18n();
 const route = useRoute();
 
-const items = [
-  { key: "search", label: "搜索", icon: Search, to: "/" },
-  { key: "chunks", label: "文档切片", icon: Layers3, to: "/chunks" },
-  { key: "library", label: "文档目录", icon: FolderOpen, to: "/library" },
-  { key: "status", label: "索引状态", icon: Database, to: "/status" },
-  { key: "settings", label: "设置", icon: Settings, to: "/settings" },
-];
+const items = computed(() => [
+  { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
+  { key: "chunks", label: t("sidebar.chunks"), icon: Layers3, to: "/chunks" },
+  { key: "library", label: t("sidebar.library"), icon: FolderOpen, to: "/library" },
+  { key: "status", label: t("sidebar.status"), icon: Database, to: "/status" },
+  { key: "settings", label: t("sidebar.settings"), icon: Settings, to: "/settings" },
+]);
 
 const activeKey = computed(() => {
   const path = route.path;
@@ -51,8 +53,8 @@ const activeKey = computed(() => {
     </nav>
 
     <div class="mt-auto rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">
-      <div class="mb-1 font-medium text-slate-700">本地优先</div>
-      文档只在当前 Mac 上解析和索引，不上传云端。
+      <div class="mb-1 font-medium text-slate-700">{{ t("sidebar.localFirst") }}</div>
+      {{ t("sidebar.localFirstDesc") }}
     </div>
   </aside>
 </template>

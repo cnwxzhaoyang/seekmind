@@ -1,0 +1,426 @@
+{
+  "common": {
+    "search": "Search",
+    "searching": "Searching...",
+    "save": "Save",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "clear": "Clear",
+    "refresh": "Refresh",
+    "pause": "Pause",
+    "resume": "Resume",
+    "rebuild": "Rebuild",
+    "reindex": "Re-index",
+    "openFile": "Open File",
+    "viewChunks": "View Chunks",
+    "loading": "Loading...",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "yes": "Yes",
+    "no": "No",
+    "none": "None",
+    "error": "Error",
+    "unknown": "Unknown",
+    "available": "Available",
+    "unavailable": "Unavailable",
+    "of": "·"
+  },
+
+  "status": {
+    "idle": "Idle",
+    "running": "Running",
+    "processing": "Processing",
+    "paused": "Paused",
+    "pausing": "Pausing...",
+    "resuming": "Resuming...",
+    "completed": "Completed",
+    "failed": "Failed",
+    "queued": "Queued",
+    "noRecentRun": "No recent run",
+    "parser": {
+      "python": "Python Parser",
+      "pythonFallback": "Rust Fallback"
+    },
+    "localOnly": "Local Only",
+    "localEffective": "Local Only",
+    "savedLocally": "Saved Locally"
+  },
+
+  "sidebar": {
+    "search": "Search",
+    "chunks": "Document Chunks",
+    "library": "Index Dirs",
+    "status": "Index Status",
+    "settings": "Settings",
+    "localFirst": "Local First",
+    "localFirstDesc": "Documents are parsed and indexed locally on your Mac. Nothing is uploaded to the cloud."
+  },
+
+  "page": {
+    "appSearch": {
+      "title": "Search Documents",
+      "subtitle": "Enter keywords to locate specific paragraphs within your documents.",
+      "placeholder": "Search document content, titles or file names...",
+      "search": "Search",
+      "searching": "Searching...",
+      "searchFailed": "Search failed",
+      "filter": "Filter",
+      "noResults": "No matching results found",
+      "enterQuery": "Enter a keyword to start searching.",
+      "indexedDocs": "{count} documents indexed",
+      "parserPython": "Python Parser",
+      "parserRust": "Rust Fallback",
+      "stats": {
+        "foundDocs": "Found {count} related documents, {total} related paragraphs",
+        "documents": "SQLite Docs / Chunks",
+        "paragraphs": "Tantivy Docs",
+        "trim": "Snippet Trim",
+        "hitCount": "Hit Count",
+        "normalizedQueryLabel": "Normalized Query"
+      },
+      "section": {
+        "recentSearch": "Recent Searches",
+        "recentOpen": "Recent Documents",
+        "favorites": "Favorites",
+        "quickDirs": "Quick Dirs",
+        "noHistory": "No history",
+        "noRecent": "No recent documents",
+        "noFavorites": "No favorites",
+        "noDirs": "No index directories",
+        "dirStats": "{docs} docs · {chunks} chunks"
+      },
+      "detail": {
+        "hitParagraph": "Matched Paragraph",
+        "contextPreview": "Context Preview",
+        "previousPara": "Previous: Building an offline repo requires parsing the parent POM, BOM, and build plugins first.",
+        "currentPara": "Current: ",
+        "nextPara": "Next: The generated .offline-repo can be specified as a local repository path in settings.xml.",
+        "snippetSource": "Snippet from char range {start} - {end} / {length}",
+        "chunkCount": "{count} chunks"
+      }
+    },
+
+    "chunks": {
+      "title": "Document Chunks",
+      "subtitle": "Select a document by directory to see how docMind splits content into paragraph blocks.",
+      "parserInfo": "Current parser: ",
+      "parserInfo2": ". Click \"Reslice\" to use the active pipeline.",
+      "parserPython": "Python",
+      "parserRust": "Rust",
+      "badgePython": "Python Parser",
+      "badgeRust": "Rust Fallback",
+      "section": {
+        "indexDirs": "Index Directories",
+        "docList": "Documents",
+        "chunkDetail": "Chunk Details"
+      },
+      "selectDir": "Select an index directory",
+      "selectDoc": "Select a document",
+      "empty": {
+        "dirs": "Reading directories...",
+        "docs": "No documents in this directory.",
+        "chunks": "No chunks generated for this document yet.",
+        "selectDocToView": "Select a document to view its chunks."
+      },
+      "filterPlaceholder": "Filter by file name or path...",
+      "btn": {
+        "refresh": "Refresh",
+        "queue": "Queue {count}",
+        "retrySlice": "Retry",
+        "reslice": "Reslice"
+      },
+      "refreshState": {
+        "queued": "Queued",
+        "slicing": "Slicing",
+        "pythonSlicing": "Python slicing",
+        "rustSlicing": "Rust slicing",
+        "pythonDone": "Python done",
+        "rustFallback": "Rust fallback",
+        "failed": "Failed"
+      },
+      "docStats": "{docs} docs · {chunks} chunks",
+      "chunkStats": "{count} chunks",
+      "page": "Page {page}",
+      "paragraph": "Para {para}",
+      "dirDocs": "{docs} docs · {chunks} paragraphs",
+      "readingDocs": "Loading documents...",
+      "readingChunks": "Loading chunks...",
+      "status": {
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      }
+    },
+
+    "library": {
+      "title": "Index Directories",
+      "subtitle": "Add folders to index. docMind parses and indexes them locally.",
+      "btn": {
+        "addDir": "Add Directory"
+      },
+      "dialogTitle": "Select a directory to index",
+      "taskTitle": "Current Index Task",
+      "taskSyncing": "Syncing index status",
+      "emptyState": {
+        "title": "Add, enable, and remove index directories",
+        "subtitle": "Start with Documents, Downloads, or your project folders."
+      },
+      "loading": "Loading index directories...",
+      "info": {
+        "added": "Added: {path}",
+        "reindexed": "Re-indexed: {path}",
+        "disabled": "Disabled: {path}",
+        "enabled": "Enabled: {path}",
+        "deleted": "Deleted: {path}"
+      },
+      "error": {
+        "addDir": "Failed to add directory",
+        "rebuild": "Failed to rebuild directory",
+        "deleteDir": "Failed to delete directory",
+        "toggleDir": "Failed to update directory state"
+      },
+      "status": {
+        "indexing": "Indexing",
+        "completed": "Completed"
+      },
+      "confirmRemove": "Remove index directory?\n{path}"
+    },
+
+    "status": {
+      "title": "Index Status",
+      "subtitle": "View current indexing progress, failed files, and retryable items.",
+      "btn": {
+        "pause": "Pause Indexing",
+        "pausing": "Pausing...",
+        "resume": "Resume Indexing",
+        "resuming": "Resuming...",
+        "reindex": "Re-index",
+        "rebuilding": "Rebuilding..."
+      },
+      "section": {
+        "taskOps": "Task Operations",
+        "taskOpsDesc": "Pause, resume or re-index current task.",
+        "incrementalSummary": "Last Incremental Summary",
+        "incrementalDesc": "Results from the most recent index run. Persisted after completion.",
+        "parserStatus": "Parser Status",
+        "parserDesc": "Which parser pipeline is currently active.",
+        "indexDirs": "Index Directories",
+        "indexDirsDesc": "Currently managed index locations.",
+        "failedFiles": "Failed Files"
+      },
+      "stats": {
+        "scanned": "Scanned Docs",
+        "indexed": "Indexed Docs",
+        "chunks": "Chunks",
+        "failed": "Failed Files"
+      },
+      "incremental": {
+        "updated": "Updated",
+        "skipped": "Skipped",
+        "deleted": "Deleted",
+        "scannedCandidates": "Candidates",
+        "successFail": "Success / Fail",
+        "none": "No incremental summary yet."
+      },
+      "parser": {
+        "enabled": "Python Enabled",
+        "available": "Python Available",
+        "pythonBin": "Python Binary",
+        "timeout": "Timeout",
+        "script": "Script: {path}"
+      },
+      "failed": {
+        "noFailed": "No failed items",
+        "retryGroup": "Retry Group",
+        "retrying": "Processing...",
+        "retryFile": "Retry",
+        "code": "Code {code}",
+        "retryCount": "{count} retries"
+      },
+      "emptyDirs": "No index directories. Add one in the \"Index Dirs\" page first.",
+      "dirStats": "{docs} docs · {chunks} paragraphs",
+      "error": {
+        "loadStatus": "Failed to load status",
+        "loadDirs": "Failed to load directories",
+        "loadParser": "Failed to load parser status",
+        "reindex": "Failed to re-index",
+        "pause": "Failed to pause indexing",
+        "resume": "Failed to resume indexing",
+        "retryFile": "Failed to retry file",
+        "retryGroup": "Failed to retry group"
+      }
+    },
+
+    "settings": {
+      "title": "Settings",
+      "subtitle": "Configure index exclusion rules, max file size, and manage local index data.",
+      "btn": {
+        "reset": "Reset to Defaults",
+        "save": "Save",
+        "saving": "Saving...",
+        "clear": "Clear All Indexes",
+        "clearing": "Clearing..."
+      },
+      "section": {
+        "rules": "Index Rules",
+        "instructions": "Instructions",
+        "danger": "Danger Zone"
+      },
+      "rulesDesc": "Directory names and extensions are split by comma, semicolon, or newline. Extensions do not need leading dots.",
+      "label": {
+        "excludeDirs": "Exclude Directories",
+        "excludeExts": "Exclude Extensions",
+        "maxFileSize": "Max File Size (MB)",
+        "currentStatus": "Current Status"
+      },
+      "status": {
+        "changed": "Unsaved changes",
+        "synced": "Configuration synced"
+      },
+      "instructions": {
+        "dirs": "Excluded directories match by name, e.g. node_modules, .git.",
+        "exts": "Excluded extensions match by suffix, e.g. log, png.",
+        "maxSize": "Files exceeding the max size are skipped during scanning and logged.",
+        "effective": "These settings take effect on the next scan."
+      },
+      "danger": {
+        "desc": "Clearing local indexes does not delete original documents.",
+        "detail": "This removes local SQLite data and Tantivy indexes. Useful for troubleshooting initialization or index anomalies."
+      },
+      "placeholder": {
+        "dirs": "node_modules, .git, target",
+        "exts": "log, tmp, png"
+      },
+      "loading": "Loading settings...",
+      "saved": "Settings saved",
+      "resetDone": "Defaults restored, remember to click Save",
+      "cleared": "All indexes cleared",
+      "confirmClear": "Clear all indexes? Original files will not be deleted.",
+      "confirmRemoveDir": "Remove index directory?\n{path}",
+      "language": "Language",
+      "error": {
+        "load": "Failed to load settings",
+        "save": "Failed to save settings",
+        "clear": "Failed to clear indexes"
+      }
+    }
+  },
+
+  "logPanel": {
+    "title": "Logs",
+    "desc": "Index / Chunk / Semantic events",
+    "scopeLabel": {
+      "index": "Index Task",
+      "document": "Chunk Task",
+      "semantic": "Semantic Task"
+    },
+    "empty": "No logs yet. Events appear automatically after running index, chunk, or semantic tasks.",
+    "clear": "Clear",
+    "events": "{count} events",
+    "scope": {
+      "index": "Index",
+      "document": "Chunk",
+      "semantic": "Semantic"
+    },
+    "details": {
+      "fullIndex": "Full index",
+      "rebuilding": "Rebuilding embeddings",
+      "dir": "Dir: {path}",
+      "fallback": "fallback"
+    }
+  },
+
+  "semantic": {
+    "title": "Semantic Model",
+    "desc": "Current semantic index model status and rebuild controls.",
+    "loading": "Loading semantic status...",
+    "defaultModel": "Default Model",
+    "rebuildProgress": "Rebuild Progress",
+    "completed": "Completed",
+    "currentDirDoc": "Current Dir / Doc",
+    "currentChunk": "Current Chunk",
+    "processed": "Processed",
+    "embedded": "Embedded",
+    "embeddedShort": "Embedded",
+    "pendingRebuild": "Pending Rebuild",
+    "model": "Model: {name}",
+    "provider": "Provider: {provider} · {dim} dims",
+    "dimension": "{dim} dims",
+    "availability": "Available: {status}",
+    "lastIndexed": "Last Indexed: {time}",
+    "lastError": "Last Error: {msg}",
+    "btn": {
+      "setDefault": "Set as Default",
+      "rebuild": "Rebuild",
+      "processing": "Processing..."
+    },
+    "debug": {
+      "title": "Semantic Debug",
+      "desc": "Enter a query to inspect vector generation and semantic recall.",
+      "onlyLocal": "Local Only",
+      "placeholder": "e.g. offline repo / semantic search / Markdown chunks",
+      "debugging": "Debugging...",
+      "debug": "Debug",
+      "vectorDim": "Vector Dims",
+      "hitCount": "Hits",
+      "normalizedQuery": "Normalized query: {query}",
+      "empty": "empty",
+      "noHitHeading": "No heading matched",
+      "status": "Status: {status} · {error}"
+    },
+    "info": {
+      "rebuildStarted": "Semantic rebuild started",
+      "modelUpdated": "Default semantic model updated",
+      "rebuilt": "Semantic embeddings rebuilt"
+    },
+    "error": {
+      "rebuildFailed": "Failed to rebuild semantic embeddings",
+      "switchModelFailed": "Failed to switch default semantic model",
+      "debugFailed": "Semantic debug failed",
+      "selectModel": "Please select an embedding model"
+    },
+    "none": "None",
+    "yes": "Yes",
+    "no": "No",
+    "noError": "None"
+  },
+
+  "searchResultCard": {
+    "favorite": "Favorite",
+    "unfavorite": "Unfavorite",
+    "hitParagraph": "Body text match",
+    "hitHeading": "No heading matched",
+    "page": "Page {page}",
+    "paragraph": "Para {para}",
+    "hitSnippet": "Hit fragment",
+    "matchField": "Match: {field}"
+  },
+
+  "searchResultGroupCard": {
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "openFirst": "Open First",
+    "docGroup": "Document Group",
+    "hitSnippets": "{count} hit fragments",
+    "totalScore": "Score {score}%",
+    "score": "{score}%",
+    "segments": "{count} segments"
+  },
+
+  "taskCard": {
+    "defaultTitle": "Current Task",
+    "defaultDesc": "Syncing task status",
+    "currentDir": "Current Dir",
+    "currentFile": "Current File",
+    "cumulativeSuccess": "Succeeded",
+    "cumulativeFailed": "Failed",
+    "thisUpdate": "Updated",
+    "thisSkipped": "Skipped",
+    "thisDeleted": "Deleted",
+    "processed": "Processed",
+    "queueRemaining": "Queue Remaining",
+    "noDir": "No dir",
+    "noFile": "No file",
+    "files": "{count} files"
+  }
+}
