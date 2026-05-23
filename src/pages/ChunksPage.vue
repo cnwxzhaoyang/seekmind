@@ -30,10 +30,14 @@ const refreshingDocPath = ref("");
 const refreshQueue = ref<DocumentView[]>([]);
 const refreshWorkerRunning = ref(false);
 const refreshWarnings = ref<Record<string, string>>({});
+const refreshOutcomes = ref<Record<string, "python" | "rust" | "failed">>({});
+const refreshStates = ref<Record<string, "idle" | "queued" | "running" | "completed" | "failed">>({});
+const refreshActiveSources = ref<Record<string, "python" | "rust">>({});
 const errorMessage = ref("");
 const docFilter = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
+const refreshJobPaths = new Map<string, string>();
 let unlistenRefreshProgress: null | (() => void) = null;
 
 const currentDocument = computed(
@@ -46,8 +50,85 @@ const refreshTaskCount = computed(
   () => refreshQueue.value.length + (refreshingDocPath.value ? 1 : 0),
 );
 
+const hasRefreshOutcome = (path: string) =>
+  refreshOutcomes.value[path] === "python" ||
+  refreshOutcomes.value[path] === "rust" ||
+  refreshOutcomes.value[path] === "failed";
+
+const isDocRefreshing = (path: string) =>
+  !hasRefreshOutcome(path) && refreshStates.value[path] === "running";
+const isDocRefreshBusy = (path: string) =>
+  !hasRefreshOutcome(path) &&
+  (refreshStates.value[path] === "running" || refreshStates.value[path] === "queued");
+
+const isTerminalRefreshState = (path: string) =>
+  refreshStates.value[path] === "completed" || refreshStates.value[path] === "failed";
+
+const clearRefreshResult = (path: string) => {
+  const { [path]: _warning, ...restWarnings } = refreshWarnings.value;
+  refreshWarnings.value = restWarnings;
+
+  const { [path]: _outcome, ...restOutcomes } = refreshOutcomes.value;
+  refreshOutcomes.value = restOutcomes;
+};
+
+const clearActiveRefreshSource = (path: string) => {
+  const { [path]: _source, ...restSources } = refreshActiveSources.value;
+  refreshActiveSources.value = restSources;
+};
+
+const applyRefreshTerminalPayload = (path: string, payload: DocumentRefreshProgressView) => {
+  const completed = payload.state === "completed";
+  refreshStates.value = {
+    ...refreshStates.value,
+    [path]: completed ? "completed" : "failed",
+  };
+
+  if (completed) {
+    refreshOutcomes.value = {
+      ...refreshOutcomes.value,
+      [path]: payload.warning || payload.parser_source === "rust" ? "rust" : "python",
+    };
+  } else {
+    refreshOutcomes.value = {
+      ...refreshOutcomes.value,
+      [path]: "failed",
+    };
+  }
+
+  if (payload.warning) {
+    refreshWarnings.value = {
+      ...refreshWarnings.value,
+      [path]: payload.warning,
+    };
+  } else {
+    const { [path]: _removed, ...rest } = refreshWarnings.value;
+    refreshWarnings.value = rest;
+  }
+
+  clearActiveRefreshSource(path);
+};
+
+const refreshAfterTerminalPayload = async (path: string, payload: DocumentRefreshProgressView) => {
+  if (payload.state !== "completed") {
+    return;
+  }
+
+  if (path.startsWith(selectedDirPath.value)) {
+    await loadDocuments();
+  }
+
+  if (selectedDocPath.value === path) {
+    await loadChunks();
+  }
+};
+
 const currentDocumentRefreshWarning = computed(() =>
   currentDocument.value ? refreshWarnings.value[currentDocument.value.path] ?? "" : "",
+);
+
+const currentDocumentRefreshOutcome = computed(() =>
+  currentDocument.value ? refreshOutcomes.value[currentDocument.value.path] ?? "idle" : "idle",
 );
 
 const filteredDocuments = computed(() => {
@@ -141,10 +222,28 @@ const installRefreshProgressListener = async () => {
     "docmind:document-refresh-progress",
     (event) => {
       const payload = event.payload;
+      const path = refreshJobPaths.get(payload.job_id) ?? payload.path;
 
       if (payload.state === "running") {
+        if (!isTerminalRefreshState(path)) {
+          refreshStates.value = {
+            ...refreshStates.value,
+            [path]: "running",
+          };
+          refreshActiveSources.value = {
+            ...refreshActiveSources.value,
+            [path]: payload.parser_source,
+          };
+        }
         return;
       }
+
+      applyRefreshTerminalPayload(path, payload);
+      refreshJobPaths.delete(payload.job_id);
+      if (refreshingDocPath.value === path) {
+        refreshingDocPath.value = "";
+      }
+      void refreshAfterTerminalPayload(path, payload);
 
       const resolver = refreshJobResolvers.get(payload.job_id);
       if (resolver) {
@@ -174,21 +273,23 @@ const processRefreshQueue = async () => {
       }
 
       refreshingDocPath.value = doc.path;
+      refreshStates.value = {
+        ...refreshStates.value,
+        [doc.path]: "running",
+      };
       errorMessage.value = "";
 
       try {
         const refreshStart = await docmindApi.refreshDocument(doc.path, doc.dir_path);
+        refreshJobPaths.set(refreshStart.job_id, doc.path);
         const refreshResult = await waitForRefreshJob(refreshStart.job_id);
+        refreshJobPaths.delete(refreshStart.job_id);
 
-        if (refreshResult.state === "completed" && refreshResult.warning) {
-          refreshWarnings.value = {
-            ...refreshWarnings.value,
-            [doc.path]: refreshResult.warning,
-          };
-        } else {
-          const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
-          refreshWarnings.value = rest;
+        applyRefreshTerminalPayload(doc.path, refreshResult);
+        if (refreshingDocPath.value === doc.path) {
+          refreshingDocPath.value = "";
         }
+
         if (refreshResult.state === "completed" && doc.dir_path === selectedDirPath.value) {
           await loadDocuments();
           if (selectedDocPath.value === doc.path) {
@@ -196,12 +297,25 @@ const processRefreshQueue = async () => {
           }
         }
         if (refreshResult.state === "failed") {
+          refreshStates.value = {
+            ...refreshStates.value,
+            [doc.path]: "failed",
+          };
           errorMessage.value = formatDocmindError(
             refreshResult.message,
             `重新切片失败：${doc.file_name}`,
           );
         }
       } catch (error) {
+        refreshStates.value = {
+          ...refreshStates.value,
+          [doc.path]: "failed",
+        };
+        refreshOutcomes.value = {
+          ...refreshOutcomes.value,
+          [doc.path]: "failed",
+        };
+        clearActiveRefreshSource(doc.path);
         const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
         refreshWarnings.value = rest;
         errorMessage.value = formatDocmindError(error, `重新切片失败：${doc.file_name}`);
@@ -219,6 +333,12 @@ const refreshDocument = async (doc: DocumentView) => {
     return;
   }
 
+  refreshStates.value = {
+    ...refreshStates.value,
+    [doc.path]: "queued",
+  };
+  clearRefreshResult(doc.path);
+  clearActiveRefreshSource(doc.path);
   refreshQueue.value.push(doc);
   void processRefreshQueue();
 };
@@ -226,7 +346,6 @@ const refreshDocument = async (doc: DocumentView) => {
 const syncSelection = async () => {
   loading.value = true;
   errorMessage.value = "";
-  refreshWarnings.value = {};
 
   try {
     await loadParserRuntime();
@@ -267,6 +386,62 @@ const selectDoc = async (path: string) => {
     errorMessage.value = "";
   }
   void router.replace({ query: { ...route.query, path } });
+};
+
+const refreshStateLabel = (path: string) => {
+  if (refreshOutcomes.value[path] === "failed") {
+    return "重试切片";
+  }
+  if (hasRefreshOutcome(path)) {
+    return "重新切片";
+  }
+
+  const state = refreshStates.value[path] ?? "idle";
+  if (state === "running") {
+    const source = refreshActiveSources.value[path];
+    return source === "python" ? "Python 切片中" : source === "rust" ? "Rust 切片中" : "切片中";
+  }
+  if (state === "queued") {
+    return "已排队";
+  }
+  if (state === "completed") {
+    return "重新切片";
+  }
+  if (state === "failed") {
+    return "重试切片";
+  }
+  return "重新切片";
+};
+
+const refreshOutcomeLabel = (path: string) => {
+  const outcome = refreshOutcomes.value[path];
+  if (outcome === "python") {
+    return "Python 完成";
+  }
+  if (outcome === "rust") {
+    return "Rust 回退";
+  }
+  if (outcome === "failed") {
+    return "已失败";
+  }
+  return "";
+};
+
+const refreshOutcomeTone = (path?: string) => {
+  if (!path) {
+    return "default" as const;
+  }
+  const outcome = refreshOutcomes.value[path];
+  if (outcome === "python") {
+    return "success" as const;
+  }
+  if (outcome === "rust") {
+    return "warning" as const;
+  }
+  if (outcome === "failed") {
+    return "danger" as const;
+  }
+  return "default" as const;
 };
 
 onMounted(() => {
@@ -392,18 +567,30 @@ watch(
                 </div>
                 <div
                   v-if="refreshWarnings[doc.path]"
-                  class="mt-2 inline-flex items-center rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700"
+                  class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  :class="refreshOutcomes[doc.path] === 'python'
+                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : 'border-amber-100 bg-amber-50 text-amber-700'"
                 >
-                  本次回退到 Rust
+                  {{ refreshOutcomes[doc.path] === 'python' ? 'Python 完成' : 'Rust 回退' }}
+                </div>
+                <div
+                  v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
+                  class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
+                  :class="refreshOutcomes[doc.path] === 'python'
+                    ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : 'border border-amber-100 bg-amber-50 text-amber-700'"
+                >
+                  {{ refreshOutcomeLabel(doc.path) }}
                 </div>
               </div>
               <button
                 class="inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="loadingDocs || refreshingDocPath === doc.path"
+                :disabled="loadingDocs || isDocRefreshBusy(doc.path)"
                 @click.stop="void refreshDocument(doc)"
               >
-                <RefreshCw :size="13" :class="refreshingDocPath === doc.path ? 'animate-spin' : ''" />
-                {{ refreshingDocPath === doc.path ? "切片中" : queuedDocPaths.has(doc.path) ? "已排队" : "重新切片" }}
+                <RefreshCw :size="13" :class="isDocRefreshing(doc.path) ? 'animate-spin' : ''" />
+                {{ refreshStateLabel(doc.path) }}
               </button>
             </div>
           </div>
@@ -416,6 +603,26 @@ watch(
             <div class="text-sm font-semibold text-slate-900">切片详情</div>
             <div class="mt-1 text-xs text-slate-500">
               {{ currentDocument?.file_name || "请选择一个文档" }}
+            </div>
+            <div
+              v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
+              class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+              :class="refreshOutcomeTone(currentDocument.path) === 'success'
+                ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                : refreshOutcomeTone(currentDocument.path) === 'warning'
+                  ? 'border-amber-100 bg-amber-50 text-amber-700'
+                  : refreshOutcomeTone(currentDocument.path) === 'danger'
+                    ? 'border-rose-100 bg-rose-50 text-rose-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600'"
+            >
+              <Cpu :size="11" />
+              {{ refreshOutcomeLabel(currentDocument.path) }}
+            </div>
+            <div
+              v-if="currentDocumentRefreshWarning"
+              class="mt-2 text-[11px] leading-5 text-amber-700"
+            >
+              {{ currentDocumentRefreshWarning }}
             </div>
           </div>
           <button
@@ -433,14 +640,6 @@ watch(
           选中文档后，这里会显示它被切成的每个段落块。
         </div>
         <div v-else class="space-y-3">
-          <div
-            v-if="currentDocumentRefreshWarning"
-            class="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-          >
-            <div class="font-medium">本次切片已从 Python 回退到 Rust</div>
-            <div class="mt-1 text-xs leading-6 text-amber-700">{{ currentDocumentRefreshWarning }}</div>
-          </div>
-
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div class="text-sm font-medium text-slate-900">{{ currentDocument.file_name }}</div>
             <div class="mt-1 break-all text-xs text-slate-500">{{ currentDocument.path }}</div>

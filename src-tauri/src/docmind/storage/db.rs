@@ -1017,12 +1017,18 @@ impl Database {
             return Err(sqlx::Error::Protocol(error.into()));
         }
 
-        if let Err(error) = semantic_store::upsert_document_embeddings(self, &document_id, document, chunks).await {
-            eprintln!(
-                "[DocMind] semantic embedding update failed for {}: {}",
-                document.path, error
-            );
-        }
+        // Keep parsing/indexing responsive. Semantic vectors are rebuilt by the
+        // dedicated semantic job instead of blocking document refresh.
+        sqlx::query(
+            r#"
+            UPDATE vector_index_meta
+            SET status = 'needs_rebuild',
+                last_error = ''
+            WHERE id = 1
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }

@@ -286,32 +286,40 @@ onBeforeUnmount(() => {
       <h1 class="text-2xl font-semibold tracking-tight text-slate-950">索引状态</h1>
       <p class="mt-1 text-sm text-slate-500">查看当前索引进度、失败文件和可重新处理的项目。</p>
     </div>
-    <div class="mb-6 flex items-center justify-end">
-      <button
-        class="mr-2 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+    <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">任务操作</div>
+          <div class="mt-1 text-xs text-slate-500">暂停、恢复或重新索引当前任务。</div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
         :disabled="refreshing || loading || !status?.current_task || status.current_task.state === 'paused'"
         @click="pauseIndexing"
-      >
-        <Loader2 v-if="actionState === 'pausing'" :size="16" class="animate-spin" />
-        {{ actionState === 'pausing' ? "暂停中..." : "暂停索引" }}
-      </button>
-      <button
-        class="mr-2 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-        :disabled="refreshing || loading || !status?.current_task || status.current_task.state !== 'paused'"
-        @click="resumeIndexing"
-      >
-        <Loader2 v-if="actionState === 'resuming'" :size="16" class="animate-spin" />
-        <RefreshCw v-else :size="16" />
-        {{ actionState === 'resuming' ? "恢复中..." : "恢复索引" }}
-      </button>
-      <button
-        class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-        :disabled="refreshing || loading"
-        @click="refreshIndex"
-      >
-        <RefreshCw :size="16" :class="{ 'animate-spin': refreshing }" />
-        {{ refreshing ? "重建中..." : "重新索引" }}
-      </button>
+          >
+            <Loader2 v-if="actionState === 'pausing'" :size="16" class="animate-spin" />
+            {{ actionState === 'pausing' ? "暂停中..." : "暂停索引" }}
+          </button>
+          <button
+            class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+            :disabled="refreshing || loading || !status?.current_task || status.current_task.state !== 'paused'"
+            @click="resumeIndexing"
+          >
+            <Loader2 v-if="actionState === 'resuming'" :size="16" class="animate-spin" />
+            <RefreshCw v-else :size="16" />
+            {{ actionState === 'resuming' ? "恢复中..." : "恢复索引" }}
+          </button>
+          <button
+            class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            :disabled="refreshing || loading"
+            @click="refreshIndex"
+          >
+            <RefreshCw :size="16" :class="{ 'animate-spin': refreshing }" />
+            {{ refreshing ? "重建中..." : "重新索引" }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="mb-6 grid grid-cols-4 gap-4">

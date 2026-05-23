@@ -72,7 +72,14 @@ const installListeners = async () => {
   unlistenDocument = await listen<DocumentRefreshProgressView>("docmind:document-refresh-progress", (event) => {
     const payload = event.payload;
     const scope: LogScope = "document";
-    const level: LogLevel = payload.state === "failed" ? "error" : payload.warning ? "warning" : "success";
+    const level: LogLevel =
+      payload.state === "failed"
+        ? "error"
+        : payload.state === "completed"
+          ? payload.warning
+            ? "warning"
+            : "success"
+          : "info";
     pushLog({
       scope,
       level,
