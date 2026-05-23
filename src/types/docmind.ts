@@ -13,10 +13,21 @@ export interface SearchResultView {
   ext: string;
   heading: string;
   snippet: string;
+  matched_field: string;
+  match_origin: string;
+  highlight_spans: HighlightSpan[];
+  snippet_window_start: number;
+  snippet_window_end: number;
+  snippet_source_len: number;
   paragraph?: number | null;
   page?: number | null;
   modified: string;
   score: number;
+}
+
+export interface HighlightSpan {
+  start: number;
+  end: number;
 }
 
 export interface DocumentView {
@@ -102,6 +113,31 @@ export interface SearchDebugView {
   tantivy_documents: number;
   hit_count: number;
   hits: SearchResultView[];
+}
+
+export interface SearchHistoryView {
+  query: string;
+  normalized_query: string;
+  hit_count: number;
+  last_hit_at: string;
+}
+
+export interface RecentDocumentView {
+  path: string;
+  title: string;
+  file_name: string;
+  ext: string;
+  last_opened_at: string;
+  open_count: number;
+}
+
+export interface FavoriteView {
+  favorite_type: string;
+  target: string;
+  title: string;
+  path: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface IndexSettingsView {

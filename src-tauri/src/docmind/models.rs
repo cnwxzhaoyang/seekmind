@@ -10,6 +10,12 @@ pub struct IndexDirView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct HighlightSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchResultView {
     pub id: String,
     pub file_name: String,
@@ -17,6 +23,12 @@ pub struct SearchResultView {
     pub ext: String,
     pub heading: String,
     pub snippet: String,
+    pub matched_field: String,
+    pub match_origin: String,
+    pub highlight_spans: Vec<HighlightSpan>,
+    pub snippet_window_start: usize,
+    pub snippet_window_end: usize,
+    pub snippet_source_len: usize,
     pub paragraph: Option<u32>,
     pub page: Option<u32>,
     pub modified: String,
@@ -114,6 +126,34 @@ pub struct SearchDebugView {
     pub tantivy_documents: usize,
     pub hit_count: usize,
     pub hits: Vec<SearchResultView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchHistoryView {
+    pub query: String,
+    pub normalized_query: String,
+    pub hit_count: usize,
+    pub last_hit_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecentDocumentView {
+    pub path: String,
+    pub title: String,
+    pub file_name: String,
+    pub ext: String,
+    pub last_opened_at: String,
+    pub open_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FavoriteView {
+    pub favorite_type: String,
+    pub target: String,
+    pub title: String,
+    pub path: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,9 +11,10 @@ use uuid::Uuid;
 
 use crate::docmind::file_ops;
 use crate::docmind::models::{
-    ChunkView, CurrentTaskView, DocumentView, FailedFileView, IndexDirView, IndexStatusView,
-    SearchResultView,
+    ChunkView, CurrentTaskView, DocumentView, FavoriteView, FailedFileView, HighlightSpan,
+    IndexDirView, IndexStatusView, RecentDocumentView, SearchHistoryView, SearchResultView,
 };
+use crate::docmind::search::normalize_query;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::indexer;
 use crate::docmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocument, IndexSettings};
@@ -44,6 +45,7 @@ struct SearchRow {
     paragraph: Option<i64>,
     page: Option<i64>,
     modified: String,
+    modified_at: i64,
     score: f32,
 }
 
@@ -87,6 +89,34 @@ struct IndexRunSummaryRow {
     succeeded: i64,
     failed: i64,
     completed_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SearchHistoryRow {
+    query: String,
+    normalized_query: String,
+    hit_count: i64,
+    last_hit_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RecentDocumentRow {
+    path: String,
+    title: String,
+    file_name: String,
+    ext: String,
+    last_opened_at: i64,
+    open_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct FavoriteRow {
+    favorite_type: String,
+    target: String,
+    title: String,
+    path: String,
+    created_at: i64,
+    updated_at: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -171,6 +201,10 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_index_checkpoint_table()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_history_tables()
             .await
             .map_err(|error| error.to_string())?;
 
@@ -303,24 +337,207 @@ impl Database {
         }
 
         let mut results = Vec::new();
+        let normalized_terms = normalize_query(query);
+        let now = Utc::now().timestamp();
         for hit in hits {
             if let Some(row) = rows_by_id.remove(&hit.chunk_id) {
+                let (snippet, highlight_spans, snippet_window_start, snippet_window_end, snippet_source_len) =
+                    build_search_snippet(&row.snippet, &normalized_terms, 220);
+                let (matched_field, match_origin) = matched_field_and_origin(&row, &normalized_terms);
+                let score = boosted_search_score(hit.score, &match_origin, row.modified_at, now);
                 results.push(SearchResultView {
                     id: row.id,
                     file_name: row.file_name,
                     path: row.path,
                     ext: row.ext,
                     heading: row.heading,
-                    snippet: row.snippet,
+                    snippet,
+                    matched_field,
+                    match_origin,
+                    highlight_spans,
+                    snippet_window_start,
+                    snippet_window_end,
+                    snippet_source_len,
                     paragraph: row.paragraph.map(|value| value as u32),
                     page: row.page.map(|value| value as u32),
                     modified: row.modified,
-                    score: hit.score,
+                    score,
                 });
             }
         }
 
         Ok(results)
+    }
+
+    pub async fn record_search_history(&self, query: &str, hit_count: usize) -> Result<(), sqlx::Error> {
+        let normalized_query = normalize_query(query).join(" ");
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT INTO search_history
+                (query, normalized_query, hit_count, created_at, last_hit_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(query) DO UPDATE SET
+                normalized_query = excluded.normalized_query,
+                hit_count = search_history.hit_count + excluded.hit_count,
+                last_hit_at = excluded.last_hit_at
+            "#,
+        )
+        .bind(query)
+        .bind(normalized_query)
+        .bind(hit_count as i64)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_search_history(&self, limit: i64) -> Result<Vec<SearchHistoryView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, SearchHistoryRow>(
+            r#"
+            SELECT query, normalized_query, hit_count, last_hit_at
+            FROM search_history
+            ORDER BY last_hit_at DESC, hit_count DESC, query ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| SearchHistoryView {
+                query: row.query,
+                normalized_query: row.normalized_query,
+                hit_count: row.hit_count.max(0) as usize,
+                last_hit_at: format_unix_ts(row.last_hit_at),
+            })
+            .collect())
+    }
+
+    pub async fn record_recent_document(
+        &self,
+        path: &str,
+        title: &str,
+        file_name: &str,
+        ext: &str,
+    ) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT INTO recent_documents
+                (path, title, file_name, ext, last_opened_at, open_count)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(path) DO UPDATE SET
+                title = excluded.title,
+                file_name = excluded.file_name,
+                ext = excluded.ext,
+                last_opened_at = excluded.last_opened_at,
+                open_count = recent_documents.open_count + 1
+            "#,
+        )
+        .bind(path)
+        .bind(title)
+        .bind(file_name)
+        .bind(ext)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_recent_documents(&self, limit: i64) -> Result<Vec<RecentDocumentView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, RecentDocumentRow>(
+            r#"
+            SELECT path, title, file_name, ext, last_opened_at, open_count
+            FROM recent_documents
+            ORDER BY last_opened_at DESC, open_count DESC, path ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| RecentDocumentView {
+                path: row.path,
+                title: row.title,
+                file_name: row.file_name,
+                ext: row.ext,
+                last_opened_at: format_unix_ts(row.last_opened_at),
+                open_count: row.open_count.max(0) as usize,
+            })
+            .collect())
+    }
+
+    pub async fn list_favorites(&self, limit: i64) -> Result<Vec<FavoriteView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, FavoriteRow>(
+            r#"
+            SELECT favorite_type, target, title, path, created_at, updated_at
+            FROM favorites
+            ORDER BY updated_at DESC, created_at DESC, title ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| FavoriteView {
+                favorite_type: row.favorite_type,
+                target: row.target,
+                title: row.title,
+                path: row.path,
+                created_at: format_unix_ts(row.created_at),
+                updated_at: format_unix_ts(row.updated_at),
+            })
+            .collect())
+    }
+
+    pub async fn toggle_result_favorite(
+        &self,
+        path: &str,
+        heading: &str,
+        paragraph: Option<u32>,
+        page: Option<u32>,
+        file_name: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let target = favorite_result_target(path, heading, paragraph, page);
+        let now = current_unix_ts();
+        let existing = sqlx::query("SELECT target FROM favorites WHERE target = ?")
+            .bind(&target)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if existing.is_some() {
+            sqlx::query("DELETE FROM favorites WHERE target = ?")
+                .bind(&target)
+                .execute(&self.pool)
+                .await?;
+            return Ok(false);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO favorites
+                (target, favorite_type, title, path, created_at, updated_at)
+            VALUES (?, 'result', ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&target)
+        .bind(if heading.trim().is_empty() { file_name } else { heading })
+        .bind(path)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(true)
     }
 
     pub async fn list_documents_in_dir(
@@ -460,8 +677,25 @@ impl Database {
     }
 
     pub async fn open_file(&self, path: &str) -> Result<(), String> {
-        let _ = &self.pool;
-        file_ops::open_file_path(path)
+        let result = file_ops::open_file_path(path);
+        if result.is_ok() {
+            let file_name = std::path::Path::new(path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or(path);
+            let ext = std::path::Path::new(path)
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("");
+            let title = std::path::Path::new(path)
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or(file_name);
+            let _ = self
+                .record_recent_document(path, title, file_name, ext)
+                .await;
+        }
+        result
     }
 
     pub(crate) async fn add_index_dir(&self, path: &str) -> Result<(), sqlx::Error> {
@@ -1110,6 +1344,35 @@ impl Database {
                 max_file_size_mb INTEGER NOT NULL
             )
             "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS search_history (
+                query TEXT PRIMARY KEY,
+                normalized_query TEXT NOT NULL,
+                hit_count INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                last_hit_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS recent_documents (
+                path TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                ext TEXT NOT NULL,
+                last_opened_at INTEGER NOT NULL DEFAULT 0,
+                open_count INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS favorites (
+                target TEXT PRIMARY KEY,
+                favorite_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                path TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
         ];
 
         for statement in statements {
@@ -1274,6 +1537,54 @@ impl Database {
         Ok(())
     }
 
+    async fn ensure_history_tables(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS search_history (
+                query TEXT PRIMARY KEY,
+                normalized_query TEXT NOT NULL,
+                hit_count INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                last_hit_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS recent_documents (
+                path TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                ext TEXT NOT NULL,
+                last_opened_at INTEGER NOT NULL DEFAULT 0,
+                open_count INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS favorites (
+                target TEXT PRIMARY KEY,
+                favorite_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                path TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     async fn ensure_documents_columns(&self) -> Result<bool, sqlx::Error> {
         let existing = sqlx::query("PRAGMA table_info(documents)")
             .fetch_all(&self.pool)
@@ -1430,6 +1741,7 @@ impl Database {
                 c.paragraph,
                 c.page,
                 d.modified,
+                d.modified_at,
                 c.score
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
@@ -1463,6 +1775,185 @@ async fn scalar_count_no_bind(pool: &SqlitePool, sql: &str) -> Result<i64, sqlx:
 async fn scalar_count_bind(pool: &SqlitePool, sql: &str, bind: &str) -> Result<i64, sqlx::Error> {
     let row = sqlx::query(sql).bind(bind).fetch_one(pool).await?;
     row.try_get::<i64, _>(0)
+}
+
+fn matched_field_and_origin(row: &SearchRow, terms: &[String]) -> (String, String) {
+    let candidates = [
+        ("snippet", "正文摘要命中", row.snippet.as_str()),
+        ("heading", "标题命中", row.heading.as_str()),
+        ("filename", "文件名命中", row.file_name.as_str()),
+        ("path", "路径命中", row.path.as_str()),
+    ];
+
+    for (field, origin, text) in candidates {
+        let spans = highlight_spans(text, terms);
+        if !spans.is_empty() {
+            return (field.to_string(), origin.to_string());
+        }
+    }
+
+    ("snippet".to_string(), "正文摘要命中".to_string())
+}
+
+fn highlight_spans(text: &str, terms: &[String]) -> Vec<HighlightSpan> {
+    let lower_text = text.to_lowercase();
+    let mut spans = Vec::new();
+
+    for term in terms {
+        let needle = term.trim();
+        if needle.is_empty() {
+            continue;
+        }
+
+        let normalized_needle = needle.to_lowercase();
+        for (start, _) in lower_text.match_indices(&normalized_needle) {
+            let start_char = lower_text[..start].chars().count();
+            let end_char = start_char + normalized_needle.chars().count();
+            spans.push(HighlightSpan {
+                start: start_char,
+                end: end_char,
+            });
+        }
+    }
+
+    if spans.is_empty() {
+        return spans;
+    }
+
+    spans.sort_by_key(|span| (span.start, span.end));
+    let mut merged: Vec<HighlightSpan> = Vec::with_capacity(spans.len());
+    for span in spans {
+        if let Some(last) = merged.last_mut() {
+            if span.start <= last.end {
+                last.end = last.end.max(span.end);
+                continue;
+            }
+        }
+        merged.push(span);
+    }
+
+    merged
+}
+
+fn build_search_snippet(
+    text: &str,
+    terms: &[String],
+    max_chars: usize,
+) -> (String, Vec<HighlightSpan>, usize, usize, usize) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return (String::new(), Vec::new(), 0, 0, 0);
+    }
+
+    let spans = highlight_spans(trimmed, terms);
+    if spans.is_empty() {
+        let total = trimmed.chars().count();
+        let snippet = truncate_by_chars(trimmed, max_chars);
+        let end = total.min(max_chars);
+        return (snippet, Vec::new(), 0, end, total);
+    }
+
+    let chars: Vec<char> = trimmed.chars().collect();
+    let total_chars = chars.len();
+    if total_chars <= max_chars {
+        return (trimmed.to_string(), spans, 0, total_chars, total_chars);
+    }
+
+    let focus_start = spans.first().map(|span| span.start).unwrap_or(0);
+    let focus_end = spans.last().map(|span| span.end).unwrap_or(total_chars);
+    let target = max_chars.min(total_chars);
+    let before = target.saturating_mul(2) / 5;
+    let after = target.saturating_sub(before);
+
+    let mut snippet_start = focus_start.saturating_sub(before);
+    let mut snippet_end = (focus_end + after).min(total_chars);
+
+    if snippet_end.saturating_sub(snippet_start) < target {
+        let shortfall = target - (snippet_end - snippet_start);
+        let left_pad = shortfall / 2;
+        let right_pad = shortfall - left_pad;
+        snippet_start = snippet_start.saturating_sub(left_pad);
+        snippet_end = (snippet_end + right_pad).min(total_chars);
+    }
+
+    if snippet_end.saturating_sub(snippet_start) > target {
+        snippet_end = snippet_start + target;
+    }
+
+    let leading_ellipsis = snippet_start > 0;
+    let trailing_ellipsis = snippet_end < total_chars;
+    let mut snippet = slice_chars(trimmed, snippet_start, snippet_end);
+    if leading_ellipsis {
+        snippet = format!("…{snippet}");
+    }
+    if trailing_ellipsis {
+        snippet.push('…');
+    }
+
+    let prefix_offset = if leading_ellipsis { 1 } else { 0 };
+    let mut adjusted_spans = Vec::with_capacity(spans.len());
+    for span in spans {
+        let start = span.start.max(snippet_start);
+        let end = span.end.min(snippet_end);
+        if end <= start {
+            continue;
+        }
+        adjusted_spans.push(HighlightSpan {
+            start: start - snippet_start + prefix_offset,
+            end: end - snippet_start + prefix_offset,
+        });
+    }
+
+    (snippet, adjusted_spans, snippet_start, snippet_end, total_chars)
+}
+
+fn boosted_search_score(base_score: f32, match_origin: &str, modified_at: i64, now: i64) -> f32 {
+    let field_boost = match match_origin {
+        "文件名命中" => 0.45,
+        "标题命中" => 0.32,
+        "正文摘要命中" => 0.18,
+        "路径命中" => 0.08,
+        _ => 0.12,
+    };
+
+    let recency_boost = if modified_at > 0 && now > modified_at {
+        let age_days = ((now - modified_at) as f32 / 86_400.0).min(3_650.0);
+        (1.0 / (1.0 + age_days / 30.0)) * 0.15
+    } else {
+        0.05
+    };
+
+    base_score + field_boost + recency_boost
+}
+
+fn truncate_by_chars(text: &str, limit: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= limit {
+        return text.to_string();
+    }
+
+    let mut snippet: String = chars.iter().take(limit).collect();
+    snippet.push('…');
+    snippet
+}
+
+fn slice_chars(text: &str, start: usize, end: usize) -> String {
+    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+}
+
+fn favorite_result_target(
+    path: &str,
+    heading: &str,
+    paragraph: Option<u32>,
+    page: Option<u32>,
+) -> String {
+    format!(
+        "result|{}|{}|{}|{}",
+        path,
+        heading.trim(),
+        paragraph.map(|value| value.to_string()).unwrap_or_default(),
+        page.map(|value| value.to_string()).unwrap_or_default()
+    )
 }
 
 fn database_path() -> PathBuf {

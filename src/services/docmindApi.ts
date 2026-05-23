@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ChunkView,
+  FavoriteView,
   DocumentView,
   IndexDirView,
   IndexStatusView,
   IndexSettingsView,
   ParserRuntimeView,
+  RecentDocumentView,
+  SearchHistoryView,
   SearchDebugView,
   SearchResultView,
 } from "../types/docmind";
@@ -37,6 +40,12 @@ export const docmindApi = {
     invoke<DocumentView[]>("list_documents_in_dir", { path }),
   listDocumentChunks: (path: string) =>
     invoke<ChunkView[]>("list_document_chunks", { path }),
+  listSearchHistory: (limit = 12) =>
+    invoke<SearchHistoryView[]>("list_search_history", { limit }),
+  listRecentDocuments: (limit = 8) =>
+    invoke<RecentDocumentView[]>("list_recent_documents", { limit }),
+  listFavorites: (limit = 12) =>
+    invoke<FavoriteView[]>("list_favorites", { limit }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>
@@ -55,6 +64,13 @@ export const docmindApi = {
     invoke<void>("set_index_dir_enabled", { path, enabled }),
   retryFailedFile: (path: string) =>
     invoke<IndexStatusView>("retry_failed_file", { path }),
+  toggleResultFavorite: (
+    path: string,
+    heading: string,
+    paragraph: number | null | undefined,
+    page: number | null | undefined,
+    fileName: string,
+  ) => invoke<boolean>("toggle_result_favorite", { path, heading, paragraph, page, file_name: fileName }),
   clearAllIndexes: () => invoke<IndexStatusView>("clear_all_indexes"),
   pauseIndexing: () => invoke<IndexStatusView>("pause_indexing"),
   resumeIndexing: () => invoke<IndexStatusView>("resume_indexing"),

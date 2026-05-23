@@ -38,6 +38,10 @@ pub async fn get_search_debug_report(
         .debug_counts()
         .await
         .map_err(|error| error.to_string())?;
+    state
+        .record_search_history(&query, hits.len())
+        .await
+        .map_err(|error| error.to_string())?;
 
     Ok(SearchDebugView {
         query: query.clone(),
@@ -122,6 +126,54 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
 #[tauri::command]
 pub async fn open_file(path: String, state: tauri::State<'_, Database>) -> Result<(), String> {
     state.open_file(&path).await
+}
+
+#[tauri::command]
+pub async fn list_search_history(
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<super::models::SearchHistoryView>, String> {
+    state
+        .list_search_history(limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_recent_documents(
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<super::models::RecentDocumentView>, String> {
+    state
+        .list_recent_documents(limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_favorites(
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<super::models::FavoriteView>, String> {
+    state
+        .list_favorites(limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn toggle_result_favorite(
+    path: String,
+    heading: String,
+    paragraph: Option<u32>,
+    page: Option<u32>,
+    file_name: String,
+    state: tauri::State<'_, Database>,
+) -> Result<bool, String> {
+    state
+        .toggle_result_favorite(&path, &heading, paragraph, page, &file_name)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

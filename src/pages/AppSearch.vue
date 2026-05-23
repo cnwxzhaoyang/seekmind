@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { CheckCircle2, Clock, Cpu, ExternalLink, FileText, Filter, Search } from "lucide-vue-next";
+import { CheckCircle2, Clock, Cpu, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindSearchResultCard from "../components/docmind/DocMindSearchResultCard.vue";
+import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
+import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import { docmindApi } from "../services/docmindApi";
-import type { IndexStatusView, ParserRuntimeView, SearchDebugView, SearchResultView } from "../types/docmind";
+import type {
+  FavoriteView,
+  IndexDirView,
+  IndexStatusView,
+  ParserRuntimeView,
+  RecentDocumentView,
+  SearchDebugView,
+  SearchHistoryView,
+  SearchResultView,
+} from "../types/docmind";
 
 const router = useRouter();
 const query = ref("");
@@ -14,16 +24,77 @@ const results = ref<SearchResultView[]>([]);
 const debugReport = ref<SearchDebugView | null>(null);
 const status = ref<IndexStatusView | null>(null);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
+const quickDirs = ref<IndexDirView[]>([]);
+const searchHistory = ref<SearchHistoryView[]>([]);
+const recentDocuments = ref<RecentDocumentView[]>([]);
+const favorites = ref<FavoriteView[]>([]);
 const selectedChunkCount = ref<number | null>(null);
 const loading = ref(false);
 const errorMessage = ref("");
+const expandedGroups = ref<Record<string, boolean>>({});
+
+interface SearchResultGroup {
+  path: string;
+  fileName: string;
+  ext: string;
+  topResult: SearchResultView;
+  results: SearchResultView[];
+  count: number;
+  totalScore: number;
+}
 
 const selected = computed(
   () => results.value.find((item) => item.id === selectedId.value) ?? results.value[0] ?? null,
 );
 
+const groupedResults = computed<SearchResultGroup[]>(() => {
+  const groups = new Map<string, SearchResultView[]>();
+
+  for (const item of results.value) {
+    const items = groups.get(item.path) ?? [];
+    items.push(item);
+    groups.set(item.path, items);
+  }
+
+  return [...groups.entries()]
+    .map(([path, items]) => {
+      const sorted = [...items].sort((a, b) => b.score - a.score);
+      return {
+        path,
+        fileName: sorted[0]?.fileName ?? path,
+        ext: sorted[0]?.ext ?? "",
+        topResult: sorted[0],
+        results: sorted,
+        count: sorted.length,
+        totalScore: sorted.reduce((sum, item) => sum + item.score, 0),
+      };
+    })
+    .sort((a, b) => b.topResult.score - a.topResult.score);
+});
+
+const matchedFieldLabel = computed(() => selected.value?.match_origin || "");
+
+const favoriteTargetSet = computed(() => {
+  const set = new Set<string>();
+  for (const favorite of favorites.value) {
+    if (favorite.favorite_type === "result") {
+      set.add(favorite.target);
+    }
+  }
+  return set;
+});
+
+const favoriteResults = computed(() => favorites.value.filter((favorite) => favorite.favorite_type === "result"));
+
 const selectResult = (id: string) => {
   selectedId.value = id;
+};
+
+const toggleGroup = (path: string) => {
+  expandedGroups.value = {
+    ...expandedGroups.value,
+    [path]: !expandedGroups.value[path],
+  };
 };
 
 const loadStatus = async () => {
@@ -32,6 +103,20 @@ const loadStatus = async () => {
 
 const loadParserRuntime = async () => {
   parserRuntime.value = await docmindApi.getParserRuntime();
+};
+
+const loadQuickPanels = async () => {
+  const [dirs, history, recent, favoriteList] = await Promise.all([
+    docmindApi.listIndexDirs(),
+    docmindApi.listSearchHistory(10),
+    docmindApi.listRecentDocuments(8),
+    docmindApi.listFavorites(12),
+  ]);
+
+  quickDirs.value = dirs.filter((dir) => dir.enabled);
+  searchHistory.value = history;
+  recentDocuments.value = recent;
+  favorites.value = favoriteList;
 };
 
 const loadSelectedChunkCount = async (path: string | undefined) => {
@@ -57,12 +142,16 @@ const runSearch = async () => {
     const items = await docmindApi.searchDocuments(query.value, 20);
     results.value = items;
     selectedId.value = items[0]?.id ?? "";
+    expandedGroups.value = {};
     debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20);
+    await loadQuickPanels();
   } catch (error) {
     results.value = [];
     selectedId.value = "";
+    expandedGroups.value = {};
     errorMessage.value = error instanceof Error ? error.message : "搜索失败";
     debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20).catch(() => null);
+    await loadQuickPanels();
   } finally {
     loading.value = false;
   }
@@ -71,6 +160,7 @@ const runSearch = async () => {
 const openSelectedFile = async () => {
   if (!selected.value) return;
   await docmindApi.openFile(selected.value.path);
+  await loadQuickPanels();
 };
 
 const viewChunks = async () => {
@@ -78,8 +168,48 @@ const viewChunks = async () => {
   await router.push({ path: "/chunks", query: { path: selected.value.path } });
 };
 
+const runQueryFromHistory = async (item: SearchHistoryView) => {
+  query.value = item.query;
+  await runSearch();
+};
+
+const openRecentDocument = async (item: RecentDocumentView) => {
+  await docmindApi.openFile(item.path);
+  await loadQuickPanels();
+};
+
+const openFavoriteDocument = async (path: string) => {
+  await docmindApi.openFile(path);
+  await loadQuickPanels();
+};
+
+const toggleFavoriteResult = async (item: SearchResultView) => {
+  await docmindApi.toggleResultFavorite(
+    item.path,
+    item.heading,
+    item.paragraph ?? null,
+    item.page ?? null,
+    item.fileName,
+  );
+  await loadQuickPanels();
+};
+
+const isResultFavorited = (
+  path: string,
+  heading: string,
+  paragraph?: number | null,
+  page?: number | null,
+) => {
+  const key = `result|${path}|${heading.trim()}|${paragraph ?? ""}|${page ?? ""}`;
+  return favoriteTargetSet.value.has(key);
+};
+
+const openLibrary = async () => {
+  await router.push({ path: "/library" });
+};
+
 onMounted(async () => {
-  await Promise.all([loadStatus(), loadParserRuntime(), runSearch()]);
+  await Promise.all([loadStatus(), loadParserRuntime(), loadQuickPanels(), runSearch()]);
 });
 
 watch(query, () => {
@@ -130,7 +260,7 @@ watch(
         </button>
       </form>
 
-      <div v-if="debugReport" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div v-if="debugReport" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">SQLite 文档 / 段落</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">
@@ -151,6 +281,92 @@ watch(
           <div class="text-[11px] uppercase tracking-wide text-slate-500">命中数量</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">{{ debugReport.hit_count }}</div>
         </div>
+        <div v-if="selected" class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">摘要裁剪</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">
+            {{ selected.snippet_window_start }} - {{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}
+          </div>
+          <div class="mt-1 text-xs text-slate-500">{{ selected.match_origin }}</div>
+        </div>
+      </div>
+
+      <div class="mt-4 grid gap-3 xl:grid-cols-4">
+        <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+            <History :size="13" />
+            最近搜索
+          </div>
+          <div v-if="searchHistory.length === 0" class="text-xs text-slate-400">暂无历史</div>
+          <div v-else class="flex flex-wrap gap-2">
+            <button
+              v-for="item in searchHistory"
+              :key="item.query"
+              class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              @click="runQueryFromHistory(item)"
+            >
+              {{ item.query }}
+            </button>
+          </div>
+        </section>
+
+        <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+            <FileText :size="13" />
+            最近打开
+          </div>
+          <div v-if="recentDocuments.length === 0" class="text-xs text-slate-400">暂无最近文档</div>
+          <div v-else class="space-y-2">
+            <button
+              v-for="item in recentDocuments"
+              :key="item.path"
+              class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-100"
+              @click="openRecentDocument(item)"
+            >
+              <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
+              <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+            </button>
+          </div>
+        </section>
+
+        <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+            <Star :size="13" />
+            收藏结果
+          </div>
+          <div v-if="favoriteResults.length === 0" class="text-xs text-slate-400">
+            暂无收藏
+          </div>
+          <div v-else class="space-y-2">
+            <button
+              v-for="item in favoriteResults"
+              :key="item.target"
+              class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-100"
+              @click="openFavoriteDocument(item.path)"
+            >
+              <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
+              <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+            </button>
+          </div>
+        </section>
+
+        <section class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+            <FolderOpen :size="13" />
+            常用目录
+          </div>
+          <div v-if="quickDirs.length === 0" class="text-xs text-slate-400">暂无索引目录</div>
+          <div v-else class="space-y-2">
+            <button
+              v-for="dir in quickDirs"
+              :key="dir.path"
+              class="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-100"
+              @click="openLibrary"
+            >
+              <div class="truncate font-medium text-slate-900">{{ dir.path }}</div>
+              <div class="mt-1 text-[11px] text-slate-400">{{ dir.docs }} 文档 · {{ dir.chunks }} 段落</div>
+            </button>
+          </div>
+        </section>
       </div>
     </header>
 
@@ -158,7 +374,8 @@ watch(
       <section class="min-h-0 overflow-y-auto border-r border-slate-200 bg-slate-50/50 p-5">
         <div class="mb-4 flex items-center justify-between">
           <div class="text-sm text-slate-500">
-            找到 <span class="font-semibold text-slate-800">{{ results.length }}</span> 个相关段落
+            找到 <span class="font-semibold text-slate-800">{{ groupedResults.length }}</span> 个相关文档，
+            共 <span class="font-semibold text-slate-800">{{ results.length }}</span> 个相关段落
           </div>
           <button class="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">
             <Filter :size="14" />
@@ -175,12 +392,17 @@ watch(
         </div>
 
         <div class="space-y-3">
-          <DocMindSearchResultCard
-            v-for="item in results"
-            :key="item.id"
-            :item="item"
-            :selected="selectedId === item.id"
-            @select="selectResult(item.id)"
+          <DocMindSearchResultGroupCard
+            v-for="group in groupedResults"
+            :key="group.path"
+            :group="group"
+            :query="query"
+            :selected-id="selectedId"
+            :expanded="Boolean(expandedGroups[group.path])"
+            :is-favorited="isResultFavorited"
+            @select="selectResult"
+            @toggle="toggleGroup"
+            @toggle-favorite="toggleFavoriteResult"
           />
         </div>
       </section>
@@ -200,20 +422,27 @@ watch(
           <div class="mb-4 flex flex-wrap gap-2">
             <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
             <DocMindBadge>{{ selected.page ? `第 ${selected.page} 页` : `第 ${selected.paragraph} 段` }}</DocMindBadge>
+            <DocMindBadge tone="success">命中：{{ matchedFieldLabel }}</DocMindBadge>
+            <DocMindBadge tone="default">摘要：{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
             <DocMindBadge tone="default">切片数 {{ selectedChunkCount ?? "..." }}</DocMindBadge>
             <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
           </div>
 
           <div class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
             <div class="mb-2 text-sm font-medium text-slate-700">命中段落</div>
-            <p class="text-sm leading-7 text-slate-700">{{ selected.snippet }}</p>
+            <p class="text-sm leading-7 text-slate-700">
+              <DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
+            </p>
           </div>
 
           <div class="mt-5 rounded-3xl border border-slate-200 bg-white p-5">
             <div class="mb-2 text-sm font-medium text-slate-700">上下文预览</div>
             <p class="text-sm leading-7 text-slate-500">上一段：构建离线仓库时，需要先解析项目的 parent POM、BOM 以及 build plugins。</p>
-            <p class="mt-3 text-sm leading-7 text-slate-800">当前段：{{ selected.snippet }}</p>
+            <p class="mt-3 text-sm leading-7 text-slate-800">
+              当前段：<DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
+            </p>
             <p class="mt-3 text-sm leading-7 text-slate-500">下一段：生成后的 .offline-repo 可以通过 settings.xml 指定为本地仓库路径。</p>
+            <p class="mt-3 text-xs text-slate-400">摘要来自原文字符区间 {{ selected.snippet_window_start }} - {{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</p>
           </div>
 
           <div class="mt-6 grid grid-cols-2 gap-3">
