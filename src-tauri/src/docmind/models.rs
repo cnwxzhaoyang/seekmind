@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct IndexDirView {
@@ -47,12 +47,17 @@ pub struct ChunkView {
 pub struct FailedFileView {
     pub file: String,
     pub reason: String,
+    pub category: String,
+    pub code: String,
+    pub retry_count: usize,
+    pub last_failed_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CurrentTaskView {
     pub label: String,
     pub details: String,
+    pub state: String,
     pub current_dir: String,
     pub current_file: String,
     pub progress: u8,
@@ -60,6 +65,22 @@ pub struct CurrentTaskView {
     pub total: usize,
     pub succeeded: usize,
     pub failed: usize,
+    pub updated: usize,
+    pub skipped: usize,
+    pub deleted: usize,
+    pub pause_requested: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexRunSummaryView {
+    pub updated: usize,
+    pub skipped: usize,
+    pub deleted: usize,
+    pub scanned: usize,
+    pub total: usize,
+    pub succeeded: usize,
+    pub failed: usize,
+    pub completed_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +91,7 @@ pub struct IndexStatusView {
     pub failed_files: usize,
     pub current_task: Option<CurrentTaskView>,
     pub failed_items: Vec<FailedFileView>,
+    pub last_run: Option<IndexRunSummaryView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,4 +114,11 @@ pub struct SearchDebugView {
     pub tantivy_documents: usize,
     pub hit_count: usize,
     pub hits: Vec<SearchResultView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexSettingsView {
+    pub exclude_dirs: Vec<String>,
+    pub exclude_exts: Vec<String>,
+    pub max_file_size_mb: u64,
 }

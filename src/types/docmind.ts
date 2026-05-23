@@ -40,11 +40,16 @@ export interface ChunkView {
 export interface FailedFileView {
   file: string;
   reason: string;
+  category: string;
+  code: string;
+  retry_count: number;
+  last_failed_at: string;
 }
 
 export interface CurrentTaskView {
   label: string;
   details: string;
+  state: string;
   current_dir: string;
   current_file: string;
   progress: number;
@@ -52,6 +57,21 @@ export interface CurrentTaskView {
   total: number;
   succeeded: number;
   failed: number;
+  updated: number;
+  skipped: number;
+  deleted: number;
+  pause_requested: boolean;
+}
+
+export interface IndexRunSummaryView {
+  updated: number;
+  skipped: number;
+  deleted: number;
+  scanned: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+  completed_at: string;
 }
 
 export interface IndexStatusView {
@@ -61,6 +81,7 @@ export interface IndexStatusView {
   failed_files: number;
   current_task: CurrentTaskView | null;
   failed_items: FailedFileView[];
+  last_run: IndexRunSummaryView | null;
 }
 
 export interface ParserRuntimeView {
@@ -81,4 +102,10 @@ export interface SearchDebugView {
   tantivy_documents: number;
   hit_count: number;
   hits: SearchResultView[];
+}
+
+export interface IndexSettingsView {
+  exclude_dirs: string[];
+  exclude_exts: string[];
+  max_file_size_mb: number;
 }

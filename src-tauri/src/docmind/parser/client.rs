@@ -130,7 +130,7 @@ impl PythonParserClient {
                     }
                     Err(ParserClientError::ParserFailed(
                         response.error.unwrap_or(ParserError {
-                            code: "UNKNOWN".to_string(),
+                            code: "parser_unknown".to_string(),
                             message: "parser returned error without details".to_string(),
                             details: None,
                         }),

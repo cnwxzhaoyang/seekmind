@@ -10,20 +10,27 @@ const dirs = ref<IndexDirView[]>([]);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
 const loading = ref(false);
 const refreshing = ref(false);
+const retryingTarget = ref<string | null>(null);
 const errorMessage = ref("");
+const dashboardRefreshing = ref(false);
+const actionState = ref<"pausing" | "resuming" | null>(null);
 let pollTimer: number | null = null;
 
 const failedGroups = computed(() => {
   const groups = new Map<string, FailedFileView[]>();
 
   for (const item of status.value?.failed_items ?? []) {
-    const dir = item.file.includes("/") ? item.file.slice(0, item.file.lastIndexOf("/")) : "未分类";
-    const items = groups.get(dir) ?? [];
+    const code = item.code || "unknown";
+    const items = groups.get(code) ?? [];
     items.push(item);
-    groups.set(dir, items);
+    groups.set(code, items);
   }
 
-  return [...groups.entries()].map(([dir, items]) => ({ dir, items }));
+  return [...groups.entries()].map(([code, items]) => ({
+    code,
+    category: items[0]?.category || "未知",
+    items,
+  }));
 });
 
 const loadStatus = async () => {
@@ -60,7 +67,44 @@ const loadParserRuntime = async () => {
 };
 
 const refreshDashboard = async () => {
-  await Promise.all([loadStatus(), loadDirs(), loadParserRuntime()]);
+  if (dashboardRefreshing.value) {
+    return;
+  }
+
+  dashboardRefreshing.value = true;
+  try {
+    await loadStatus();
+    await loadDirs();
+    await loadParserRuntime();
+  } finally {
+    dashboardRefreshing.value = false;
+  }
+};
+
+const stopPolling = () => {
+  if (pollTimer !== null) {
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+};
+
+const scheduleNextRefresh = () => {
+  stopPolling();
+  if (status.value?.current_task && status.value.current_task.state !== "paused") {
+    pollTimer = window.setTimeout(async () => {
+      await refreshDashboard();
+      if (status.value?.current_task && status.value.current_task.state !== "paused") {
+        scheduleNextRefresh();
+      } else {
+        await refreshDashboard();
+      }
+    }, 2500);
+  }
+};
+
+const syncDashboardState = async () => {
+  await refreshDashboard();
+  scheduleNextRefresh();
 };
 
 const refreshIndex = async () => {
@@ -74,12 +118,68 @@ const refreshIndex = async () => {
     console.error("[DocMind] refreshIndex failed", error);
   } finally {
     refreshing.value = false;
-    await refreshDashboard();
+    await syncDashboardState();
   }
 };
 
+const pauseIndexing = async () => {
+    refreshing.value = true;
+    actionState.value = "pausing";
+    errorMessage.value = "";
+
+    try {
+      status.value = await docmindApi.pauseIndexing();
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, "暂停索引失败");
+    console.error("[DocMind] pauseIndexing failed", error);
+    } finally {
+      refreshing.value = false;
+      actionState.value = null;
+      await syncDashboardState();
+    }
+  };
+
+const resumeIndexing = async () => {
+    refreshing.value = true;
+    actionState.value = "resuming";
+    errorMessage.value = "";
+
+    try {
+      status.value = await docmindApi.resumeIndexing();
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, "恢复索引失败");
+    console.error("[DocMind] resumeIndexing failed", error);
+    } finally {
+      refreshing.value = false;
+      actionState.value = null;
+      await syncDashboardState();
+    }
+  };
+
+const taskDisplayState = computed(() => {
+  const task = status.value?.current_task;
+  if (!task) {
+    return { label: "空闲", tone: "default" as const, spinning: false };
+  }
+
+  if (actionState.value === "pausing") {
+    return { label: "暂停中", tone: "warning" as const, spinning: true };
+  }
+  if (actionState.value === "resuming") {
+    return { label: "恢复中", tone: "warning" as const, spinning: true };
+  }
+  if (task.state === "paused") {
+    return { label: "已暂停", tone: "default" as const, spinning: false };
+  }
+  if (task.state === "running") {
+    return { label: "运行中", tone: "warning" as const, spinning: true };
+  }
+
+  return { label: task.state || "处理中", tone: "warning" as const, spinning: true };
+});
+
 const retryFailedFile = async (path: string) => {
-  refreshing.value = true;
+  retryingTarget.value = path;
   errorMessage.value = "";
 
   try {
@@ -88,25 +188,34 @@ const retryFailedFile = async (path: string) => {
     errorMessage.value = formatDocmindError(error, "重新处理失败");
     console.error("[DocMind] retryFailedFile failed", error);
   } finally {
-    refreshing.value = false;
-    await refreshDashboard();
+    retryingTarget.value = null;
+    await syncDashboardState();
+  }
+};
+
+const retryFailedGroup = async (code: string, items: FailedFileView[]) => {
+  retryingTarget.value = code;
+  errorMessage.value = "";
+
+  try {
+    for (const item of items) {
+      await docmindApi.retryFailedFile(item.file);
+    }
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, "批量重新处理失败");
+    console.error("[DocMind] retryFailedGroup failed", error);
+  } finally {
+    retryingTarget.value = null;
+    await syncDashboardState();
   }
 };
 
 onMounted(async () => {
-  await refreshDashboard();
-
-  pollTimer = window.setInterval(() => {
-    if (!refreshing.value) {
-      void refreshDashboard();
-    }
-  }, 2000);
+  await syncDashboardState();
 });
 
 onUnmounted(() => {
-  if (pollTimer !== null) {
-    window.clearInterval(pollTimer);
-  }
+  stopPolling();
 });
 </script>
 
@@ -117,6 +226,23 @@ onUnmounted(() => {
       <p class="mt-1 text-sm text-slate-500">查看当前索引进度、失败文件和可重新处理的项目。</p>
     </div>
     <div class="mb-6 flex items-center justify-end">
+      <button
+        class="mr-2 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+        :disabled="refreshing || loading || !status?.current_task || status.current_task.state === 'paused'"
+        @click="pauseIndexing"
+      >
+        <Loader2 v-if="actionState === 'pausing'" :size="16" class="animate-spin" />
+        {{ actionState === 'pausing' ? "暂停中..." : "暂停索引" }}
+      </button>
+      <button
+        class="mr-2 inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+        :disabled="refreshing || loading || !status?.current_task || status.current_task.state !== 'paused'"
+        @click="resumeIndexing"
+      >
+        <Loader2 v-if="actionState === 'resuming'" :size="16" class="animate-spin" />
+        <RefreshCw v-else :size="16" />
+        {{ actionState === 'resuming' ? "恢复中..." : "恢复索引" }}
+      </button>
       <button
         class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
         :disabled="refreshing || loading"
@@ -136,6 +262,47 @@ onUnmounted(() => {
       ]" :key="card.label" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="text-xs text-slate-500">{{ card.label }}</div>
         <div class="mt-2 text-2xl font-semibold text-slate-950">{{ card.value }}</div>
+      </div>
+    </div>
+
+    <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="mb-4 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">本次增量摘要</div>
+          <div class="mt-1 text-xs text-slate-500">
+            最近一次索引执行后的增量结果，任务结束后也会保留。
+          </div>
+        </div>
+        <DocMindBadge tone="default">
+          {{ status?.last_run ? status.last_run.completed_at : "暂无最近运行" }}
+        </DocMindBadge>
+      </div>
+      <div v-if="status?.last_run" class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">更新</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.updated }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">跳过</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.skipped }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">删除</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.deleted }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">扫描候选</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.scanned }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">成功 / 失败</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">
+            {{ status.last_run.succeeded }} / {{ status.last_run.failed }}
+          </div>
+        </div>
+      </div>
+      <div v-else class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
+        还没有形成最近一次增量摘要。
       </div>
     </div>
 
@@ -222,9 +389,9 @@ onUnmounted(() => {
           <div class="text-sm font-semibold text-slate-900">当前任务</div>
           <div class="mt-1 text-xs text-slate-500">{{ status?.current_task?.label ?? "暂无任务" }}</div>
         </div>
-        <DocMindBadge :tone="status?.current_task ? 'warning' : 'default'">
-          <Loader2 v-if="status?.current_task" class="mr-1 animate-spin" :size="13" />
-          {{ status?.current_task ? "处理中" : "空闲" }}
+        <DocMindBadge :tone="taskDisplayState.tone">
+          <Loader2 v-if="taskDisplayState.spinning" class="mr-1 animate-spin" :size="13" />
+          {{ taskDisplayState.label }}
         </DocMindBadge>
       </div>
       <div class="h-2 rounded-full bg-slate-100">
@@ -238,7 +405,7 @@ onUnmounted(() => {
         />
       </div>
 
-      <div v-if="status?.current_task" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div v-if="status?.current_task" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <div class="rounded-2xl bg-slate-50 px-4 py-3">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">正在处理目录</div>
           <div class="mt-1 truncate text-sm font-medium text-slate-900">
@@ -258,6 +425,18 @@ onUnmounted(() => {
         <div class="rounded-2xl bg-slate-50 px-4 py-3">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">累计失败</div>
           <div class="mt-1 text-sm font-semibold text-rose-700">{{ status.current_task.failed }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">本次更新</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.current_task.updated }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">本次跳过</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.current_task.skipped }}</div>
+        </div>
+        <div class="rounded-2xl bg-slate-50 px-4 py-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">本次删除</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.current_task.deleted }}</div>
         </div>
       </div>
 
@@ -279,22 +458,40 @@ onUnmounted(() => {
         当前没有失败项
       </div>
       <div v-else class="space-y-5">
-        <div v-for="group in failedGroups" :key="group.dir" class="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-          <div class="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <FolderOpen :size="14" />
-            {{ group.dir }}
+        <div v-for="group in failedGroups" :key="group.code" class="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <FolderOpen :size="14" />
+              {{ group.category }}
+              <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.code }}</span>
+              <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.items.length }}</span>
+            </div>
+            <button
+              class="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="retryingTarget === group.code"
+              @click="retryFailedGroup(group.code, group.items)"
+            >
+              <RefreshCw :size="13" :class="{ 'animate-spin': retryingTarget === group.code }" />
+              组内重试
+            </button>
           </div>
           <div class="space-y-3">
             <div v-for="file in group.items" :key="file.file" class="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm">
               <div>
                 <div class="text-sm font-medium text-slate-800">{{ file.file }}</div>
                 <div class="mt-1 text-xs text-slate-500">{{ file.reason }}</div>
+                <div class="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                  <span>代码 {{ file.code }}</span>
+                  <span>重试 {{ file.retry_count }} 次</span>
+                  <span>{{ file.last_failed_at }}</span>
+                </div>
               </div>
               <button
-                class="text-xs font-medium text-slate-600"
+                class="text-xs font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="retryingTarget === file.file"
                 @click="retryFailedFile(file.file)"
               >
-                重新处理
+                {{ retryingTarget === file.file ? "处理中..." : "重新处理" }}
               </button>
             </div>
           </div>

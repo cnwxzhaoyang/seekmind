@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use chrono::{TimeZone, Utc};
 use dirs::{data_dir, download_dir, document_dir};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
@@ -15,7 +16,7 @@ use crate::docmind::models::{
 };
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::indexer;
-use crate::docmind::storage::types::{ChunkRecord, ExtractedDocument};
+use crate::docmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocument, IndexSettings};
 
 #[derive(Clone)]
 pub struct Database {
@@ -70,12 +71,46 @@ struct ChunkRow {
 struct FailedFileRow {
     file: String,
     reason: String,
+    category: String,
+    code: String,
+    retry_count: i64,
+    last_failed_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct IndexRunSummaryRow {
+    updated: i64,
+    skipped: i64,
+    deleted: i64,
+    scanned: i64,
+    total: i64,
+    succeeded: i64,
+    failed: i64,
+    completed_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub(crate) struct IndexCheckpointRow {
+    pub(crate) dir_paths: String,
+    pub(crate) pending_delete_paths: String,
+    pub(crate) pending_update_paths: String,
+    pub(crate) phase: String,
+    pub(crate) current_dir: String,
+    pub(crate) current_file: String,
+    pub(crate) total: i64,
+    pub(crate) processed: i64,
+    pub(crate) succeeded: i64,
+    pub(crate) failed: i64,
+    pub(crate) updated: i64,
+    pub(crate) skipped: i64,
+    pub(crate) deleted: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct CurrentTaskRow {
     label: String,
     details: String,
+    state: String,
     current_dir: String,
     current_file: String,
     progress: i64,
@@ -83,6 +118,10 @@ struct CurrentTaskRow {
     total: i64,
     succeeded: i64,
     failed: i64,
+    updated: i64,
+    skipped: i64,
+    deleted: i64,
+    pause_requested: i64,
 }
 
 impl Database {
@@ -99,7 +138,7 @@ impl Database {
             .foreign_keys(true);
 
         let pool = SqlitePoolOptions::new()
-            .max_connections(1)
+            .max_connections(4)
             .connect_with(options)
             .await
             .map_err(|error| error.to_string())?;
@@ -116,6 +155,22 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_current_task_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_failed_files_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_index_settings_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_index_run_summary_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_index_checkpoint_table()
             .await
             .map_err(|error| error.to_string())?;
 
@@ -146,6 +201,61 @@ impl Database {
         }
 
         Ok(database)
+    }
+
+    pub async fn get_index_settings(&self) -> Result<IndexSettings, sqlx::Error> {
+        #[derive(Debug, sqlx::FromRow)]
+        struct IndexSettingsRow {
+            exclude_dirs: String,
+            exclude_exts: String,
+            max_file_size_mb: i64,
+        }
+
+        let row = sqlx::query_as::<_, IndexSettingsRow>(
+            r#"
+            SELECT exclude_dirs, exclude_exts, max_file_size_mb
+            FROM index_settings
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(IndexSettings {
+                exclude_dirs: serde_json::from_str(&row.exclude_dirs).unwrap_or_default(),
+                exclude_exts: serde_json::from_str(&row.exclude_exts).unwrap_or_default(),
+                max_file_size_mb: row.max_file_size_mb.max(0) as u64,
+            })
+        } else {
+            Ok(IndexSettings {
+                exclude_dirs: default_exclude_dirs(),
+                exclude_exts: Vec::new(),
+                max_file_size_mb: 50,
+            })
+        }
+    }
+
+    pub async fn save_index_settings(&self, settings: &IndexSettings) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO index_settings
+                (id, exclude_dirs, exclude_exts, max_file_size_mb)
+            VALUES (
+                1,
+                ?,
+                ?,
+                ?
+            )
+            "#,
+        )
+        .bind(serde_json::to_string(&settings.exclude_dirs).unwrap_or_else(|_| "[]".to_string()))
+        .bind(serde_json::to_string(&settings.exclude_exts).unwrap_or_else(|_| "[]".to_string()))
+        .bind(settings.max_file_size_mb as i64)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
     pub async fn list_index_dirs(&self) -> Result<Vec<IndexDirView>, sqlx::Error> {
@@ -252,6 +362,40 @@ impl Database {
             .collect())
     }
 
+    pub(crate) async fn document_states_in_dir(
+        &self,
+        dir_path: &str,
+    ) -> Result<Vec<DocumentState>, sqlx::Error> {
+        #[derive(Debug, sqlx::FromRow)]
+        struct DocumentStateRow {
+            path: String,
+            file_size: i64,
+            modified_at: i64,
+            content_hash: String,
+        }
+
+        let rows = sqlx::query_as::<_, DocumentStateRow>(
+            r#"
+            SELECT path, file_size, modified_at, content_hash
+            FROM documents
+            WHERE dir_path = ?
+            "#,
+        )
+        .bind(dir_path)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| DocumentState {
+                path: row.path,
+                file_size: row.file_size,
+                modified_at: row.modified_at,
+                content_hash: row.content_hash,
+            })
+            .collect())
+    }
+
     pub async fn list_document_chunks(&self, path: &str) -> Result<Vec<ChunkView>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ChunkRow>(
             r#"
@@ -288,6 +432,7 @@ impl Database {
         let indexed_chunks = self.count_chunks().await?;
         let failed_items = self.failed_items().await?;
         let current_task = self.current_task().await?;
+        let last_run = self.last_index_run_summary().await?;
         let scanned_docs = current_task
             .as_ref()
             .map(|task| task.total)
@@ -300,6 +445,7 @@ impl Database {
             failed_files: failed_items.len(),
             current_task,
             failed_items,
+            last_run,
         })
     }
 
@@ -381,6 +527,38 @@ impl Database {
         Ok(())
     }
 
+    pub(crate) async fn record_failed_file(
+        &self,
+        file: &str,
+        reason: &str,
+        category: &str,
+        code: &str,
+    ) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT INTO failed_files
+                (file, reason, category, code, retry_count, first_failed_at, last_failed_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(file) DO UPDATE SET
+                reason = excluded.reason,
+                category = excluded.category,
+                code = excluded.code,
+                retry_count = failed_files.retry_count + 1,
+                last_failed_at = excluded.last_failed_at
+            "#,
+        )
+        .bind(file)
+        .bind(reason)
+        .bind(category)
+        .bind(code)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn enabled_index_dir_paths(&self) -> Result<Vec<String>, sqlx::Error> {
         let rows = sqlx::query(
             r#"
@@ -438,12 +616,14 @@ impl Database {
         document: &ExtractedDocument,
         chunks: &[ChunkRecord],
     ) -> Result<(), sqlx::Error> {
+        self.clear_document_by_path(&document.path).await?;
         let document_id = Uuid::new_v4().to_string();
 
         sqlx::query(
             r#"
-            INSERT INTO documents (id, dir_path, path, file_name, ext, modified, content)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO documents
+                (id, dir_path, path, file_name, ext, file_size, modified_at, content_hash, modified, content)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&document_id)
@@ -451,6 +631,9 @@ impl Database {
         .bind(&document.path)
         .bind(&document.file_name)
         .bind(&document.ext)
+        .bind(document.file_size)
+        .bind(document.modified_at)
+        .bind(&document.content_hash)
         .bind(&document.modified)
         .bind(&document.content)
         .execute(&self.pool)
@@ -532,10 +715,125 @@ impl Database {
         Ok(())
     }
 
+    pub(crate) async fn save_index_run_summary(
+        &self,
+        updated: usize,
+        skipped: usize,
+        deleted: usize,
+        scanned: usize,
+        total: usize,
+        succeeded: usize,
+        failed: usize,
+    ) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO index_run_summary
+                (id, updated, skipped, deleted, scanned, total, succeeded, failed, completed_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(updated as i64)
+        .bind(skipped as i64)
+        .bind(deleted as i64)
+        .bind(scanned as i64)
+        .bind(total as i64)
+        .bind(succeeded as i64)
+        .bind(failed as i64)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn last_index_run_summary(&self) -> Result<Option<crate::docmind::models::IndexRunSummaryView>, sqlx::Error> {
+        let row = sqlx::query_as::<_, IndexRunSummaryRow>(
+            r#"
+            SELECT updated, skipped, deleted, scanned, total, succeeded, failed, completed_at
+            FROM index_run_summary
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|row| crate::docmind::models::IndexRunSummaryView {
+            updated: row.updated as usize,
+            skipped: row.skipped as usize,
+            deleted: row.deleted as usize,
+            scanned: row.scanned as usize,
+            total: row.total as usize,
+            succeeded: row.succeeded as usize,
+            failed: row.failed as usize,
+            completed_at: format_unix_ts(row.completed_at),
+        }))
+    }
+
+    pub(crate) async fn save_index_checkpoint(
+        &self,
+        dir_paths: &[String],
+        pending_delete_paths: &[String],
+        pending_update_paths: &[String],
+        phase: &str,
+        current_dir: &str,
+        current_file: &str,
+        total: usize,
+        processed: usize,
+        succeeded: usize,
+        failed: usize,
+        updated: usize,
+        skipped: usize,
+        deleted: usize,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO index_checkpoint
+                (id, dir_paths, pending_delete_paths, pending_update_paths, phase, current_dir, current_file, total, processed, succeeded, failed, updated, skipped, deleted)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(serde_json::to_string(dir_paths).unwrap_or_else(|_| "[]".to_string()))
+        .bind(serde_json::to_string(pending_delete_paths).unwrap_or_else(|_| "[]".to_string()))
+        .bind(serde_json::to_string(pending_update_paths).unwrap_or_else(|_| "[]".to_string()))
+        .bind(phase)
+        .bind(current_dir)
+        .bind(current_file)
+        .bind(total as i64)
+        .bind(processed as i64)
+        .bind(succeeded as i64)
+        .bind(failed as i64)
+        .bind(updated as i64)
+        .bind(skipped as i64)
+        .bind(deleted as i64)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_index_checkpoint(&self) -> Result<Option<IndexCheckpointRow>, sqlx::Error> {
+        sqlx::query_as::<_, IndexCheckpointRow>(
+            r#"
+            SELECT dir_paths, pending_delete_paths, pending_update_paths, phase, current_dir, current_file, total, processed, succeeded, failed, updated, skipped, deleted
+            FROM index_checkpoint
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+    }
+
+    pub(crate) async fn clear_index_checkpoint(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM index_checkpoint WHERE id = 1")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub(crate) async fn set_current_task(
         &self,
         label: &str,
         details: &str,
+        state: &str,
         current_dir: &str,
         current_file: &str,
         progress: u8,
@@ -543,16 +841,21 @@ impl Database {
         total: usize,
         succeeded: usize,
         failed: usize,
+        updated: usize,
+        skipped: usize,
+        deleted: usize,
+        pause_requested: bool,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO current_task
-                (id, label, details, current_dir, current_file, progress, scanned, total, succeeded, failed)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, pause_requested)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(label)
         .bind(details)
+        .bind(state)
         .bind(current_dir)
         .bind(current_file)
         .bind(progress as i64)
@@ -560,6 +863,10 @@ impl Database {
         .bind(total as i64)
         .bind(succeeded as i64)
         .bind(failed as i64)
+        .bind(updated as i64)
+        .bind(skipped as i64)
+        .bind(deleted as i64)
+        .bind(pause_requested as i64)
         .execute(&self.pool)
         .await?;
 
@@ -571,6 +878,43 @@ impl Database {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub(crate) async fn request_pause_current_task(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE current_task
+            SET pause_requested = 1
+            WHERE id = 1
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn clear_pause_request(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE current_task
+            SET pause_requested = 0
+            WHERE id = 1
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn current_task_pause_requested(&self) -> Result<bool, sqlx::Error> {
+        let row = sqlx::query("SELECT pause_requested FROM current_task WHERE id = 1")
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(row
+            .and_then(|row| row.try_get::<i64, _>(0).ok())
+            .map(|value| value != 0)
+            .unwrap_or(false))
     }
 
     pub(crate) async fn clear_all_index_data(&self) -> Result<(), sqlx::Error> {
@@ -588,6 +932,9 @@ impl Database {
             .execute(&self.pool)
             .await?;
         sqlx::query("DELETE FROM current_task")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM index_run_summary")
             .execute(&self.pool)
             .await?;
         sqlx::query(
@@ -674,6 +1021,9 @@ impl Database {
                 path TEXT NOT NULL UNIQUE,
                 file_name TEXT NOT NULL,
                 ext TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0,
+                modified_at INTEGER NOT NULL DEFAULT 0,
+                content_hash TEXT NOT NULL DEFAULT '',
                 modified TEXT NOT NULL,
                 content TEXT NOT NULL,
                 FOREIGN KEY(dir_path) REFERENCES index_dirs(path) ON DELETE CASCADE
@@ -694,7 +1044,12 @@ impl Database {
             r#"
             CREATE TABLE IF NOT EXISTS failed_files (
                 file TEXT PRIMARY KEY,
-                reason TEXT NOT NULL
+                reason TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'unknown',
+                code TEXT NOT NULL DEFAULT 'unknown',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                first_failed_at INTEGER NOT NULL DEFAULT 0,
+                last_failed_at INTEGER NOT NULL DEFAULT 0
             )
             "#,
             r#"
@@ -702,13 +1057,57 @@ impl Database {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 label TEXT NOT NULL,
                 details TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'idle',
                 current_dir TEXT NOT NULL DEFAULT '',
                 current_file TEXT NOT NULL DEFAULT '',
                 progress INTEGER NOT NULL,
                 scanned INTEGER NOT NULL,
                 total INTEGER NOT NULL,
                 succeeded INTEGER NOT NULL DEFAULT 0,
-                failed INTEGER NOT NULL DEFAULT 0
+                failed INTEGER NOT NULL DEFAULT 0,
+                updated INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0,
+                deleted INTEGER NOT NULL DEFAULT 0,
+                pause_requested INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS index_run_summary (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                updated INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0,
+                deleted INTEGER NOT NULL DEFAULT 0,
+                scanned INTEGER NOT NULL DEFAULT 0,
+                total INTEGER NOT NULL DEFAULT 0,
+                succeeded INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                completed_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS index_checkpoint (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                dir_paths TEXT NOT NULL,
+                pending_delete_paths TEXT NOT NULL,
+                pending_update_paths TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                current_dir TEXT NOT NULL DEFAULT '',
+                current_file TEXT NOT NULL DEFAULT '',
+                total INTEGER NOT NULL DEFAULT 0,
+                processed INTEGER NOT NULL DEFAULT 0,
+                succeeded INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                updated INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0,
+                deleted INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS index_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                exclude_dirs TEXT NOT NULL,
+                exclude_exts TEXT NOT NULL,
+                max_file_size_mb INTEGER NOT NULL
             )
             "#,
         ];
@@ -717,6 +1116,19 @@ impl Database {
             sqlx::query(statement).execute(&self.pool).await?;
         }
 
+        Ok(())
+    }
+
+    async fn ensure_index_settings_row(&self) -> Result<(), sqlx::Error> {
+        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM index_settings").await?;
+        if count == 0 {
+            let defaults = IndexSettings {
+                exclude_dirs: default_exclude_dirs(),
+                exclude_exts: Vec::new(),
+                max_file_size_mb: 50,
+            };
+            self.save_index_settings(&defaults).await?;
+        }
         Ok(())
     }
 
@@ -752,11 +1164,113 @@ impl Database {
                 "ALTER TABLE current_task ADD COLUMN failed INTEGER NOT NULL DEFAULT 0",
             );
         }
+        if !columns.contains("updated") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN updated INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+        if !columns.contains("skipped") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+        if !columns.contains("deleted") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+        if !columns.contains("state") {
+            alter_statements.push("ALTER TABLE current_task ADD COLUMN state TEXT NOT NULL DEFAULT 'idle'");
+        }
+        if !columns.contains("pause_requested") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0",
+            );
+        }
 
         for statement in alter_statements {
             sqlx::query(statement).execute(&self.pool).await?;
         }
 
+        Ok(())
+    }
+
+    async fn ensure_failed_files_columns(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(failed_files)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        let mut alter_statements = Vec::new();
+        if !columns.contains("category") {
+            alter_statements.push(
+                "ALTER TABLE failed_files ADD COLUMN category TEXT NOT NULL DEFAULT 'unknown'",
+            );
+        }
+        if !columns.contains("code") {
+            alter_statements.push(
+                "ALTER TABLE failed_files ADD COLUMN code TEXT NOT NULL DEFAULT 'unknown'",
+            );
+        }
+        if !columns.contains("retry_count") {
+            alter_statements.push(
+                "ALTER TABLE failed_files ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+        if !columns.contains("first_failed_at") {
+            alter_statements.push(
+                "ALTER TABLE failed_files ADD COLUMN first_failed_at INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+        if !columns.contains("last_failed_at") {
+            alter_statements.push(
+                "ALTER TABLE failed_files ADD COLUMN last_failed_at INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+
+        for statement in alter_statements {
+            sqlx::query(statement).execute(&self.pool).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn ensure_index_run_summary_row(&self) -> Result<(), sqlx::Error> {
+        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM index_run_summary").await?;
+        if count == 0 {
+            self.save_index_run_summary(0, 0, 0, 0, 0, 0, 0).await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_index_checkpoint_table(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS index_checkpoint (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                dir_paths TEXT NOT NULL,
+                pending_delete_paths TEXT NOT NULL,
+                pending_update_paths TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                current_dir TEXT NOT NULL DEFAULT '',
+                current_file TEXT NOT NULL DEFAULT '',
+                total INTEGER NOT NULL DEFAULT 0,
+                processed INTEGER NOT NULL DEFAULT 0,
+                succeeded INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                updated INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0,
+                deleted INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -776,6 +1290,24 @@ impl Database {
         if !columns.contains("dir_path") {
             alter_statements.push(
                 "ALTER TABLE documents ADD COLUMN dir_path TEXT NOT NULL DEFAULT ''",
+            );
+            altered = true;
+        }
+        if !columns.contains("file_size") {
+            alter_statements.push(
+                "ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0",
+            );
+            altered = true;
+        }
+        if !columns.contains("modified_at") {
+            alter_statements.push(
+                "ALTER TABLE documents ADD COLUMN modified_at INTEGER NOT NULL DEFAULT 0",
+            );
+            altered = true;
+        }
+        if !columns.contains("content_hash") {
+            alter_statements.push(
+                "ALTER TABLE documents ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''",
             );
             altered = true;
         }
@@ -826,9 +1358,9 @@ impl Database {
     async fn failed_items(&self) -> Result<Vec<FailedFileView>, sqlx::Error> {
         let rows = sqlx::query_as::<_, FailedFileRow>(
             r#"
-            SELECT file, reason
+            SELECT file, reason, category, code, retry_count, last_failed_at
             FROM failed_files
-            ORDER BY file
+            ORDER BY category, file
             "#,
         )
         .fetch_all(&self.pool)
@@ -839,6 +1371,10 @@ impl Database {
             .map(|row| FailedFileView {
                 file: row.file,
                 reason: row.reason,
+                category: row.category,
+                code: row.code,
+                retry_count: row.retry_count.max(0) as usize,
+                last_failed_at: format_unix_ts(row.last_failed_at),
             })
             .collect())
     }
@@ -846,7 +1382,7 @@ impl Database {
     async fn current_task(&self) -> Result<Option<CurrentTaskView>, sqlx::Error> {
         let row = sqlx::query_as::<_, CurrentTaskRow>(
             r#"
-            SELECT label, details, current_dir, current_file, progress, scanned, total, succeeded, failed
+            SELECT label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, pause_requested
             FROM current_task
             WHERE id = 1
             "#,
@@ -857,6 +1393,7 @@ impl Database {
         Ok(row.map(|row| CurrentTaskView {
             label: row.label,
             details: row.details,
+            state: row.state,
             current_dir: row.current_dir,
             current_file: row.current_file,
             progress: row.progress as u8,
@@ -864,6 +1401,10 @@ impl Database {
             total: row.total as usize,
             succeeded: row.succeeded as usize,
             failed: row.failed as usize,
+            updated: row.updated as usize,
+            skipped: row.skipped as usize,
+            deleted: row.deleted as usize,
+            pause_requested: row.pause_requested != 0,
         }))
     }
 
@@ -931,4 +1472,30 @@ fn database_path() -> PathBuf {
 
 pub fn sqlite_database_path() -> PathBuf {
     database_path()
+}
+
+fn default_exclude_dirs() -> Vec<String> {
+    vec![
+        "node_modules".to_string(),
+        ".git".to_string(),
+        "target".to_string(),
+        "Library".to_string(),
+        "Caches".to_string(),
+        "Application Support".to_string(),
+    ]
+}
+
+fn current_unix_ts() -> i64 {
+    Utc::now().timestamp()
+}
+
+fn format_unix_ts(timestamp: i64) -> String {
+    if timestamp <= 0 {
+        return "未知".to_string();
+    }
+
+    Utc.timestamp_opt(timestamp, 0)
+        .single()
+        .map(|value| value.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "未知".to_string())
 }

@@ -23,7 +23,7 @@ def main() -> int:
             return write_error(
                 request_id="",
                 error=ParserError(
-                    code="INVALID_REQUEST",
+                    code="invalid_request",
                     message="empty request payload",
                 ),
             )
@@ -35,7 +35,7 @@ def main() -> int:
             return write_error(
                 request_id=request.request_id,
                 error=ParserError(
-                    code="INVALID_REQUEST",
+                    code="invalid_request",
                     message=f"unsupported command: {request.command}",
                 ),
             )
@@ -55,17 +55,17 @@ def main() -> int:
     except FileNotFoundError as exc:
         return write_error(
             request_id=extract_request_id(raw if "raw" in locals() else ""),
-            error=ParserError(code="FILE_NOT_FOUND", message=str(exc)),
+            error=ParserError(code="file_not_found", message=str(exc)),
         )
     except zipfile.BadZipFile as exc:
         return write_error(
             request_id=extract_request_id(raw if "raw" in locals() else ""),
-            error=ParserError(code="PARSE_FAILED", message="invalid docx archive", details=str(exc)),
+            error=ParserError(code="parse_failed", message="invalid docx archive", details=str(exc)),
         )
     except Exception as exc:  # noqa: BLE001
         return write_error(
             request_id=extract_request_id(raw if "raw" in locals() else ""),
-            error=ParserError(code="INTERNAL_ERROR", message=str(exc)),
+            error=ParserError(code="internal_error", message=str(exc)),
         )
 
 

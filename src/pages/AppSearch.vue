@@ -8,7 +8,7 @@ import { docmindApi } from "../services/docmindApi";
 import type { IndexStatusView, ParserRuntimeView, SearchDebugView, SearchResultView } from "../types/docmind";
 
 const router = useRouter();
-const query = ref("maven 离线仓库");
+const query = ref("");
 const selectedId = ref<string>("");
 const results = ref<SearchResultView[]>([]);
 const debugReport = ref<SearchDebugView | null>(null);

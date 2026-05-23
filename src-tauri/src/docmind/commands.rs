@@ -4,6 +4,7 @@ use super::models::{IndexStatusView, SearchDebugView};
 use super::search::{normalize_query, normalize_search_text};
 use super::storage::{indexer, Database};
 use super::parser::python_parser_config_json;
+use super::storage::types::IndexSettings;
 use std::path::Path;
 
 #[tauri::command]
@@ -230,4 +231,57 @@ pub async fn clear_all_indexes(
         status.indexed_docs, status.indexed_chunks, status.failed_files
     );
     Ok(status)
+}
+
+#[tauri::command]
+pub async fn pause_indexing(
+    state: tauri::State<'_, Database>,
+) -> Result<IndexStatusView, String> {
+    state
+        .request_pause_current_task()
+        .await
+        .map_err(|error| error.to_string())?;
+    state.get_index_status().await.map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn resume_indexing(
+    state: tauri::State<'_, Database>,
+) -> Result<IndexStatusView, String> {
+    state
+        .clear_pause_request()
+        .await
+        .map_err(|error| error.to_string())?;
+    indexer::resume(&state).await
+}
+
+#[tauri::command]
+pub async fn get_index_settings(
+    state: tauri::State<'_, Database>,
+) -> Result<super::models::IndexSettingsView, String> {
+    let settings = state
+        .get_index_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(super::models::IndexSettingsView {
+        exclude_dirs: settings.exclude_dirs,
+        exclude_exts: settings.exclude_exts,
+        max_file_size_mb: settings.max_file_size_mb,
+    })
+}
+
+#[tauri::command]
+pub async fn save_index_settings(
+    settings: super::models::IndexSettingsView,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    let settings = IndexSettings {
+        exclude_dirs: settings.exclude_dirs,
+        exclude_exts: settings.exclude_exts,
+        max_file_size_mb: settings.max_file_size_mb,
+    };
+    state
+        .save_index_settings(&settings)
+        .await
+        .map_err(|error| error.to_string())
 }

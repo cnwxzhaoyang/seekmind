@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html.parser
 import re
+import subprocess
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +11,7 @@ from xml.etree import ElementTree
 
 from .models import ParsedChunk, ParsedDocument, ParserError, ParserOptions
 
-SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "docx"}
+SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "docx", "pdf"}
 
 
 @dataclass
@@ -45,6 +46,7 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         self._buffer: List[str] = []
         self._heading_stack: List[tuple[int, str]] = []
         self._current_row: List[str] = []
+        self._row_in_progress = False
 
     def handle_starttag(self, tag: str, attrs):  # type: ignore[override]
         self._stack.append(tag)
@@ -55,6 +57,7 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
             self._flush()
             if tag in {"td", "th"}:
                 self._current_row.append("")
+                self._row_in_progress = True
 
     def handle_endtag(self, tag: str):  # type: ignore[override]
         if tag == "title":
@@ -82,6 +85,7 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
     def _flush_title(self) -> None:
         text = normalize_whitespace("".join(self._buffer))
         self._buffer.clear()
+        text = strip_noise_paragraph(text)
         if text and self.title is None:
             self.title = text
 
@@ -91,6 +95,7 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
             if row_text:
                 self.blocks.append(Block(kind="table", text=row_text, heading=self._current_heading_path()))
         self._current_row.clear()
+        self._row_in_progress = False
 
     def _flush(self) -> None:
         text = normalize_whitespace("".join(self._buffer))
@@ -101,7 +106,7 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         if current_tag and current_tag.startswith("h") and len(current_tag) == 2 and current_tag[1].isdigit():
             level = int(current_tag[1])
             self._push_heading(level, text)
-            self.blocks.append(Block(kind="heading", text=text))
+            self.blocks.append(Block(kind="heading", text=text, heading=self._current_heading_path()))
             return
         if current_tag in {"li", "p", "pre", "blockquote", "td", "th"}:
             self.blocks.append(Block(kind=current_tag or "text", text=text, heading=self._current_heading_path()))
@@ -121,13 +126,13 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
 
 def parse_document(path: Path, options: ParserOptions) -> ParsedDocument:
     if not path.exists():
-        raise parser_error("FILE_NOT_FOUND", f"file not found: {path}")
+        raise parser_error("file_not_found", f"file not found: {path}")
     if not path.is_file():
-        raise parser_error("INVALID_REQUEST", f"not a file: {path}")
+        raise parser_error("invalid_request", f"not a file: {path}")
 
     ext = normalize_extension(path.suffix.lower().lstrip("."))
     if ext not in SUPPORTED_EXTENSIONS:
-        raise parser_error("UNSUPPORTED_FILE_TYPE", f"unsupported file type: {ext}")
+        raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
 
     if ext in {"txt", "md", "markdown"}:
         title, blocks = parse_text_like(path, ext)
@@ -135,9 +140,12 @@ def parse_document(path: Path, options: ParserOptions) -> ParsedDocument:
         title, blocks = parse_html(path)
     elif ext == "docx":
         title, blocks = parse_docx(path)
+    elif ext == "pdf":
+        title, blocks = parse_pdf(path)
     else:
-        raise parser_error("UNSUPPORTED_FILE_TYPE", f"unsupported file type: {ext}")
+        raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
 
+    blocks = merge_short_blocks(normalize_blocks(blocks))
     content = "\n\n".join(block.text for block in blocks if block.text.strip())
     chunks = build_chunks(blocks, path, options)
     if options.max_chunks is not None:
@@ -192,7 +200,9 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
         paragraph = normalize_whitespace("\n".join(buffer))
         buffer = []
         if paragraph:
-            blocks.append(Block(kind="paragraph", text=paragraph, heading=heading_path()))
+            cleaned = strip_noise_paragraph(paragraph)
+            if cleaned:
+                blocks.append(Block(kind="paragraph", text=cleaned, heading=heading_path()))
             if title is None:
                 title = heading_path() or detect_title_like_line(paragraph) or fallback_title
 
@@ -201,7 +211,9 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
         table = normalize_whitespace(" | ".join(line.strip(" |") for line in table_buffer))
         table_buffer = []
         if table:
-            blocks.append(Block(kind="table", text=table, heading=heading_path()))
+            cleaned = strip_noise_paragraph(table)
+            if cleaned:
+                blocks.append(Block(kind="table", text=cleaned, heading=heading_path()))
             if title is None:
                 title = heading_path() or fallback_title
 
@@ -238,7 +250,7 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
                 heading_stack.pop()
             heading_stack.append((level, heading))
             current_heading = heading_path()
-            blocks.append(Block(kind="heading", text=heading))
+            blocks.append(Block(kind="heading", text=heading, heading=heading_path()))
             if title is None:
                 title = current_heading or heading
             continue
@@ -258,7 +270,9 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
 
         if is_markdown_list_item(stripped) or is_blockquote(stripped):
             flush_buffer()
-            blocks.append(Block(kind="paragraph", text=strip_markdown_marker(stripped), heading=heading_path()))
+            cleaned = strip_noise_paragraph(strip_markdown_marker(stripped))
+            if cleaned:
+                blocks.append(Block(kind="paragraph", text=cleaned, heading=heading_path()))
             if title is None:
                 title = heading_path() or detect_title_like_line(stripped) or fallback_title
             continue
@@ -280,7 +294,7 @@ def parse_html(path: Path) -> Tuple[Optional[str], List[Block]]:
     extractor.feed(text)
     extractor.close()
     title = extractor.title or infer_title_from_blocks(extractor.blocks) or path.stem
-    return title, extractor.blocks
+    return title, normalize_blocks(extractor.blocks)
 
 
 def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
@@ -332,10 +346,100 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
     return title or path.stem, blocks
 
 
+def parse_pdf(path: Path) -> Tuple[Optional[str], List[Block]]:
+    title: Optional[str] = None
+    blocks: List[Block] = []
+
+    try:
+        from pypdf import PdfReader  # type: ignore
+
+        reader = PdfReader(str(path))
+        for page_index, page in enumerate(reader.pages, start=1):
+            page_text = normalize_whitespace((page.extract_text() or "").replace("\x0c", "\n\n"))
+            if not page_text:
+                continue
+
+            page_paragraphs = split_paragraphs(page_text)
+            for paragraph in page_paragraphs:
+                if not paragraph:
+                    continue
+                if title is None:
+                    title = detect_title_like_line(paragraph) or path.stem
+                blocks.append(
+                    Block(
+                        kind="paragraph",
+                        text=paragraph,
+                        heading=title,
+                        page_no=page_index,
+                    )
+                )
+
+        if blocks:
+            return title or path.stem, blocks
+    except Exception as exc:  # noqa: BLE001
+        parse_error = exc
+    else:
+        parse_error = None
+
+    pdftotext = _extract_pdf_with_pdftotext(path)
+    if pdftotext is not None:
+        title, blocks = pdftotext
+        return title or path.stem, blocks
+
+    if parse_error is not None:
+        raise parser_error("parse_failed", "pdf extraction failed", details=str(parse_error))
+
+    raise parser_error("parse_failed", "pdf extraction failed")
+
+
+def _extract_pdf_with_pdftotext(path: Path) -> Optional[Tuple[Optional[str], List[Block]]]:
+    try:
+        result = subprocess.run(
+            ["pdftotext", "-layout", "-enc", "UTF-8", str(path), "-"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    raw_text = result.stdout.replace("\r\n", "\n")
+    if not raw_text.strip():
+        return None
+
+    blocks: List[Block] = []
+    title: Optional[str] = None
+
+    for page_index, page_text in enumerate(raw_text.split("\f"), start=1):
+        paragraphs = split_paragraphs(page_text.replace("\x0c", "\n\n"))
+        for paragraph in paragraphs:
+            if not paragraph:
+                continue
+            if title is None:
+                title = detect_title_like_line(paragraph) or path.stem
+            blocks.append(
+                Block(
+                    kind="paragraph",
+                    text=paragraph,
+                    heading=title,
+                    page_no=page_index,
+                )
+            )
+
+    if not blocks:
+        return None
+
+    return title or path.stem, blocks
+
+
 def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) -> List[ParsedChunk]:
     chunks: List[ParsedChunk] = []
     max_chars = max(int(options.max_chunk_chars), 120)
     current_heading: Optional[str] = None
+    heading_path: Optional[str] = None
     current_page: Optional[int] = None
     buffer: List[str] = []
     order = 1
@@ -348,7 +452,7 @@ def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) ->
             return
         chunks.append(
             ParsedChunk(
-                heading=current_heading or path.stem,
+                heading=heading_path or current_heading or path.stem,
                 page_no=current_page,
                 text=text,
                 order=order,
@@ -360,10 +464,11 @@ def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) ->
         if block.kind == "heading":
             flush_buffer()
             current_heading = block.text
+            heading_path = block.heading or block.text
             continue
 
         if block.heading:
-            current_heading = block.heading
+            heading_path = block.heading
         if block.page_no is not None:
             current_page = block.page_no
 
@@ -383,7 +488,7 @@ def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) ->
         if joined:
             chunks.append(
                 ParsedChunk(
-                    heading=current_heading or path.stem,
+                    heading=heading_path or current_heading or path.stem,
                     page_no=None,
                     text=joined,
                     order=1,
@@ -434,6 +539,64 @@ def split_block_text(block: Block, max_chars: int) -> Iterable[str]:
         return split_text(text, max_chars)
 
     return split_text(text, max_chars)
+
+
+def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Block]:
+    merged: List[Block] = []
+    pending: Optional[Block] = None
+
+    for block in blocks:
+        if block.kind == "heading":
+            if pending is not None:
+                merged.append(pending)
+                pending = None
+            merged.append(block)
+            continue
+
+        text = normalize_whitespace(block.text)
+        if not text:
+            continue
+
+        if pending is None:
+            pending = Block(kind=block.kind, text=text, heading=block.heading, page_no=block.page_no)
+            continue
+
+        same_context = pending.heading == block.heading and pending.page_no == block.page_no
+        if same_context and len(pending.text) + len(text) < min_chars:
+            pending = Block(
+                kind=pending.kind,
+                text=normalize_whitespace(f"{pending.text}\n\n{text}"),
+                heading=pending.heading,
+                page_no=pending.page_no,
+            )
+        else:
+            merged.append(pending)
+            pending = Block(kind=block.kind, text=text, heading=block.heading, page_no=block.page_no)
+
+    if pending is not None:
+        merged.append(pending)
+
+    return merged
+
+
+def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
+    normalized: List[Block] = []
+    for block in blocks:
+        text = normalize_whitespace(block.text)
+        if not text:
+            continue
+        text = strip_noise_paragraph(text)
+        if not text:
+            continue
+        normalized.append(
+            Block(
+                kind=block.kind,
+                text=text,
+                heading=block.heading,
+                page_no=block.page_no,
+            )
+        )
+    return normalized
 
 
 def split_paragraphs(text: str) -> List[str]:
@@ -538,6 +701,30 @@ def detect_title_like_line(text: str) -> Optional[str]:
     return first_line[:80]
 
 
+def strip_noise_paragraph(text: str) -> str:
+    cleaned = normalize_whitespace(text)
+    if not cleaned:
+        return ""
+    if len(cleaned) <= 1:
+        return ""
+    if is_noise_line(cleaned):
+        return ""
+    return cleaned
+
+
+def is_noise_line(text: str) -> bool:
+    lowered = text.lower()
+    if lowered in {"copyright", "all rights reserved"}:
+        return True
+    if re.fullmatch(r"page\s+\d+(\s+of\s+\d+)?", lowered):
+        return True
+    if re.fullmatch(r"\d+", text):
+        return True
+    if len(text) <= 3 and not re.search(r"[a-zA-Z\u4e00-\u9fff]", text):
+        return True
+    return False
+
+
 def normalize_extension(ext: str) -> str:
     return "md" if ext == "markdown" else ext
 
@@ -551,7 +738,19 @@ def strip_ns(tag: str) -> str:
 
 
 def parser_error(code: str, message: str, details: Optional[str] = None) -> Exception:
-    return ParserException(ParserError(code=code, message=message, details=details))
+    return ParserException(ParserError(code=normalize_error_code(code), message=message, details=details))
+
+
+def normalize_error_code(code: str) -> str:
+    normalized = code.strip().lower().replace("-", "_")
+    legacy_map = {
+        "invalidrequest": "invalid_request",
+        "filenotfound": "file_not_found",
+        "parsefailed": "parse_failed",
+        "internalerror": "internal_error",
+        "unsupportedfiletype": "unsupported_file_type",
+    }
+    return legacy_map.get(normalized.replace("_", ""), normalized)
 
 
 class ParserException(Exception):

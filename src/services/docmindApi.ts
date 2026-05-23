@@ -4,6 +4,7 @@ import type {
   DocumentView,
   IndexDirView,
   IndexStatusView,
+  IndexSettingsView,
   ParserRuntimeView,
   SearchDebugView,
   SearchResultView,
@@ -41,6 +42,9 @@ export const docmindApi = {
   getSearchDebugReport: (query: string, limit = 20) =>
     invoke<SearchDebugView>("get_search_debug_report", { query, limit }),
   getIndexStatus: () => invoke<IndexStatusView>("get_index_status"),
+  getIndexSettings: () => invoke<IndexSettingsView>("get_index_settings"),
+  saveIndexSettings: (settings: IndexSettingsView) =>
+    invoke<void>("save_index_settings", { settings }),
   getParserRuntime: () => invoke<ParserRuntimeView>("get_parser_runtime"),
   refreshIndex: () => invoke<IndexStatusView>("refresh_index"),
   refreshIndexDir: (path: string) =>
@@ -52,5 +56,7 @@ export const docmindApi = {
   retryFailedFile: (path: string) =>
     invoke<IndexStatusView>("retry_failed_file", { path }),
   clearAllIndexes: () => invoke<IndexStatusView>("clear_all_indexes"),
+  pauseIndexing: () => invoke<IndexStatusView>("pause_indexing"),
+  resumeIndexing: () => invoke<IndexStatusView>("resume_indexing"),
   openFile: (path: string) => invoke<void>("open_file", { path }),
 };

@@ -3,14 +3,15 @@ use std::io::Read;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
+use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use crate::docmind::parser::{python_parse_or_fallback, ParsedDocument};
 
-use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument};
+use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "markdown", "html", "htm", "docx", "log", "toml", "json", "yaml", "yml", "xml",
+    "txt", "md", "markdown", "html", "htm", "docx", "pdf", "log", "toml", "json", "yaml", "yml", "xml",
     "csv", "rs", "js", "ts", "tsx", "jsx", "py",
 ];
 
@@ -23,7 +24,15 @@ const SKIPPED_DIRECTORIES: &[&str] = &[
     "Application Support",
 ];
 
+#[allow(dead_code)]
 pub fn discover_supported_files(dir_paths: &[String]) -> Vec<DiscoveredFile> {
+    discover_supported_files_with_settings(dir_paths, &default_index_settings())
+}
+
+pub fn discover_supported_files_with_settings(
+    dir_paths: &[String],
+    settings: &IndexSettings,
+) -> Vec<DiscoveredFile> {
     let mut discovered = Vec::new();
 
     for dir_path in dir_paths {
@@ -32,10 +41,42 @@ pub fn discover_supported_files(dir_paths: &[String]) -> Vec<DiscoveredFile> {
             continue;
         }
 
-        walk_directory(root, dir_path, &mut discovered);
+        walk_directory(root, dir_path, settings, &mut discovered);
     }
 
     discovered
+}
+
+pub fn snapshot_supported_file(
+    dir_path: &str,
+    path: &Path,
+    settings: &IndexSettings,
+) -> Result<DiscoveredFile, String> {
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    let file_size = metadata.len() as i64;
+    let max_file_size_bytes = (settings.max_file_size_mb.saturating_mul(1024 * 1024)) as i64;
+    if max_file_size_bytes > 0 && file_size > max_file_size_bytes {
+        return Err(format!(
+            "文件过大: {} ({} bytes > {} MB)",
+            path.to_string_lossy(),
+            file_size,
+            settings.max_file_size_mb
+        ));
+    }
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default();
+
+    Ok(DiscoveredFile {
+        dir_path: dir_path.to_string(),
+        path: path.to_path_buf(),
+        file_size,
+        modified_at,
+        content_hash: hash_file_bytes(path)?,
+    })
 }
 
 #[allow(dead_code)]
@@ -74,7 +115,7 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
         "html" | "htm" => strip_html_tags(&read_text_file(path)?),
         "docx" => extract_docx_text(path)?,
         "pdf" => {
-            return Err("暂不支持 PDF 解析，请后续接入 PDF 文本提取或 OCR".to_string());
+            return Err("暂不支持 PDF 解析，请启用 Python 解析器或接入 PDF 文本提取".to_string());
         }
         _ => return Err(format!("不支持的文件类型: {ext}")),
     };
@@ -84,6 +125,14 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
         path: path.to_string_lossy().to_string(),
         file_name,
         ext,
+        file_size: metadata.len() as i64,
+        modified_at: metadata
+            .modified()
+            .ok()
+            .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or_default(),
+        content_hash: hash_file_bytes(path)?,
         modified,
         content: normalize_whitespace(&content),
     })
@@ -124,7 +173,12 @@ pub fn chunk_document(document: &ExtractedDocument) -> Vec<ChunkRecord> {
     chunks
 }
 
-fn walk_directory(root: &Path, dir_path: &str, discovered: &mut Vec<DiscoveredFile>) {
+fn walk_directory(
+    root: &Path,
+    dir_path: &str,
+    settings: &IndexSettings,
+    discovered: &mut Vec<DiscoveredFile>,
+) {
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(_) => return,
@@ -136,32 +190,39 @@ fn walk_directory(root: &Path, dir_path: &str, discovered: &mut Vec<DiscoveredFi
         let name = file_name.to_string_lossy();
 
         if path.is_dir() {
-            if should_skip_directory(&name) {
+            if should_skip_directory(&name, settings) {
                 continue;
             }
-            walk_directory(&path, dir_path, discovered);
+            walk_directory(&path, dir_path, settings, discovered);
             continue;
         }
 
-        if path.is_file() && is_supported_file(&path) {
-            discovered.push(DiscoveredFile {
-                dir_path: dir_path.to_string(),
-                path,
-            });
+        if path.is_file() && is_supported_file(&path, settings) {
+            if let Ok(file) = snapshot_supported_file(dir_path, &path, settings) {
+                discovered.push(file);
+            }
         }
     }
 }
 
-fn should_skip_directory(name: &str) -> bool {
+fn should_skip_directory(name: &str, settings: &IndexSettings) -> bool {
     SKIPPED_DIRECTORIES
         .iter()
         .any(|candidate| candidate.eq_ignore_ascii_case(name))
+        || settings
+            .exclude_dirs
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(name))
         || name.starts_with('.')
 }
 
-fn is_supported_file(path: &Path) -> bool {
+fn is_supported_file(path: &Path, settings: &IndexSettings) -> bool {
     let ext = extension(path);
     SUPPORTED_EXTENSIONS.iter().any(|candidate| *candidate == ext)
+        && !settings
+            .exclude_exts
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(&ext))
 }
 
 fn extension(path: &Path) -> String {
@@ -173,6 +234,29 @@ fn extension(path: &Path) -> String {
 
 fn read_text_file(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| error.to_string())
+}
+
+fn hash_file_bytes(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[allow(dead_code)]
+fn default_index_settings() -> IndexSettings {
+    IndexSettings {
+        exclude_dirs: vec![
+            "node_modules".to_string(),
+            ".git".to_string(),
+            "target".to_string(),
+            "Library".to_string(),
+            "Caches".to_string(),
+            "Application Support".to_string(),
+        ],
+        exclude_exts: Vec::new(),
+        max_file_size_mb: 50,
+    }
 }
 
 fn extract_docx_text(path: &Path) -> Result<String, String> {
@@ -334,6 +418,9 @@ fn convert_python_document(file: &DiscoveredFile, parsed: ParsedDocument) -> (Ex
         path: file.path.to_string_lossy().to_string(),
         file_name: file_name.clone(),
         ext,
+        file_size: file.file_size,
+        modified_at: file.modified_at,
+        content_hash: file.content_hash.clone(),
         modified,
         content,
     };
