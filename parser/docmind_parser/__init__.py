@@ -1,0 +1,2 @@
+"""docMind parser sidecar package."""
+

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use dirs::{data_dir, download_dir, document_dir};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
@@ -9,15 +10,17 @@ use uuid::Uuid;
 
 use crate::docmind::file_ops;
 use crate::docmind::models::{
-    CurrentTaskView, FailedFileView, IndexDirView, IndexStatusView, SearchResultView,
+    ChunkView, CurrentTaskView, DocumentView, FailedFileView, IndexDirView, IndexStatusView,
+    SearchResultView,
 };
-use crate::docmind::search;
+use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::indexer;
 use crate::docmind::storage::types::{ChunkRecord, ExtractedDocument};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Database {
     pool: SqlitePool,
+    search_index: Arc<SearchIndex>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -44,6 +47,26 @@ struct SearchRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct DocumentRow {
+    id: String,
+    dir_path: String,
+    path: String,
+    file_name: String,
+    ext: String,
+    modified: String,
+    chunks: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ChunkRow {
+    id: String,
+    heading: String,
+    snippet: String,
+    paragraph: Option<i64>,
+    page: Option<i64>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct FailedFileRow {
     file: String,
     reason: String,
@@ -53,9 +76,13 @@ struct FailedFileRow {
 struct CurrentTaskRow {
     label: String,
     details: String,
+    current_dir: String,
+    current_file: String,
     progress: i64,
     scanned: i64,
     total: i64,
+    succeeded: i64,
+    failed: i64,
 }
 
 impl Database {
@@ -77,23 +104,45 @@ impl Database {
             .await
             .map_err(|error| error.to_string())?;
 
-        let database = Self { pool };
+        let search_index = Arc::new(SearchIndex::open_or_init()?);
+        let database = Self { pool, search_index };
         database
             .init_schema()
             .await
             .map_err(|error| error.to_string())?;
+        let documents_migrated = database
+            .ensure_documents_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_current_task_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+
+        if documents_migrated {
+            database
+                .clear_all_index_data()
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+
         database
             .seed_default_dirs_if_empty()
             .await
             .map_err(|error| error.to_string())?;
 
-        if database
-            .count_documents()
-            .await
-            .map_err(|error| error.to_string())?
-            == 0
-        {
-            let _ = indexer::rebuild_all(&database).await;
+        let skip_bootstrap_index = std::env::var("DOCMIND_SKIP_BOOTSTRAP_INDEX").is_ok();
+        if !skip_bootstrap_index {
+            let indexed_docs = database
+                .count_documents()
+                .await
+                .map_err(|error| error.to_string())?;
+
+            if indexed_docs == 0 {
+                let _ = indexer::rebuild_all(&database).await;
+            } else if database.search_index.doc_count() == 0 {
+                let _ = indexer::rebuild_all(&database).await;
+            }
         }
 
         Ok(database)
@@ -127,77 +176,110 @@ impl Database {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResultView>, sqlx::Error> {
-        let query_terms = search::normalize_query(query);
+        let hits = self
+            .search_index
+            .search(query, limit.max(1))
+            .map_err(sqlx::Error::Protocol)?;
 
-        let mut sql = String::from(
-            r#"
-            SELECT
-                c.id,
-                d.file_name,
-                d.path,
-                d.ext,
-                c.heading,
-                c.snippet,
-                c.paragraph,
-                c.page,
-                d.modified,
-                c.score
-            FROM chunks c
-            JOIN documents d ON d.id = c.document_id
-            "#,
-        );
+        if hits.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let mut binds = Vec::new();
-        if !query_terms.is_empty() {
-            sql.push_str(" WHERE ");
-            for (index, term) in query_terms.iter().enumerate() {
-                if index > 0 {
-                    sql.push_str(" AND ");
-                }
-                sql.push_str(
-                    "(lower(d.file_name) LIKE ? OR lower(d.path) LIKE ? OR lower(d.ext) LIKE ? OR lower(d.content) LIKE ? OR lower(c.heading) LIKE ? OR lower(c.snippet) LIKE ?)",
-                );
+        let chunk_ids = hits.iter().map(|hit| hit.chunk_id.clone()).collect::<Vec<_>>();
+        let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
+        let mut rows_by_id = std::collections::HashMap::new();
+        for row in rows {
+            rows_by_id.insert(row.id.clone(), row);
+        }
 
-                let wildcard = format!("%{}%", term.to_lowercase());
-                for _ in 0..6 {
-                    binds.push(wildcard.clone());
-                }
+        let mut results = Vec::new();
+        for hit in hits {
+            if let Some(row) = rows_by_id.remove(&hit.chunk_id) {
+                results.push(SearchResultView {
+                    id: row.id,
+                    file_name: row.file_name,
+                    path: row.path,
+                    ext: row.ext,
+                    heading: row.heading,
+                    snippet: row.snippet,
+                    paragraph: row.paragraph.map(|value| value as u32),
+                    page: row.page.map(|value| value as u32),
+                    modified: row.modified,
+                    score: hit.score,
+                });
             }
         }
 
-        sql.push_str(" ORDER BY c.score DESC, d.modified DESC LIMIT ?");
+        Ok(results)
+    }
 
-        let mut query_builder = sqlx::query_as::<_, SearchRow>(&sql);
-        for bind in binds {
-            query_builder = query_builder.bind(bind);
-        }
-        query_builder = query_builder.bind(limit.max(1) as i64);
+    pub async fn list_documents_in_dir(
+        &self,
+        dir_path: &str,
+    ) -> Result<Vec<DocumentView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, DocumentRow>(
+            r#"
+            SELECT
+                d.id,
+                d.dir_path,
+                d.path,
+                d.file_name,
+                d.ext,
+                d.modified,
+                COUNT(c.id) AS chunks
+            FROM documents d
+            LEFT JOIN chunks c ON c.document_id = d.id
+            WHERE d.dir_path = ?
+            GROUP BY d.id, d.dir_path, d.path, d.file_name, d.ext, d.modified
+            ORDER BY d.path
+            "#,
+        )
+        .bind(dir_path)
+        .fetch_all(&self.pool)
+        .await?;
 
-        let rows = query_builder.fetch_all(&self.pool).await?;
-        let candidates = rows
+        Ok(rows
             .into_iter()
-            .map(|row| SearchResultView {
+            .map(|row| DocumentView {
                 id: row.id,
-                file_name: row.file_name,
+                dir_path: row.dir_path,
                 path: row.path,
+                file_name: row.file_name,
                 ext: row.ext,
+                modified: row.modified,
+                chunks: row.chunks as usize,
+            })
+            .collect())
+    }
+
+    pub async fn list_document_chunks(&self, path: &str) -> Result<Vec<ChunkView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, ChunkRow>(
+            r#"
+            SELECT
+                c.id,
+                c.heading,
+                c.snippet,
+                c.paragraph,
+                c.page
+            FROM chunks c
+            INNER JOIN documents d ON d.id = c.document_id
+            WHERE d.path = ?
+            ORDER BY c.rowid
+            "#,
+        )
+        .bind(path)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ChunkView {
+                id: row.id,
                 heading: row.heading,
                 snippet: row.snippet,
                 paragraph: row.paragraph.map(|value| value as u32),
                 page: row.page.map(|value| value as u32),
-                modified: row.modified,
-                score: row.score,
             })
-            .collect::<Vec<_>>();
-
-        let mut matched = search::filter_results(&query_terms, &candidates);
-        if matched.is_empty() {
-            matched = search::relax_results(&query_terms, &candidates);
-        }
-
-        Ok(search::sort_results(matched)
-            .into_iter()
-            .take(limit.max(1))
             .collect())
     }
 
@@ -206,15 +288,29 @@ impl Database {
         let indexed_chunks = self.count_chunks().await?;
         let failed_items = self.failed_items().await?;
         let current_task = self.current_task().await?;
+        let scanned_docs = current_task
+            .as_ref()
+            .map(|task| task.total)
+            .unwrap_or(indexed_docs as usize);
 
         Ok(IndexStatusView {
             indexed_docs: indexed_docs as usize,
             indexed_chunks: indexed_chunks as usize,
-            scanned_docs: indexed_docs as usize,
+            scanned_docs,
             failed_files: failed_items.len(),
             current_task,
             failed_items,
         })
+    }
+
+    pub async fn debug_counts(&self) -> Result<(usize, usize), sqlx::Error> {
+        let documents = self.count_documents().await? as usize;
+        let chunks = self.count_chunks().await? as usize;
+        Ok((documents, chunks))
+    }
+
+    pub fn tantivy_document_count(&self) -> usize {
+        self.search_index.doc_count() as usize
     }
 
     pub async fn open_file(&self, path: &str) -> Result<(), String> {
@@ -237,6 +333,9 @@ impl Database {
     }
 
     pub(crate) async fn remove_index_dir(&self, path: &str) -> Result<(), sqlx::Error> {
+        self.search_index
+            .delete_directory(path)
+            .map_err(sqlx::Error::Protocol)?;
         sqlx::query("DELETE FROM index_dirs WHERE path = ?")
             .bind(path)
             .execute(&self.pool)
@@ -301,6 +400,9 @@ impl Database {
     }
 
     pub(crate) async fn clear_directory_documents(&self, dir_path: &str) -> Result<(), sqlx::Error> {
+        self.search_index
+            .delete_directory(dir_path)
+            .map_err(sqlx::Error::Protocol)?;
         sqlx::query(
             r#"
             DELETE FROM documents
@@ -315,6 +417,9 @@ impl Database {
     }
 
     pub(crate) async fn clear_document_by_path(&self, path: &str) -> Result<(), sqlx::Error> {
+        self.search_index
+            .delete_document(path)
+            .map_err(sqlx::Error::Protocol)?;
         sqlx::query(
             r#"
             DELETE FROM documents
@@ -351,14 +456,15 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
-        for chunk in chunks {
+        for (index, chunk) in chunks.iter().enumerate() {
+            let chunk_id = format!("{document_id}:{index}");
             sqlx::query(
                 r#"
                 INSERT INTO chunks (id, document_id, heading, snippet, paragraph, page, score)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
-            .bind(Uuid::new_v4().to_string())
+            .bind(chunk_id)
             .bind(&document_id)
             .bind(&chunk.heading)
             .bind(&chunk.snippet)
@@ -367,6 +473,23 @@ impl Database {
             .bind(chunk.score)
             .execute(&self.pool)
             .await?;
+        }
+
+        if let Err(error) = self
+            .search_index
+            .index_document(&document_id, document, chunks)
+        {
+            sqlx::query(
+                r#"
+                DELETE FROM documents
+                WHERE path = ?
+                "#,
+            )
+            .bind(&document.path)
+            .execute(&self.pool)
+            .await?;
+
+            return Err(sqlx::Error::Protocol(error.into()));
         }
 
         Ok(())
@@ -413,21 +536,30 @@ impl Database {
         &self,
         label: &str,
         details: &str,
+        current_dir: &str,
+        current_file: &str,
         progress: u8,
         scanned: usize,
         total: usize,
+        succeeded: usize,
+        failed: usize,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-            INSERT OR REPLACE INTO current_task (id, label, details, progress, scanned, total)
-            VALUES (1, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO current_task
+                (id, label, details, current_dir, current_file, progress, scanned, total, succeeded, failed)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(label)
         .bind(details)
+        .bind(current_dir)
+        .bind(current_file)
         .bind(progress as i64)
         .bind(scanned as i64)
         .bind(total as i64)
+        .bind(succeeded as i64)
+        .bind(failed as i64)
         .execute(&self.pool)
         .await?;
 
@@ -438,6 +570,37 @@ impl Database {
         sqlx::query("DELETE FROM current_task WHERE id = 1")
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn clear_all_index_data(&self) -> Result<(), sqlx::Error> {
+        self.search_index
+            .clear_all()
+            .map_err(sqlx::Error::Protocol)?;
+
+        sqlx::query("DELETE FROM chunks")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM documents")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM failed_files")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM current_task")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(
+            r#"
+            UPDATE index_dirs
+            SET docs = 0,
+                chunks = 0,
+                status = 'pending'
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 
@@ -539,9 +702,13 @@ impl Database {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 label TEXT NOT NULL,
                 details TEXT NOT NULL,
+                current_dir TEXT NOT NULL DEFAULT '',
+                current_file TEXT NOT NULL DEFAULT '',
                 progress INTEGER NOT NULL,
                 scanned INTEGER NOT NULL,
-                total INTEGER NOT NULL
+                total INTEGER NOT NULL,
+                succeeded INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0
             )
             "#,
         ];
@@ -551,6 +718,79 @@ impl Database {
         }
 
         Ok(())
+    }
+
+    async fn ensure_current_task_columns(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(current_task)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        let mut alter_statements = Vec::new();
+        if !columns.contains("current_dir") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN current_dir TEXT NOT NULL DEFAULT ''",
+            );
+        }
+        if !columns.contains("current_file") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN current_file TEXT NOT NULL DEFAULT ''",
+            );
+        }
+        if !columns.contains("succeeded") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN succeeded INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+        if !columns.contains("failed") {
+            alter_statements.push(
+                "ALTER TABLE current_task ADD COLUMN failed INTEGER NOT NULL DEFAULT 0",
+            );
+        }
+
+        for statement in alter_statements {
+            sqlx::query(statement).execute(&self.pool).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn ensure_documents_columns(&self) -> Result<bool, sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(documents)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        let mut altered = false;
+        let mut alter_statements = Vec::new();
+        if !columns.contains("dir_path") {
+            alter_statements.push(
+                "ALTER TABLE documents ADD COLUMN dir_path TEXT NOT NULL DEFAULT ''",
+            );
+            altered = true;
+        }
+        if !columns.contains("content") {
+            alter_statements.push(
+                "ALTER TABLE documents ADD COLUMN content TEXT NOT NULL DEFAULT ''",
+            );
+            altered = true;
+        }
+
+        for statement in alter_statements {
+            sqlx::query(statement).execute(&self.pool).await?;
+        }
+
+        Ok(altered)
     }
 
     async fn seed_default_dirs_if_empty(&self) -> Result<(), sqlx::Error> {
@@ -606,7 +846,7 @@ impl Database {
     async fn current_task(&self) -> Result<Option<CurrentTaskView>, sqlx::Error> {
         let row = sqlx::query_as::<_, CurrentTaskRow>(
             r#"
-            SELECT label, details, progress, scanned, total
+            SELECT label, details, current_dir, current_file, progress, scanned, total, succeeded, failed
             FROM current_task
             WHERE id = 1
             "#,
@@ -617,10 +857,52 @@ impl Database {
         Ok(row.map(|row| CurrentTaskView {
             label: row.label,
             details: row.details,
+            current_dir: row.current_dir,
+            current_file: row.current_file,
             progress: row.progress as u8,
             scanned: row.scanned as usize,
             total: row.total as usize,
+            succeeded: row.succeeded as usize,
+            failed: row.failed as usize,
         }))
+    }
+
+    async fn fetch_chunks_by_ids(&self, chunk_ids: &[String]) -> Result<Vec<SearchRow>, sqlx::Error> {
+        if chunk_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = std::iter::repeat("?")
+            .take(chunk_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            r#"
+            SELECT
+                c.id,
+                d.file_name,
+                d.path,
+                d.ext,
+                c.heading,
+                c.snippet,
+                c.paragraph,
+                c.page,
+                d.modified,
+                c.score
+            FROM chunks c
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.id IN ({})
+            "#,
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query_as::<_, SearchRow>(&sql);
+        for chunk_id in chunk_ids {
+            query_builder = query_builder.bind(chunk_id);
+        }
+
+        query_builder.fetch_all(&self.pool).await
     }
 
     async fn count_documents(&self) -> Result<i64, sqlx::Error> {
@@ -645,4 +927,8 @@ async fn scalar_count_bind(pool: &SqlitePool, sql: &str, bind: &str) -> Result<i
 fn database_path() -> PathBuf {
     let base = data_dir().unwrap_or_else(|| PathBuf::from("."));
     base.join("DocMind").join("docmind.sqlite")
+}
+
+pub fn sqlite_database_path() -> PathBuf {
+    database_path()
 }

@@ -5,6 +5,8 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use zip::ZipArchive;
 
+use crate::docmind::parser::{python_parse_or_fallback, ParsedDocument};
+
 use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
@@ -36,8 +38,19 @@ pub fn discover_supported_files(dir_paths: &[String]) -> Vec<DiscoveredFile> {
     discovered
 }
 
+#[allow(dead_code)]
 pub fn extract_document(file: &DiscoveredFile) -> Result<ExtractedDocument, String> {
     extract_document_at(&file.dir_path, &file.path)
+}
+
+pub fn parse_document(file: &DiscoveredFile) -> Result<(ExtractedDocument, Vec<ChunkRecord>), String> {
+    if let Some(parsed) = python_parse_or_fallback(&file.path) {
+        return Ok(convert_python_document(file, parsed));
+    }
+
+    let document = extract_document_at(&file.dir_path, &file.path)?;
+    let chunks = chunk_document(&document);
+    Ok((document, chunks))
 }
 
 pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocument, String> {
@@ -298,4 +311,80 @@ fn truncate_snippet(input: &str, limit: usize) -> String {
         snippet.push('…');
     }
     snippet
+}
+
+fn convert_python_document(file: &DiscoveredFile, parsed: ParsedDocument) -> (ExtractedDocument, Vec<ChunkRecord>) {
+    let content = normalize_whitespace(&parsed.content);
+    let file_name = file
+        .path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let ext = extension(&file.path);
+    let modified = fs::metadata(&file.path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .map(DateTime::<Utc>::from)
+        .map(|value| value.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| "未知".to_string());
+
+    let document = ExtractedDocument {
+        dir_path: file.dir_path.clone(),
+        path: file.path.to_string_lossy().to_string(),
+        file_name: file_name.clone(),
+        ext,
+        modified,
+        content,
+    };
+
+    let chunks = parsed
+        .chunks
+        .into_iter()
+        .map(|chunk| ChunkRecord {
+            heading: chunk.heading.unwrap_or_else(|| file_name.clone()),
+            snippet: truncate_snippet(&normalize_whitespace(&chunk.text), 800),
+            paragraph: Some(chunk.order as i64),
+            page: chunk.page_no.map(|value| value as i64),
+            score: 1.0,
+        })
+        .collect::<Vec<_>>();
+
+    let chunks = if chunks.is_empty() && !document.content.trim().is_empty() {
+        vec![ChunkRecord {
+            heading: file_name,
+            snippet: truncate_snippet(&document.content, 800),
+            paragraph: Some(1),
+            page: None,
+            score: 1.0,
+        }]
+    } else {
+        chunks
+    };
+
+    (document, chunks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovers_and_extracts_markdown_files_from_agent_directory() {
+        let dir_path = "/Users/zhaoyang/Documents/MarkdownHome/zhaoyang-markdown/AI/面向agent编程";
+        let files = discover_supported_files(&[dir_path.to_string()]);
+
+        assert_eq!(files.len(), 4);
+        assert!(files
+            .iter()
+            .all(|file| file.path.extension().and_then(|value| value.to_str()) == Some("md")));
+
+        let first = &files[0];
+        let document = extract_document(first).expect("expected markdown file to be extractable");
+        assert_eq!(document.dir_path, dir_path);
+        assert!(!document.content.trim().is_empty());
+
+        let chunks = chunk_document(&document);
+        assert!(!chunks.is_empty());
+    }
 }

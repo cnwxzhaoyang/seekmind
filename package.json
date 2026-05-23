@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "tauri:dev:fresh": "DOCMIND_DEV_FRESH_START=1 npm run tauri dev",
+    "dev:browser": "vite --host 127.0.0.1 --port 5173 --open",
+    "tauri:dev": "DOCMIND_USE_PY_PARSER=1 tauri dev",
+    "tauri:dev:trace": "DOCMIND_USE_PY_PARSER=1 DOCMIND_TRACE_INDEXER=1 tauri dev",
+    "tauri:dev:fresh": "DOCMIND_USE_PY_PARSER=1 tauri dev -- --reset-local-storage",
+    "tauri:dev:fresh:trace": "DOCMIND_USE_PY_PARSER=1 DOCMIND_TRACE_INDEXER=1 tauri dev -- --reset-local-storage",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Database, FolderOpen, Search, Settings } from "lucide-vue-next";
+import { Database, FolderOpen, Layers3, Search, Settings } from "lucide-vue-next";
 import { useRoute } from "vue-router";
 
 const route = useRoute();
 
 const items = [
   { key: "search", label: "搜索", icon: Search, to: "/" },
+  { key: "chunks", label: "文档切片", icon: Layers3, to: "/chunks" },
   { key: "library", label: "文档目录", icon: FolderOpen, to: "/library" },
   { key: "status", label: "索引状态", icon: Database, to: "/status" },
   { key: "settings", label: "设置", icon: Settings, to: "/settings" },
@@ -14,6 +15,7 @@ const items = [
 
 const activeKey = computed(() => {
   const path = route.path;
+  if (path.startsWith("/chunks")) return "chunks";
   if (path.startsWith("/library")) return "library";
   if (path.startsWith("/status")) return "status";
   if (path.startsWith("/settings")) return "settings";
@@ -37,7 +39,11 @@ const activeKey = computed(() => {
         :key="item.key"
         :to="item.to"
         class="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition"
-        :class="activeKey === item.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+        :class="
+          activeKey === item.key
+            ? 'bg-slate-900 !text-slate-50 shadow-sm'
+            : '!text-slate-700 hover:bg-slate-100'
+        "
       >
         <component :is="item.icon" :size="17" />
         {{ item.label }}

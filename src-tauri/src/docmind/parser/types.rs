@@ -1,0 +1,57 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedDocument {
+    pub title: Option<String>,
+    pub file_type: String,
+    pub content: String,
+    pub chunks: Vec<ParsedChunk>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedChunk {
+    pub heading: Option<String>,
+    pub page_no: Option<u32>,
+    pub text: String,
+    pub order: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParserOptions {
+    pub include_chunks: bool,
+    pub max_chunk_chars: usize,
+    pub max_chunks: Option<usize>,
+}
+
+impl Default for ParserOptions {
+    fn default() -> Self {
+        Self {
+            include_chunks: true,
+            max_chunk_chars: 800,
+            max_chunks: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParserRequest {
+    pub request_id: String,
+    pub command: String,
+    pub path: String,
+    pub options: ParserOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParserError {
+    pub code: String,
+    pub message: String,
+    pub details: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParserResponse {
+    pub request_id: String,
+    pub ok: bool,
+    pub document: Option<ParsedDocument>,
+    pub error: Option<ParserError>,
+}

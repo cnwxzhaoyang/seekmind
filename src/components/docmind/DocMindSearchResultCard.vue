@@ -36,9 +36,13 @@ const locationLabel = computed(() => (props.item.page ? `第 ${props.item.page} 
         </div>
         <div class="mt-1 truncate text-xs text-slate-400">{{ item.path }}</div>
         <div class="mt-2 text-sm leading-6 text-slate-700">{{ item.snippet }}</div>
-        <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <DocMindBadge>{{ item.heading }}</DocMindBadge>
+          <span>来源：{{ item.heading }}</span>
+          <span>·</span>
           <span>{{ locationLabel }}</span>
+          <span>·</span>
+          <span>命中片段</span>
           <span>·</span>
           <span><Clock class="mr-1 inline" :size="12" />{{ item.modified }}</span>
         </div>

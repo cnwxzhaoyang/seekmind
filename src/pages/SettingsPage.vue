@@ -1,5 +1,32 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import { docmindApi, formatDocmindError } from "../services/docmindApi";
+
+const loading = ref(false);
+const infoMessage = ref("");
+const errorMessage = ref("");
+
+const clearAllIndexes = async () => {
+  const confirmed = window.confirm("确认清空全部索引？这只会删除 docMind 的本地索引数据，不会删除原始文件。");
+  if (!confirmed) {
+    return;
+  }
+
+  loading.value = true;
+  infoMessage.value = "";
+  errorMessage.value = "";
+
+  try {
+    await docmindApi.clearAllIndexes();
+    infoMessage.value = "已清空全部索引。";
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, "清空索引失败");
+    console.error("[DocMind] clearAllIndexes failed", error);
+  } finally {
+    loading.value = false;
+  }
+};
 </script>
 
 <template>
@@ -10,6 +37,14 @@ import DocMindBadge from "../components/docmind/DocMindBadge.vue";
     </div>
 
     <div class="space-y-5">
+      <div v-if="errorMessage" class="rounded-3xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+        {{ errorMessage }}
+      </div>
+
+      <div v-if="infoMessage" class="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-700">
+        {{ infoMessage }}
+      </div>
+
       <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="mb-4 text-sm font-semibold text-slate-900">索引规则</div>
         <div class="space-y-4">
@@ -44,7 +79,13 @@ import DocMindBadge from "../components/docmind/DocMindBadge.vue";
       <div class="rounded-3xl border border-red-100 bg-red-50 p-6">
         <div class="text-sm font-semibold text-red-800">危险操作</div>
         <div class="mt-1 text-xs text-red-600">清空索引不会删除原始文件，只会删除 docMind 的本地索引数据。</div>
-        <button class="mt-4 rounded-2xl bg-white px-4 py-2 text-sm font-medium text-red-700 shadow-sm">清空全部索引</button>
+        <button
+          class="mt-4 rounded-2xl bg-white px-4 py-2 text-sm font-medium text-red-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="loading"
+          @click="clearAllIndexes"
+        >
+          {{ loading ? "清空中..." : "清空全部索引" }}
+        </button>
       </div>
     </div>
   </div>

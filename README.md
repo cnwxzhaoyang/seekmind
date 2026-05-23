@@ -1,93 +1,150 @@
 # DocMind
 
+DocMind 是一个基于 Tauri + Vue 3 + Rust 的本地文档检索工具。它会扫描用户选择的目录，把文档内容切块后建立本地全文索引，之后可以直接按关键词定位到文档和具体段落。
 
+## 现在支持的功能
 
-## Getting started
+- 本地目录管理
+- 添加、删除、启用、禁用索引目录
+- 目录级重新索引
+- 全量重新索引
+- 失败文件单独重试
+- 文档内容搜索
+- 段落级结果展示
+- 打开原文件
+- 本地持久化存储
+- SQLite 元数据管理
+- Tantivy 全文索引
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## 当前支持的文档格式
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+目前第一阶段支持这些格式：
 
-## Add your files
+- `.txt`
+- `.md`
+- `.markdown`
+- `.html`
+- `.htm`
+- `.docx`
+- `.log`
+- `.toml`
+- `.json`
+- `.yaml`
+- `.yml`
+- `.xml`
+- `.csv`
+- `.rs`
+- `.js`
+- `.ts`
+- `.tsx`
+- `.jsx`
+- `.py`
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+说明：
 
+- `.pdf` 目前还未接入稳定解析
+- 扫描版 PDF、旧版 `.doc`、图片 OCR 仍属于后续阶段
+
+## 启动方式
+
+### 1. 安装依赖
+
+```bash
+npm install
 ```
-cd existing_repo
-git remote add origin http://192.168.4.92/zhaoyang/docmind.git
-git branch -M main
-git push -uf origin main
+
+### 2. 启动前端开发服务
+
+```bash
+npm run dev
 ```
 
-## Integrate with your tools
+如果你想直接在浏览器里调试前端页面，可以用：
 
-* [Set up project integrations](http://192.168.4.92/zhaoyang/docmind/-/settings/integrations)
+```bash
+npm run dev:browser
+```
 
-## Collaborate with your team
+### 3. 启动 Tauri 桌面应用
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+```bash
+npm run tauri dev
+```
 
-## Test and Deploy
+开发环境默认会启用 Python 解析器 sidecar：
 
-Use the built-in continuous integration in GitLab.
+- `DOCMIND_USE_PY_PARSER=1`
+- Markdown / DOCX / HTML / TXT 会优先走 Python 解析
+- Rust 侧仍保留 fallback，便于调试和对照
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+如果你想看索引流程日志，可以用：
 
-***
+```bash
+npm run tauri:dev:trace
+```
 
-# Editing this README
+### 4. 如果要清空并重新启动开发环境
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```bash
+npm run tauri:dev:fresh
+```
 
-## Suggestions for a good README
+这个命令等价于：
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```bash
+npm run tauri dev -- --reset-local-storage
+```
 
-## Name
-Choose a self-explaining name for your project.
+含义是：
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+- 启动前先清空本地 SQLite 数据库和 Tantivy 索引
+- 跳过启动时的自动重建
+- 适合调试索引初始化、目录种子数据和首次扫描流程
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+补充说明：
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- `--reset-local-storage` 是传给应用本身的启动参数
+- 这个参数只影响本地开发数据，不会删除你选择的原始文档目录
+- 正常启动仍然使用 `npm run tauri dev`
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+如果你还想同时打开索引日志，可以用：
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```bash
+npm run tauri:dev:fresh:trace
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+## 构建
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```bash
+npm run build
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## 数据存储位置
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+DocMind 会把本地数据保存在系统用户数据目录下：
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+- SQLite 数据库：`DocMind/docmind.sqlite`
+- Tantivy 索引：`DocMind/tantivy`
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+## 技术栈
 
-## License
-For open source projects, say how it is licensed.
+- 前端：Vue 3 + Vite + TypeScript
+- 桌面端：Tauri v2
+- 后端：Rust
+- 元数据：SQLite + `sqlx`
+- 全文检索：Tantivy
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## 项目目标
+
+DocMind 的目标是解决“我记得内容，但不记得文件名”的本地文档检索问题。第一阶段先把全文检索、段落定位、目录管理和本地索引稳定做好，后续再考虑语义搜索、OCR 和更复杂的问答能力。
+
+## 开发说明
+
+- 当前项目主要在 macOS 上开发和验证
+- 目录扫描和索引逻辑都在 Rust 侧
+- 前端通过 Tauri `invoke` 调用后端命令
+- 你可以直接修改 Vue 页面或 Rust 模块，而不需要改动整个启动链路
+
+## 许可证
+
+当前未单独声明许可证。

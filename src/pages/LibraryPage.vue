@@ -3,7 +3,7 @@ import { onMounted, ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import { docmindApi } from "../services/docmindApi";
+import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import type { IndexDirView } from "../types/docmind";
 
 const dirs = ref<IndexDirView[]>([]);
@@ -20,7 +20,8 @@ const loadDirs = async () => {
   try {
     dirs.value = await docmindApi.listIndexDirs();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "目录加载失败";
+    errorMessage.value = formatDocmindError(error, "目录加载失败");
+    console.error("[DocMind] loadDirs failed", error);
   } finally {
     loading.value = false;
   }
@@ -46,7 +47,8 @@ const chooseAndAddDir = async () => {
     infoMessage.value = `已添加目录: ${selected}`;
     await loadDirs();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "添加目录失败";
+    errorMessage.value = formatDocmindError(error, "添加目录失败");
+    console.error("[DocMind] addIndexDir failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -61,7 +63,8 @@ const refreshIndex = async () => {
     await docmindApi.refreshIndex();
     await loadDirs();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "重新索引失败";
+    errorMessage.value = formatDocmindError(error, "重新索引失败");
+    console.error("[DocMind] refreshIndex failed", error);
   } finally {
     refreshing.value = false;
   }
@@ -77,7 +80,8 @@ const refreshSingleDir = async (path: string) => {
     infoMessage.value = `已重新索引: ${path}`;
     await loadDirs();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "目录重建失败";
+    errorMessage.value = formatDocmindError(error, "目录重建失败");
+    console.error("[DocMind] refreshIndexDir failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -93,7 +97,8 @@ const toggleDir = async (dir: IndexDirView) => {
     infoMessage.value = dir.enabled ? `已禁用: ${dir.path}` : `已启用: ${dir.path}`;
     await loadDirs();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "目录状态更新失败";
+    errorMessage.value = formatDocmindError(error, "目录状态更新失败");
+    console.error("[DocMind] setIndexDirEnabled failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -113,7 +118,8 @@ const removeDir = async (path: string) => {
     infoMessage.value = `已删除目录: ${path}`;
     await loadDirs();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "删除目录失败";
+    errorMessage.value = formatDocmindError(error, "删除目录失败");
+    console.error("[DocMind] removeIndexDir failed", error);
   } finally {
     busyPath.value = null;
   }
