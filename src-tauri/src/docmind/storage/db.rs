@@ -14,6 +14,7 @@ use crate::docmind::models::{
     ChunkView, CurrentTaskView, DocumentView, FavoriteView, FailedFileView, HighlightSpan,
     IndexDirView, IndexStatusView, RecentDocumentView, SearchHistoryView, SearchResultView,
 };
+use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::search::normalize_query;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::indexer;
@@ -23,6 +24,12 @@ use crate::docmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocume
 pub struct Database {
     pool: SqlitePool,
     search_index: Arc<SearchIndex>,
+}
+
+impl Database {
+    pub(crate) fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -201,6 +208,14 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_index_checkpoint_table()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_embedding_models_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_vector_index_meta_row()
             .await
             .map_err(|error| error.to_string())?;
         database
@@ -713,9 +728,8 @@ impl Database {
     }
 
     pub(crate) async fn remove_index_dir(&self, path: &str) -> Result<(), sqlx::Error> {
-        self.search_index
-            .delete_directory(path)
-            .map_err(sqlx::Error::Protocol)?;
+        self.clear_directory_documents(path).await?;
+        let _ = self.clear_directory_failed_files(path).await;
         sqlx::query("DELETE FROM index_dirs WHERE path = ?")
             .bind(path)
             .execute(&self.pool)
@@ -817,6 +831,19 @@ impl Database {
             .map_err(sqlx::Error::Protocol)?;
         sqlx::query(
             r#"
+            DELETE FROM chunk_embeddings
+            WHERE document_id IN (
+                SELECT id
+                FROM documents
+                WHERE dir_path = ?
+            )
+            "#,
+        )
+        .bind(dir_path)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
             DELETE FROM documents
             WHERE dir_path = ?
             "#,
@@ -832,6 +859,19 @@ impl Database {
         self.search_index
             .delete_document(path)
             .map_err(sqlx::Error::Protocol)?;
+        sqlx::query(
+            r#"
+            DELETE FROM chunk_embeddings
+            WHERE document_id IN (
+                SELECT id
+                FROM documents
+                WHERE path = ?
+            )
+            "#,
+        )
+        .bind(path)
+        .execute(&self.pool)
+        .await?;
         sqlx::query(
             r#"
             DELETE FROM documents
@@ -907,6 +947,13 @@ impl Database {
             .await?;
 
             return Err(sqlx::Error::Protocol(error.into()));
+        }
+
+        if let Err(error) = semantic_store::upsert_document_embeddings(self, &document_id, document, chunks).await {
+            eprintln!(
+                "[DocMind] semantic embedding update failed for {}: {}",
+                document.path, error
+            );
         }
 
         Ok(())
@@ -1156,6 +1203,21 @@ impl Database {
             .clear_all()
             .map_err(sqlx::Error::Protocol)?;
 
+        sqlx::query("DELETE FROM chunk_embeddings")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(
+            r#"
+            UPDATE vector_index_meta
+            SET chunk_count = 0,
+                last_indexed_at = 0,
+                last_error = '',
+                status = 'idle'
+            WHERE id = 1
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
         sqlx::query("DELETE FROM chunks")
             .execute(&self.pool)
             .await?;
@@ -1345,6 +1407,44 @@ impl Database {
             )
             "#,
             r#"
+            CREATE TABLE IF NOT EXISTS embedding_models (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model_path TEXT NOT NULL DEFAULT '',
+                dimension INTEGER NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                available INTEGER NOT NULL DEFAULT 0,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'unknown',
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS chunk_embeddings (
+                chunk_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                vector_json TEXT NOT NULL,
+                dimension INTEGER NOT NULL,
+                text_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'ready',
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS vector_index_meta (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                model_id TEXT NOT NULL,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                last_indexed_at INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'idle'
+            )
+            "#,
+            r#"
             CREATE TABLE IF NOT EXISTS search_history (
                 query TEXT PRIMARY KEY,
                 normalized_query TEXT NOT NULL,
@@ -1391,6 +1491,41 @@ impl Database {
                 max_file_size_mb: 50,
             };
             self.save_index_settings(&defaults).await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_embedding_models_row(&self) -> Result<(), sqlx::Error> {
+        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM embedding_models").await?;
+        if count == 0 {
+            let now = current_unix_ts();
+            sqlx::query(
+                r#"
+                INSERT INTO embedding_models
+                    (id, name, provider, model_path, dimension, enabled, available, is_default, status, created_at, updated_at)
+                VALUES
+                    ('default-local-embedding', 'BAAI/bge-small-zh-v1.5', 'local_fallback', '', 384, 1, 1, 1, 'ready', ?, ?)
+                "#,
+            )
+            .bind(now)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_vector_index_meta_row(&self) -> Result<(), sqlx::Error> {
+        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM vector_index_meta").await?;
+        if count == 0 {
+            sqlx::query(
+                r#"
+                INSERT INTO vector_index_meta (id, model_id, chunk_count, last_indexed_at, last_error, status)
+                VALUES (1, 'default-local-embedding', 0, 0, '', 'idle')
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
         }
         Ok(())
     }

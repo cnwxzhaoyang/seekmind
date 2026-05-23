@@ -6,11 +6,14 @@ import type {
   IndexDirView,
   IndexStatusView,
   IndexSettingsView,
+  EmbeddingModelView,
   ParserRuntimeView,
   RecentDocumentView,
   SearchHistoryView,
   SearchDebugView,
   SearchResultView,
+  SemanticDebugView,
+  SemanticModelStatusView,
 } from "../types/docmind";
 
 export const formatDocmindError = (error: unknown, fallback: string) => {
@@ -55,6 +58,14 @@ export const docmindApi = {
   saveIndexSettings: (settings: IndexSettingsView) =>
     invoke<void>("save_index_settings", { settings }),
   getParserRuntime: () => invoke<ParserRuntimeView>("get_parser_runtime"),
+  getEmbeddingModelStatus: () => invoke<SemanticModelStatusView>("get_embedding_model_status"),
+  listEmbeddingModels: () => invoke<EmbeddingModelView[]>("list_embedding_models"),
+  setDefaultEmbeddingModel: (modelId: string) =>
+    invoke<SemanticModelStatusView>("set_default_embedding_model", { model_id: modelId }),
+  rebuildSemanticEmbeddings: () =>
+    invoke<SemanticModelStatusView>("rebuild_semantic_embeddings"),
+  getSemanticDebugReport: (query: string, limit = 12) =>
+    invoke<SemanticDebugView>("get_semantic_debug_report", { query, limit }),
   refreshIndex: () => invoke<IndexStatusView>("refresh_index"),
   refreshIndexDir: (path: string) =>
     invoke<IndexStatusView>("refresh_index_dir", { path }),

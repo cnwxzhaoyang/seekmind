@@ -145,3 +145,53 @@ export interface IndexSettingsView {
   exclude_exts: string[];
   max_file_size_mb: number;
 }
+
+export interface EmbeddingModelView {
+  id: string;
+  name: string;
+  provider: string;
+  model_path: string;
+  dimension: number;
+  enabled: boolean;
+  available: boolean;
+  is_default: boolean;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SemanticModelStatusView {
+  model: EmbeddingModelView;
+  sqlite_chunks: number;
+  embedded_chunks: number;
+  needs_rebuild: boolean;
+  last_indexed_at: string;
+  last_error: string;
+  index_status: string;
+}
+
+export interface SemanticDebugHitView {
+  chunk_id: string;
+  document_path: string;
+  file_name: string;
+  heading: string;
+  snippet: string;
+  paragraph?: number | null;
+  page?: number | null;
+  score: number;
+}
+
+export interface SemanticDebugView {
+  query: string;
+  normalized_query: string;
+  query_vector_dim: number;
+  query_vector_ready: boolean;
+  query_vector_norm: number;
+  model: EmbeddingModelView;
+  sqlite_chunks: number;
+  embedded_chunks: number;
+  hit_count: number;
+  hits: SemanticDebugHitView[];
+  index_status: string;
+  last_error: string;
+}

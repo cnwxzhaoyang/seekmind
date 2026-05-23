@@ -51,7 +51,12 @@ pub fn run() {
             crate::docmind::commands::retry_failed_file,
             crate::docmind::commands::clear_all_indexes,
             crate::docmind::commands::pause_indexing,
-            crate::docmind::commands::resume_indexing
+            crate::docmind::commands::resume_indexing,
+            crate::docmind::semantic::commands::get_embedding_model_status,
+            crate::docmind::semantic::commands::get_semantic_debug_report,
+            crate::docmind::semantic::commands::rebuild_semantic_embeddings,
+            crate::docmind::semantic::commands::list_embedding_models,
+            crate::docmind::semantic::commands::set_default_embedding_model
         ])
         .run(tauri::generate_context!())
         .expect("error while running DocMind application");
