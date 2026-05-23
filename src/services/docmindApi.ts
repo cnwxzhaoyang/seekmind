@@ -3,6 +3,7 @@ import type {
   ChunkView,
   FavoriteView,
   DocumentView,
+  DocumentRefreshStartView,
   IndexDirView,
   IndexStatusView,
   IndexSettingsView,
@@ -12,8 +13,10 @@ import type {
   SearchHistoryView,
   SearchDebugView,
   SearchResultView,
+  SemanticRebuildStartView,
   SemanticDebugView,
   SemanticModelStatusView,
+  IndexRefreshStartView,
 } from "../types/docmind";
 
 export const formatDocmindError = (error: unknown, fallback: string) => {
@@ -43,6 +46,8 @@ export const docmindApi = {
     invoke<DocumentView[]>("list_documents_in_dir", { path }),
   listDocumentChunks: (path: string) =>
     invoke<ChunkView[]>("list_document_chunks", { path }),
+  refreshDocument: (path: string, dirPath: string) =>
+    invoke<DocumentRefreshStartView>("refresh_document", { path, dirPath }),
   listSearchHistory: (limit = 12) =>
     invoke<SearchHistoryView[]>("list_search_history", { limit }),
   listRecentDocuments: (limit = 8) =>
@@ -63,12 +68,12 @@ export const docmindApi = {
   setDefaultEmbeddingModel: (modelId: string) =>
     invoke<SemanticModelStatusView>("set_default_embedding_model", { model_id: modelId }),
   rebuildSemanticEmbeddings: () =>
-    invoke<SemanticModelStatusView>("rebuild_semantic_embeddings"),
+    invoke<SemanticRebuildStartView>("rebuild_semantic_embeddings"),
   getSemanticDebugReport: (query: string, limit = 12) =>
     invoke<SemanticDebugView>("get_semantic_debug_report", { query, limit }),
-  refreshIndex: () => invoke<IndexStatusView>("refresh_index"),
+  refreshIndex: () => invoke<IndexRefreshStartView>("refresh_index"),
   refreshIndexDir: (path: string) =>
-    invoke<IndexStatusView>("refresh_index_dir", { path }),
+    invoke<IndexRefreshStartView>("refresh_index_dir", { path }),
   addIndexDir: (path: string) => invoke<void>("add_index_dir", { path }),
   removeIndexDir: (path: string) => invoke<void>("remove_index_dir", { path }),
   setIndexDirEnabled: (path: string, enabled: boolean) =>

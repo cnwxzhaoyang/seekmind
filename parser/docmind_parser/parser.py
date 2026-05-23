@@ -1,17 +1,35 @@
 from __future__ import annotations
 
+import html
 import html.parser
+import os
 import re
 import subprocess
 import zipfile
+from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree
 
-from .models import ParsedChunk, ParsedDocument, ParserError, ParserOptions
+from .models import (
+    EmbeddingResponse,
+    EmbeddingStatus,
+    ParsedChunk,
+    ParsedDocument,
+    ParserStreamMessage,
+    ParserError,
+    ParserOptions,
+)
 
 SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "docx", "pdf"}
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
+EMBEDDING_DIMENSION_HINTS = {
+    "BAAI/bge-small-zh-v1.5": 512,
+    "BAAI/bge-small-en-v1.5": 384,
+    "sentence-transformers/all-MiniLM-L6-v2": 384,
+    "jinaai/jina-embeddings-v2-base-zh": 768,
+}
 
 
 @dataclass
@@ -20,6 +38,18 @@ class Block:
     text: str
     heading: Optional[str] = None
     page_no: Optional[int] = None
+    section: Optional[str] = None
+
+
+@dataclass
+class FastEmbedRuntime:
+    available: bool
+    provider: str
+    model_name: str
+    model_path: str
+    dimension: int
+    message: str
+    model: Optional[object] = None
 
 
 class HtmlBlockExtractor(html.parser.HTMLParser):
@@ -124,7 +154,42 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         return " > ".join(heading for _, heading in self._heading_stack)
 
 
-def parse_document(path: Path, options: ParserOptions) -> ParsedDocument:
+ProgressEmitter = Callable[[dict], None]
+
+
+def parse_document(
+    path: Path,
+    options: ParserOptions,
+    emit: Optional[ProgressEmitter] = None,
+    request_id: str = "",
+) -> ParsedDocument:
+    def progress(
+        stage: str,
+        message: str,
+        percent: int = 0,
+        current: str = "",
+        total: int = 0,
+        processed: int = 0,
+        warning: Optional[str] = None,
+    ) -> None:
+        if emit is None:
+            return
+        emit(
+            ParserStreamMessage(
+                request_id=request_id,
+                kind="event",
+                event="progress",
+                message=message,
+                stage=stage,
+                percent=percent,
+                current=current,
+                total=total,
+                processed=processed,
+                parser_source="python",
+                warning=warning,
+            ).to_dict()
+        )
+
     if not path.exists():
         raise parser_error("file_not_found", f"file not found: {path}")
     if not path.is_file():
@@ -133,6 +198,8 @@ def parse_document(path: Path, options: ParserOptions) -> ParsedDocument:
     ext = normalize_extension(path.suffix.lower().lstrip("."))
     if ext not in SUPPORTED_EXTENSIONS:
         raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
+
+    progress("start", f"开始解析 {path.name}", 1, path.name)
 
     if ext in {"txt", "md", "markdown"}:
         title, blocks = parse_text_like(path, ext)
@@ -145,18 +212,143 @@ def parse_document(path: Path, options: ParserOptions) -> ParsedDocument:
     else:
         raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
 
+    progress("extract", f"已提取 {len(blocks)} 个内容块", 35, path.name, len(blocks), len(blocks))
     blocks = merge_short_blocks(normalize_blocks(blocks))
-    content = "\n\n".join(block.text for block in blocks if block.text.strip())
-    chunks = build_chunks(blocks, path, options)
+    progress("normalize", "正在整理内容块", 60, path.name, len(blocks), len(blocks))
+    content = "\n\n".join(
+        block.text for block in blocks if block.text.strip() and block.section != "frontmatter"
+    )
+    chunks = build_chunks(blocks, path, options, emit=emit)
+    progress("chunk", f"已生成 {len(chunks)} 个切片", 90, path.name, len(chunks), len(chunks))
     if options.max_chunks is not None:
         chunks = chunks[: max(int(options.max_chunks), 0)]
 
+    progress("done", f"解析完成：{path.name}", 100, path.name, len(chunks), len(chunks))
     return ParsedDocument(
         title=title or path.stem,
         file_type=ext,
         content=content,
         chunks=chunks if options.include_chunks else [],
     )
+
+
+def embedding_status(model_name: Optional[str] = None) -> EmbeddingStatus:
+    runtime = get_fastembed_runtime(model_name, eager=False)
+    return EmbeddingStatus(
+        available=runtime.available,
+        provider=runtime.provider,
+        model_name=runtime.model_name,
+        model_path=runtime.model_path,
+        dimension=runtime.dimension,
+        message=runtime.message,
+    )
+
+
+def embed_texts(texts: Sequence[str], model_name: Optional[str] = None) -> EmbeddingResponse:
+    runtime = get_fastembed_runtime(model_name, eager=True)
+    if not runtime.available or runtime.model is None:
+        raise parser_error("embedding_unavailable", runtime.message or "fastembed is not available")
+
+    normalized_texts = [normalize_whitespace(text) for text in texts if normalize_whitespace(text)]
+    if not normalized_texts:
+        return EmbeddingResponse(vectors=[], status=embedding_status(model_name))
+
+    try:
+        vectors = [list(map(float, vector)) for vector in runtime.model.embed(normalized_texts)]
+        return EmbeddingResponse(vectors=vectors, status=embedding_status(model_name))
+    except Exception as exc:  # noqa: BLE001
+        raise parser_error("embedding_failed", normalize_embedding_error(exc)) from exc
+
+
+@lru_cache(maxsize=16)
+def get_fastembed_runtime(model_name: Optional[str] = None, eager: bool = True) -> FastEmbedRuntime:
+    target_model = (model_name or DEFAULT_EMBEDDING_MODEL).strip() or DEFAULT_EMBEDDING_MODEL
+    try:
+        from fastembed import TextEmbedding  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        return FastEmbedRuntime(
+            available=False,
+            provider="fastembed",
+            model_name=target_model,
+            model_path="",
+            dimension=0,
+            message=f"fastembed is not installed: {exc}",
+            model=None,
+        )
+
+    if not eager:
+        return FastEmbedRuntime(
+            available=True,
+            provider="fastembed",
+            model_name=target_model,
+            model_path="",
+            dimension=infer_embedding_dimension(None, target_model),
+            message="ready (lazy)",
+            model=None,
+        )
+
+    try:
+        model = TextEmbedding(
+            model_name=target_model,
+            cache_dir=os.environ.get("DOCMIND_FASTEMBED_CACHE_DIR") or None,
+        )
+        dimension = infer_embedding_dimension(model, target_model)
+        return FastEmbedRuntime(
+            available=True,
+            provider="fastembed",
+            model_name=target_model,
+            model_path="",
+            dimension=dimension,
+            message="ready",
+            model=model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        message = normalize_embedding_error(exc)
+        return FastEmbedRuntime(
+            available=False,
+            provider="fastembed",
+            model_name=target_model,
+            model_path="",
+            dimension=0,
+            message=message,
+            model=None,
+        )
+
+
+def infer_embedding_dimension(model: Optional[object], model_name: Optional[str] = None) -> int:
+    if model_name:
+        hint = EMBEDDING_DIMENSION_HINTS.get(model_name.strip())
+        if hint is not None:
+            return hint
+
+    if model is None:
+        return 384
+
+    for attr_name in ("embedding_size", "dim", "dimension", "ndim"):
+        value = getattr(model, attr_name, None)
+        if isinstance(value, int) and value > 0:
+            return value
+        if callable(value):
+            try:
+                result = value()
+                if isinstance(result, int) and result > 0:
+                    return result
+            except Exception:  # noqa: BLE001
+                pass
+    return 384
+
+
+def normalize_embedding_error(exc: Exception) -> str:
+    message = str(exc)
+    lower = message.lower()
+    if "operation timed out" in lower or "timed out" in lower or "timeout" in lower:
+        return (
+            "embedding 模型下载或加载超时。请先在终端执行 "
+            "`npm run semantic:warmup`，网络受限时执行 "
+            "`npm run semantic:warmup:mirror`。原始错误: "
+            f"{message}"
+        )
+    return message
 
 
 def parse_text_like(path: Path, ext: str) -> Tuple[Optional[str], List[Block]]:
@@ -298,6 +490,10 @@ def parse_html(path: Path) -> Tuple[Optional[str], List[Block]]:
 
 
 def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
+    python_docx_result = parse_docx_with_python_docx(path)
+    if python_docx_result is not None:
+        return python_docx_result
+
     with zipfile.ZipFile(path) as archive:
         document_xml = archive.read("word/document.xml")
 
@@ -306,6 +502,7 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
     blocks: List[Block] = []
     title: Optional[str] = None
     heading_stack: List[tuple[int, str]] = []
+    seen_body_heading = False
 
     def heading_path() -> Optional[str]:
         if not heading_stack:
@@ -325,25 +522,103 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
             if style and style.lower().startswith("heading"):
                 match = re.search(r"heading(\d+)", style.lower())
                 level = int(match.group(1)) if match else 1
+                if title is None:
+                    title = text
+                    blocks.append(Block(kind="heading", text=text, section="frontmatter"))
+                    continue
                 while heading_stack and heading_stack[-1][0] >= level:
                     heading_stack.pop()
                 heading_stack.append((level, text))
-                blocks.append(Block(kind="heading", text=text))
-                if title is None:
-                    title = heading_path() or text
+                seen_body_heading = True
+                blocks.append(Block(kind="heading", text=text, section="body"))
             else:
-                blocks.append(Block(kind="paragraph", text=text, heading=heading_path()))
+                section = "body" if seen_body_heading else "frontmatter"
+                blocks.append(Block(kind="paragraph", text=text, heading=heading_path(), section=section))
                 if title is None:
                     title = heading_path() or detect_title_like_line(text) or path.stem
         elif tag == "tbl":
             rows = extract_docx_table(element, ns)
             for row in rows:
                 if row:
-                    blocks.append(Block(kind="table", text=row, heading=heading_path()))
+                    section = "body" if seen_body_heading else "frontmatter"
+                    blocks.append(Block(kind="table", text=row, heading=heading_path(), section=section))
                     if title is None:
                         title = heading_path() or path.stem
 
     return title or path.stem, blocks
+
+
+def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], List[Block]]]:
+    try:
+        from docx import Document  # type: ignore
+        from docx.document import Document as DocxDocument  # type: ignore
+        from docx.table import Table  # type: ignore
+        from docx.text.paragraph import Paragraph  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        document = Document(str(path))
+    except Exception:
+        return None
+
+    if not isinstance(document, DocxDocument):
+        return None
+
+    blocks: List[Block] = []
+    title: Optional[str] = None
+    heading_stack: List[tuple[int, str]] = []
+    seen_body_heading = False
+
+    def heading_path() -> Optional[str]:
+        if not heading_stack:
+            return None
+        return " > ".join(heading for _, heading in heading_stack)
+
+    for child in document.element.body.iterchildren():
+        if child.tag.endswith("}p"):
+            paragraph = Paragraph(child, document)
+            style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
+            text = clean_docx_text(paragraph.text)
+            if not text:
+                continue
+
+            if style_name.lower().startswith("heading"):
+                match = re.search(r"heading\s*(\d+)", style_name.lower())
+                level = int(match.group(1)) if match else 1
+                if title is None:
+                    title = text
+                    blocks.append(Block(kind="heading", text=text, section="frontmatter"))
+                    continue
+                while heading_stack and heading_stack[-1][0] >= level:
+                    heading_stack.pop()
+                heading_stack.append((level, text))
+                seen_body_heading = True
+                blocks.append(Block(kind="heading", text=text, section="body"))
+            else:
+                section = "body" if seen_body_heading else "frontmatter"
+                blocks.append(Block(kind="paragraph", text=text, heading=heading_path(), section=section))
+                if title is None:
+                    title = heading_path() or detect_title_like_line(text) or path.stem
+
+        elif child.tag.endswith("}tbl"):
+            table = Table(child, document)
+            for row in table.rows:
+                cells = [clean_docx_text(cell.text) for cell in row.cells]
+                row_text = normalize_whitespace(" | ".join(cell for cell in cells if cell))
+                if not row_text:
+                    continue
+                if looks_like_docx_xml_noise(row_text):
+                    continue
+                section = "body" if seen_body_heading else "frontmatter"
+                blocks.append(Block(kind="table", text=row_text, heading=heading_path(), section=section))
+                if title is None:
+                    title = heading_path() or path.stem
+
+    if not blocks:
+        return None
+
+    return title or path.stem, normalize_blocks(blocks)
 
 
 def parse_pdf(path: Path) -> Tuple[Optional[str], List[Block]]:
@@ -435,20 +710,31 @@ def _extract_pdf_with_pdftotext(path: Path) -> Optional[Tuple[Optional[str], Lis
     return title or path.stem, blocks
 
 
-def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) -> List[ParsedChunk]:
+def build_chunks(
+    blocks: Sequence[Block],
+    path: Path,
+    options: ParserOptions,
+    emit: Optional[ProgressEmitter] = None,
+) -> List[ParsedChunk]:
     chunks: List[ParsedChunk] = []
     max_chars = max(int(options.max_chunk_chars), 120)
     current_heading: Optional[str] = None
     heading_path: Optional[str] = None
     current_page: Optional[int] = None
+    current_section: Optional[str] = None
     buffer: List[str] = []
+    buffer_score = 1.0
     order = 1
 
     def flush_buffer() -> None:
-        nonlocal buffer, order
+        nonlocal buffer, order, current_section, buffer_score
         text = normalize_whitespace("\n\n".join(buffer))
         buffer = []
         if not text:
+            return
+        if path.suffix.lower() == ".docx" and looks_like_docx_cover_chunk(text):
+            current_section = None
+            buffer_score = 1.0
             return
         chunks.append(
             ParsedChunk(
@@ -456,30 +742,57 @@ def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) ->
                 page_no=current_page,
                 text=text,
                 order=order,
+                score=buffer_score,
             )
         )
         order += 1
+        current_section = None
+        buffer_score = 1.0
 
-    for block in blocks:
+    for block_index, block in enumerate(blocks, start=1):
         if block.kind == "heading":
             flush_buffer()
             current_heading = block.text
             heading_path = block.heading or block.text
+            current_section = block.section or "body"
             continue
 
         if block.heading:
             heading_path = block.heading
         if block.page_no is not None:
             current_page = block.page_no
+        if block.section and current_section and block.section != current_section:
+            flush_buffer()
+        if block.section:
+            current_section = block.section
+
+        if block.section == "frontmatter":
+            continue
 
         for piece in split_block_text(block, max_chars):
             candidate = normalize_whitespace("\n\n".join(buffer + [piece]))
             if buffer and len(candidate) > max_chars:
                 flush_buffer()
             buffer.append(piece)
+            buffer_score = min(buffer_score, chunk_weight(block))
             candidate = normalize_whitespace("\n\n".join(buffer))
             if len(candidate) >= max_chars:
                 flush_buffer()
+                if emit is not None:
+                    emit(
+                        ParserStreamMessage(
+                            request_id="",
+                            kind="event",
+                            event="progress",
+                            message=f"已切分 {order - 1} 个切片",
+                            stage="chunk",
+                            percent=min(95, 60 + min(order, 30)),
+                            current=path.name,
+                            total=len(blocks),
+                            processed=block_index,
+                            parser_source="python",
+                        ).to_dict()
+                    )
 
     flush_buffer()
 
@@ -492,10 +805,44 @@ def build_chunks(blocks: Sequence[Block], path: Path, options: ParserOptions) ->
                     page_no=None,
                     text=joined,
                     order=1,
+                    score=1.0,
                 )
             )
 
     return chunks
+
+
+def chunk_weight(block: Block) -> float:
+    if block.kind == "table":
+        return 0.55
+    if block.kind in {"blockquote", "li"}:
+        return 0.9
+    return 1.0
+
+
+def looks_like_docx_cover_chunk(text: str) -> bool:
+    normalized = normalize_whitespace(text)
+    if not normalized:
+        return False
+
+    cover_keywords = [
+        "文档编号",
+        "文档版本",
+        "副标题",
+        "编制",
+        "校对",
+        "审核",
+        "批准",
+        "年月日",
+    ]
+    if any(keyword in normalized for keyword in cover_keywords):
+        return True
+
+    if " | " in normalized and len(normalized) < 260:
+        if sum(1 for keyword in ["编制", "校对", "审核", "批准"] if keyword in normalized) >= 2:
+            return True
+
+    return False
 
 
 def split_text(text: str, max_chars: int) -> Iterable[str]:
@@ -561,17 +908,28 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
             pending = Block(kind=block.kind, text=text, heading=block.heading, page_no=block.page_no)
             continue
 
-        same_context = pending.heading == block.heading and pending.page_no == block.page_no
+        same_context = (
+            pending.heading == block.heading
+            and pending.page_no == block.page_no
+            and pending.section == block.section
+        )
         if same_context and len(pending.text) + len(text) < min_chars:
             pending = Block(
                 kind=pending.kind,
                 text=normalize_whitespace(f"{pending.text}\n\n{text}"),
                 heading=pending.heading,
                 page_no=pending.page_no,
+                section=pending.section,
             )
         else:
             merged.append(pending)
-            pending = Block(kind=block.kind, text=text, heading=block.heading, page_no=block.page_no)
+            pending = Block(
+                kind=block.kind,
+                text=text,
+                heading=block.heading,
+                page_no=block.page_no,
+                section=block.section,
+            )
 
     if pending is not None:
         merged.append(pending)
@@ -594,6 +952,7 @@ def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
                 text=text,
                 heading=block.heading,
                 page_no=block.page_no,
+                section=block.section,
             )
         )
     return normalized
@@ -627,7 +986,7 @@ def extract_docx_text_from_paragraph(paragraph: ElementTree.Element, ns: dict[st
     runs: List[str] = []
     for node in paragraph.findall(".//w:t", ns):
         runs.append(node.text or "")
-    return "".join(runs)
+    return clean_docx_text("".join(runs))
 
 
 def extract_docx_table(table: ElementTree.Element, ns: dict[str, str]) -> List[str]:
@@ -640,10 +999,11 @@ def extract_docx_table(table: ElementTree.Element, ns: dict[str, str]) -> List[s
                 for paragraph in cell.findall("./w:p", ns)
             )
             text = normalize_whitespace(text)
+            text = clean_docx_text(text)
             if text:
                 cells.append(text)
         row_text = normalize_whitespace(" | ".join(cells))
-        if row_text:
+        if row_text and not looks_like_docx_xml_noise(row_text):
             rows.append(row_text)
     return rows
 
@@ -707,6 +1067,8 @@ def strip_noise_paragraph(text: str) -> str:
         return ""
     if len(cleaned) <= 1:
         return ""
+    if looks_like_docx_xml_noise(cleaned):
+        return ""
     if is_noise_line(cleaned):
         return ""
     return cleaned
@@ -721,6 +1083,28 @@ def is_noise_line(text: str) -> bool:
     if re.fullmatch(r"\d+", text):
         return True
     if len(text) <= 3 and not re.search(r"[a-zA-Z\u4e00-\u9fff]", text):
+        return True
+    return False
+
+
+def clean_docx_text(text: str) -> str:
+    cleaned = normalize_whitespace(text)
+    if not cleaned:
+        return ""
+    cleaned = html.unescape(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if looks_like_docx_xml_noise(cleaned):
+        return ""
+    return cleaned
+
+
+def looks_like_docx_xml_noise(text: str) -> bool:
+    lowered = text.lower()
+    if "<w:" in lowered or "</w:" in lowered or "xmlns:" in lowered:
+        return True
+    if lowered.count("<") >= 2 and lowered.count(">") >= 2 and "w:" in lowered:
+        return True
+    if lowered.startswith("<") and ">" in lowered and ("w:" in lowered or "xml" in lowered):
         return True
     return False
 

@@ -1,6 +1,11 @@
-use crate::docmind::models::{SemanticDebugView, SemanticModelStatusView};
+use std::sync::Arc;
+
+use crate::docmind::models::{
+    SemanticDebugView, SemanticModelStatusView, SemanticRebuildProgressView, SemanticRebuildStartView,
+};
 use crate::docmind::semantic::store;
 use crate::docmind::storage::Database;
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn get_embedding_model_status(
@@ -26,23 +31,71 @@ pub async fn set_default_embedding_model(
 
 #[tauri::command]
 pub async fn rebuild_semantic_embeddings(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Database>,
-) -> Result<SemanticModelStatusView, String> {
+) -> Result<SemanticRebuildStartView, String> {
     eprintln!("[DocMind] rebuild_semantic_embeddings start");
-    let result = store::rebuild_all_embeddings(&state).await;
-    match result {
-        Ok(status) => {
-            eprintln!(
-                "[DocMind] rebuild_semantic_embeddings ok chunks={} embedded={} needs_rebuild={}",
-                status.sqlite_chunks, status.embedded_chunks, status.needs_rebuild
-            );
-            Ok(status)
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let database = state.inner().clone();
+    let start_status = store::get_embedding_model_status(&state).await?;
+    let failure_model = start_status.model.clone();
+    let emit_app = app.clone();
+    let progress_emitter: Arc<dyn Fn(SemanticRebuildProgressView) + Send + Sync> =
+        Arc::new(move |payload: SemanticRebuildProgressView| {
+            let _ = emit_app.emit("docmind:semantic:rebuild-progress", payload);
+        });
+
+    let task_job_id = job_id.clone();
+    let task_app = app.clone();
+    let initial_payload = SemanticRebuildProgressView {
+        job_id: job_id.clone(),
+        state: "initializing".to_string(),
+        message: "正在初始化语义模型".to_string(),
+        model: start_status.model.clone(),
+        total_chunks: start_status.sqlite_chunks,
+        processed_chunks: 0,
+        embedded_chunks: 0,
+        current_document: String::new(),
+        current_chunk: String::new(),
+        percent: 0,
+        last_error: String::new(),
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    };
+    let _ = app.emit("docmind:semantic:rebuild-progress", initial_payload);
+
+    tauri::async_runtime::spawn(async move {
+        let result = store::rebuild_all_embeddings(&database, task_job_id.clone(), Some(progress_emitter)).await;
+        match result {
+            Ok(status) => {
+                eprintln!(
+                    "[DocMind] rebuild_semantic_embeddings ok chunks={} embedded={} needs_rebuild={}",
+                    status.sqlite_chunks, status.embedded_chunks, status.needs_rebuild
+                );
+            }
+            Err(error) => {
+                eprintln!("[DocMind] rebuild_semantic_embeddings error: {error}");
+                let _ = task_app.emit(
+                    "docmind:semantic:rebuild-progress",
+                    SemanticRebuildProgressView {
+                        job_id: task_job_id,
+                        state: "failed".to_string(),
+                        message: "语义向量重建失败".to_string(),
+                        model: failure_model,
+                        total_chunks: 0,
+                        processed_chunks: 0,
+                        embedded_chunks: 0,
+                        current_document: String::new(),
+                        current_chunk: String::new(),
+                        percent: 0,
+                        last_error: error,
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                );
+            }
         }
-        Err(error) => {
-            eprintln!("[DocMind] rebuild_semantic_embeddings error: {error}");
-            Err(error)
-        }
-    }
+    });
+
+    Ok(SemanticRebuildStartView { job_id, status: start_status })
 }
 
 #[tauri::command]

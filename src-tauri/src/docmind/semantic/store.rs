@@ -2,6 +2,7 @@
 
 use chrono::Utc;
 use sqlx::Row;
+use std::sync::Arc;
 
 use crate::docmind::models::{
     EmbeddingModelView, SemanticDebugHitView, SemanticDebugView, SemanticModelStatusView,
@@ -10,9 +11,19 @@ use crate::docmind::search::normalize_query;
 use crate::docmind::storage::types::{ChunkRecord, ExtractedDocument};
 use crate::docmind::storage::Database;
 
-use super::embedding::{
-    cosine_similarity, embed_text, normalize_embedding_text, text_hash, vector_norm,
-};
+use super::client::PythonSemanticClient;
+use super::embedding::{cosine_similarity, normalize_embedding_text, text_hash, vector_norm};
+
+type SemanticProgressEmitter = Arc<dyn Fn(crate::docmind::models::SemanticRebuildProgressView) + Send + Sync>;
+
+fn emit_semantic_progress(
+    emitter: Option<&SemanticProgressEmitter>,
+    payload: crate::docmind::models::SemanticRebuildProgressView,
+) {
+    if let Some(callback) = emitter {
+        (callback)(payload);
+    }
+}
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct EmbeddingModelRow {
@@ -67,18 +78,31 @@ pub async fn get_embedding_model_status(
     database: &Database,
 ) -> Result<SemanticModelStatusView, String> {
     let model = load_default_model(database).await?;
+    let client = PythonSemanticClient::from_env();
+    let runtime_status = client.embedding_status(Some(&model.name));
+
+    match runtime_status {
+        Ok(status) => {
+            sync_model_runtime(database, &model.id, status.available, &status.message).await?;
+        }
+        Err(error) => {
+            sync_model_runtime(database, &model.id, false, &error.to_string()).await?;
+        }
+    }
+
+    let refreshed_model = load_default_model(database).await?;
     let sqlite_chunks = count_sqlite_chunks(database).await?;
-    let embedded_chunks = count_embedded_chunks(database, &model.id).await?;
+    let embedded_chunks = count_embedded_chunks(database, &refreshed_model.id).await?;
     let meta = load_vector_meta(database).await?;
 
     Ok(SemanticModelStatusView {
-        needs_rebuild: sqlite_chunks != embedded_chunks,
+        needs_rebuild: sqlite_chunks != embedded_chunks || !refreshed_model.available,
         sqlite_chunks,
         embedded_chunks,
         last_indexed_at: format_unix_ts(meta.last_indexed_at),
         last_error: meta.last_error,
         index_status: meta.status,
-        model,
+        model: refreshed_model,
     })
 }
 
@@ -155,12 +179,20 @@ pub async fn set_default_embedding_model(
     .await
     .map_err(|error| error.to_string())?;
 
+    clear_all_embeddings(database).await?;
     get_embedding_model_status(database).await
 }
 
-pub async fn rebuild_all_embeddings(database: &Database) -> Result<SemanticModelStatusView, String> {
+pub async fn rebuild_all_embeddings(
+    database: &Database,
+    job_id: String,
+    progress: Option<SemanticProgressEmitter>,
+) -> Result<SemanticModelStatusView, String> {
     let model = load_default_model(database).await?;
-    clear_all_embeddings(database).await?;
+    let client = PythonSemanticClient::from_env();
+    if !model.available {
+        return Err("embedding 模型不可用，请先确认语义面板显示为可用".to_string());
+    }
 
     let rows = sqlx::query(
         r#"
@@ -183,47 +215,212 @@ pub async fn rebuild_all_embeddings(database: &Database) -> Result<SemanticModel
     .await
     .map_err(|error| error.to_string())?;
 
+    let total_chunks = rows.len();
+    let mut processed_chunks = 0usize;
+    let mut embedded_chunks = 0usize;
     let mut current_document_id = String::new();
+    let mut current_document_path = String::new();
+    let mut current_file_name = String::new();
     let mut document_chunks: Vec<(String, String, String, String)> = Vec::new();
+
+    emit_semantic_progress(
+        progress.as_ref(),
+        crate::docmind::models::SemanticRebuildProgressView {
+            job_id: job_id.clone(),
+            state: "initializing".to_string(),
+            message: "正在初始化语义模型".to_string(),
+            model: model.clone(),
+            total_chunks,
+            processed_chunks,
+            embedded_chunks,
+            current_document: String::new(),
+            current_chunk: String::new(),
+            percent: 0,
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
+
+    clear_all_embeddings(database).await?;
 
     for row in rows {
         let document_id: String = row.try_get("document_id").map_err(|error| error.to_string())?;
-        let file_name: String = row.try_get("file_name").map_err(|error| error.to_string())?;
+        let document_path: String = row.try_get("document_path").map_err(|error| error.to_string())?;
+        let file_name_value: String = row.try_get("file_name").map_err(|error| error.to_string())?;
         let chunk_id: String = row.try_get("chunk_id").map_err(|error| error.to_string())?;
         let heading: String = row.try_get("heading").unwrap_or_default();
         let snippet: String = row.try_get("snippet").unwrap_or_default();
 
         if current_document_id.is_empty() {
             current_document_id = document_id.clone();
+            current_document_path = document_path.clone();
+            current_file_name = file_name_value.clone();
         }
 
         if current_document_id != document_id {
             upsert_document_embeddings_from_rows(
                 database,
                 &current_document_id,
+                &current_document_path,
+                &current_file_name,
                 &document_chunks,
                 &model,
+                &client,
+                &job_id,
+                progress.as_ref(),
+                total_chunks,
+                &mut processed_chunks,
+                &mut embedded_chunks,
             )
             .await?;
             current_document_id = document_id.clone();
+            current_document_path = document_path.clone();
+            current_file_name = file_name_value.clone();
             document_chunks.clear();
         }
 
-        document_chunks.push((chunk_id, file_name, heading, snippet));
+        document_chunks.push((chunk_id, file_name_value, heading, snippet));
     }
 
     if !current_document_id.is_empty() {
         upsert_document_embeddings_from_rows(
             database,
             &current_document_id,
+            &current_document_path,
+            &current_file_name,
             &document_chunks,
             &model,
+            &client,
+            &job_id,
+            progress.as_ref(),
+            total_chunks,
+            &mut processed_chunks,
+            &mut embedded_chunks,
         )
         .await?;
     }
 
     update_vector_index_meta(database, &model.id, "ready", "").await?;
+    emit_semantic_progress(
+        progress.as_ref(),
+        crate::docmind::models::SemanticRebuildProgressView {
+            job_id,
+            state: "completed".to_string(),
+            message: "语义向量重建完成".to_string(),
+            model: load_default_model(database).await?,
+            total_chunks,
+            processed_chunks,
+            embedded_chunks,
+            current_document: current_document_path,
+            current_chunk: String::new(),
+            percent: 100,
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
     get_embedding_model_status(database).await
+}
+
+async fn upsert_document_embeddings_from_rows(
+    database: &Database,
+    document_id: &str,
+    document_path: &str,
+    file_name: &str,
+    chunks: &[(String, String, String, String)],
+    model: &EmbeddingModelView,
+    client: &PythonSemanticClient,
+    job_id: &str,
+    progress: Option<&SemanticProgressEmitter>,
+    total_chunks: usize,
+    processed_chunks: &mut usize,
+    embedded_chunks: &mut usize,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM chunk_embeddings WHERE document_id = ?")
+        .bind(document_id)
+        .execute(database.pool())
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let semantic_texts: Vec<String> = chunks
+        .iter()
+        .map(|(_, file_name_value, heading, snippet)| {
+            normalize_embedding_text(&format!("{file_name_value}\n{heading}\n{snippet}"))
+        })
+        .collect();
+
+    let vectors = client
+        .embed_texts(&semantic_texts, Some(&model.name))
+        .map_err(|error| error.to_string())?;
+
+    if vectors.len() != chunks.len() {
+        return Err(format!(
+            "embedding 向量数量不匹配: chunks={} vectors={}",
+            chunks.len(),
+            vectors.len()
+        ));
+    }
+
+    let batch_size = 8usize;
+    for (batch_index, batch) in chunks.chunks(batch_size).enumerate() {
+        for (offset, _chunk) in batch.iter().enumerate() {
+            let index = batch_index * batch_size + offset;
+            let chunk_id = format!("{document_id}:{index}");
+            let semantic_text = &semantic_texts[index];
+            let vector_json = serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
+            let now = now_unix_ts();
+
+            sqlx::query(
+                r#"
+                INSERT OR REPLACE INTO chunk_embeddings
+                    (chunk_id, document_id, model_id, vector_json, dimension, text_hash, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)
+                "#,
+            )
+            .bind(&chunk_id)
+            .bind(document_id)
+            .bind(&model.id)
+            .bind(vector_json)
+            .bind(model.dimension as i64)
+            .bind(text_hash(semantic_text))
+            .bind(now)
+            .bind(now)
+            .execute(database.pool())
+            .await
+            .map_err(|error| error.to_string())?;
+
+            *processed_chunks += 1;
+            *embedded_chunks += 1;
+            emit_semantic_progress(
+                progress,
+                crate::docmind::models::SemanticRebuildProgressView {
+                    job_id: job_id.to_string(),
+                    state: "running".to_string(),
+                    message: format!("正在处理 {file_name}"),
+                    model: model.clone(),
+                    total_chunks,
+                    processed_chunks: *processed_chunks,
+                    embedded_chunks: *embedded_chunks,
+                    current_document: document_path.to_string(),
+                    current_chunk: chunk_id,
+                    percent: progress_percent(*processed_chunks, total_chunks),
+                    last_error: String::new(),
+                    updated_at: format_unix_ts(now_unix_ts()),
+                },
+            );
+        }
+    }
+
+    update_vector_index_meta(database, &model.id, "ready", "").await?;
+    Ok(())
+}
+
+fn progress_percent(processed: usize, total: usize) -> u8 {
+    if total == 0 {
+        return 0;
+    }
+
+    let ratio = (processed as f32 / total as f32) * 100.0;
+    ratio.round().clamp(0.0, 100.0) as u8
 }
 
 pub async fn upsert_document_embeddings(
@@ -233,8 +430,14 @@ pub async fn upsert_document_embeddings(
     chunks: &[ChunkRecord],
 ) -> Result<(), String> {
     let model = load_default_model(database).await?;
-    if !model.enabled {
-        return Ok(());
+    let client = PythonSemanticClient::from_env();
+    let runtime_status = client
+        .embedding_status(Some(&model.name))
+        .map_err(|error| error.to_string())?;
+    sync_model_runtime(database, &model.id, runtime_status.available, &runtime_status.message).await?;
+    let model = load_default_model(database).await?;
+    if !model.enabled || !model.available {
+        return Err(format!("embedding 模型不可用: {}", runtime_status.message));
     }
 
     sqlx::query("DELETE FROM chunk_embeddings WHERE document_id = ?")
@@ -243,14 +446,33 @@ pub async fn upsert_document_embeddings(
         .await
         .map_err(|error| error.to_string())?;
 
-    for (index, chunk) in chunks.iter().enumerate() {
-        let chunk_id = format!("{document_id}:{index}");
-        let semantic_text = normalize_embedding_text(&format!(
-            "{}\n{}\n{}",
-            document.file_name, chunk.heading, chunk.snippet
+    let semantic_texts: Vec<String> = chunks
+        .iter()
+        .map(|chunk| {
+            normalize_embedding_text(&format!(
+                "{}\n{}\n{}",
+                document.file_name, chunk.heading, chunk.snippet
+            ))
+        })
+        .collect();
+
+    let vectors = client
+        .embed_texts(&semantic_texts, Some(&model.name))
+        .map_err(|error| error.to_string())?;
+
+    if vectors.len() != chunks.len() {
+        return Err(format!(
+            "embedding 向量数量不匹配: chunks={} vectors={}",
+            chunks.len(),
+            vectors.len()
         ));
-        let vector = embed_text(&semantic_text, model.dimension);
-        let vector_json = serde_json::to_string(&vector).map_err(|error| error.to_string())?;
+    }
+
+    for (index, _chunk) in chunks.iter().enumerate() {
+        let chunk_id = format!("{document_id}:{index}");
+        let semantic_text = &semantic_texts[index];
+        let vector_json =
+            serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
         let now = now_unix_ts();
 
         sqlx::query(
@@ -265,7 +487,7 @@ pub async fn upsert_document_embeddings(
         .bind(&model.id)
         .bind(vector_json)
         .bind(model.dimension as i64)
-        .bind(text_hash(&semantic_text))
+        .bind(text_hash(semantic_text))
         .bind(now)
         .bind(now)
         .execute(database.pool())
@@ -342,10 +564,38 @@ pub async fn semantic_debug_report(
 ) -> Result<SemanticDebugView, String> {
     let model = load_default_model(database).await?;
     let normalized_query = normalize_query(query).join(" ");
-    let query_vector = embed_text(&normalized_query, model.dimension);
+    let client = PythonSemanticClient::from_env();
+    let query_status = match client.embedding_status(Some(&model.name)) {
+        Ok(status) => status,
+        Err(error) => {
+            let message = error.to_string();
+            sync_model_runtime(database, &model.id, false, &message).await?;
+            PythonSemanticClient::from_env()
+                .embedding_status(Some(&model.name))
+                .unwrap_or(super::client::SemanticStatus {
+                    available: false,
+                    provider: "fastembed".to_string(),
+                    model_name: model.name.clone(),
+                    model_path: model.model_path.clone(),
+                    dimension: model.dimension,
+                    message,
+                })
+        }
+    };
+    sync_model_runtime(database, &model.id, query_status.available, &query_status.message).await?;
+    let model = load_default_model(database).await?;
+
+    let query_vectors = if normalized_query.trim().is_empty() || !model.available {
+        Vec::new()
+    } else {
+        client
+            .embed_texts(&[normalized_query.clone()], Some(&model.name))
+            .map_err(|error| error.to_string())?
+    };
+    let query_vector = query_vectors.first().cloned().unwrap_or_default();
     let query_vector_dim = query_vector.len();
     let query_vector_norm = vector_norm(&query_vector);
-    let query_vector_ready = !normalized_query.trim().is_empty() && query_vector_norm > 0.0;
+    let query_vector_ready = !query_vector.is_empty() && query_vector_norm > 0.0;
 
     let sqlite_chunks = count_sqlite_chunks(database).await?;
     let embedded_chunks = count_embedded_chunks(database, &model.id).await?;
@@ -411,45 +661,14 @@ pub async fn semantic_debug_report(
     })
 }
 
-async fn upsert_document_embeddings_from_rows(
+pub async fn semantic_search_hits(
     database: &Database,
-    document_id: &str,
-    chunks: &[(String, String, String, String)],
-    model: &EmbeddingModelView,
-) -> Result<(), String> {
-    sqlx::query("DELETE FROM chunk_embeddings WHERE document_id = ?")
-        .bind(document_id)
-        .execute(database.pool())
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SemanticDebugHitView>, String> {
+    semantic_debug_report(database, query, limit)
         .await
-        .map_err(|error| error.to_string())?;
-
-    for (chunk_id, file_name, heading, snippet) in chunks {
-        let semantic_text = normalize_embedding_text(&format!("{file_name}\n{heading}\n{snippet}"));
-        let vector = embed_text(&semantic_text, model.dimension);
-        let vector_json = serde_json::to_string(&vector).map_err(|error| error.to_string())?;
-        let now = now_unix_ts();
-
-        sqlx::query(
-            r#"
-            INSERT OR REPLACE INTO chunk_embeddings
-                (chunk_id, document_id, model_id, vector_json, dimension, text_hash, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)
-            "#,
-        )
-        .bind(chunk_id)
-        .bind(document_id)
-        .bind(&model.id)
-        .bind(vector_json)
-        .bind(model.dimension as i64)
-        .bind(text_hash(&semantic_text))
-        .bind(now)
-        .bind(now)
-        .execute(database.pool())
-        .await
-        .map_err(|error| error.to_string())?;
-    }
-
-    Ok(())
+        .map(|report| report.hits)
 }
 
 async fn load_default_model(database: &Database) -> Result<EmbeddingModelView, String> {
@@ -505,6 +724,49 @@ async fn load_vector_meta(database: &Database) -> Result<VectorIndexMetaRow, Str
         last_error: String::new(),
         status: "idle".to_string(),
     }))
+}
+
+async fn sync_model_runtime(
+    database: &Database,
+    model_id: &str,
+    available: bool,
+    message: &str,
+) -> Result<(), String> {
+    let now = now_unix_ts();
+    sqlx::query(
+        r#"
+        UPDATE embedding_models
+        SET available = ?,
+            status = ?,
+            updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(available as i64)
+    .bind(if available { "ready" } else { "unavailable" })
+    .bind(now)
+    .bind(model_id)
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    sqlx::query(
+        r#"
+        UPDATE vector_index_meta
+        SET model_id = ?,
+            last_error = ?,
+            status = CASE WHEN ? = 1 THEN 'ready' ELSE 'unavailable' END
+        WHERE id = 1
+        "#,
+    )
+    .bind(model_id)
+    .bind(message)
+    .bind(available as i64)
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    Ok(())
 }
 
 async fn update_vector_index_meta(

@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Loader2, RefreshCw, FolderOpen, Database, Cpu } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
-import type { FailedFileView, IndexDirView, IndexStatusView, ParserRuntimeView } from "../types/docmind";
+import type {
+  FailedFileView,
+  IndexDirView,
+  IndexRefreshProgressView,
+  IndexStatusView,
+  ParserRuntimeView,
+} from "../types/docmind";
 
 const status = ref<IndexStatusView | null>(null);
 const dirs = ref<IndexDirView[]>([]);
@@ -15,6 +23,9 @@ const errorMessage = ref("");
 const dashboardRefreshing = ref(false);
 const actionState = ref<"pausing" | "resuming" | null>(null);
 let pollTimer: number | null = null;
+const indexRefreshJobResolvers = new Map<string, (payload: IndexRefreshProgressView) => void>();
+const indexRefreshJobBufferedEvents = new Map<string, IndexRefreshProgressView>();
+let unlistenIndexRefreshProgress: null | (() => void) = null;
 
 const failedGroups = computed(() => {
   const groups = new Map<string, FailedFileView[]>();
@@ -81,6 +92,44 @@ const refreshDashboard = async () => {
   }
 };
 
+const waitForIndexRefreshJob = (jobId: string) => {
+  const buffered = indexRefreshJobBufferedEvents.get(jobId);
+  if (buffered) {
+    indexRefreshJobBufferedEvents.delete(jobId);
+    return Promise.resolve(buffered);
+  }
+
+  return new Promise<IndexRefreshProgressView>((resolve) => {
+    indexRefreshJobResolvers.set(jobId, resolve);
+  });
+};
+
+const installIndexRefreshListener = async () => {
+  if (unlistenIndexRefreshProgress) {
+    return;
+  }
+
+  unlistenIndexRefreshProgress = await listen<IndexRefreshProgressView>(
+    "docmind:index-refresh-progress",
+    (event) => {
+      const payload = event.payload;
+      if (payload.state === "running") {
+        return;
+      }
+
+      const resolver = indexRefreshJobResolvers.get(payload.job_id);
+      if (resolver) {
+        indexRefreshJobResolvers.delete(payload.job_id);
+        resolver(payload);
+      } else {
+        indexRefreshJobBufferedEvents.set(payload.job_id, payload);
+      }
+    },
+  );
+};
+
+void installIndexRefreshListener();
+
 const stopPolling = () => {
   if (pollTimer !== null) {
     window.clearTimeout(pollTimer);
@@ -112,7 +161,12 @@ const refreshIndex = async () => {
   errorMessage.value = "";
 
   try {
-    status.value = await docmindApi.refreshIndex();
+    const started = await docmindApi.refreshIndex();
+    const finished = await waitForIndexRefreshJob(started.job_id);
+    status.value = finished.status;
+    if (finished.state === "failed") {
+      errorMessage.value = finished.message;
+    }
   } catch (error) {
     errorMessage.value = formatDocmindError(error, "重新索引失败");
     console.error("[DocMind] refreshIndex failed", error);
@@ -211,11 +265,18 @@ const retryFailedGroup = async (code: string, items: FailedFileView[]) => {
 };
 
 onMounted(async () => {
+  await installIndexRefreshListener();
   await syncDashboardState();
 });
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
   stopPolling();
+  if (unlistenIndexRefreshProgress) {
+    unlistenIndexRefreshProgress();
+    unlistenIndexRefreshProgress = null;
+  }
+  indexRefreshJobResolvers.clear();
+  indexRefreshJobBufferedEvents.clear();
 });
 </script>
 
@@ -383,71 +444,15 @@ onUnmounted(() => {
       正在读取索引状态...
     </div>
 
-    <div v-else class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="mb-4 flex items-center justify-between">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">当前任务</div>
-          <div class="mt-1 text-xs text-slate-500">{{ status?.current_task?.label ?? "暂无任务" }}</div>
-        </div>
-        <DocMindBadge :tone="taskDisplayState.tone">
-          <Loader2 v-if="taskDisplayState.spinning" class="mr-1 animate-spin" :size="13" />
-          {{ taskDisplayState.label }}
-        </DocMindBadge>
-      </div>
-      <div class="h-2 rounded-full bg-slate-100">
-        <div
-          class="h-2 rounded-full bg-slate-900 transition-[width] duration-500"
-          :style="{
-            width: status?.current_task
-              ? `${Math.max(status.current_task.progress, 8)}%`
-              : '0%',
-          }"
-        />
-      </div>
-
-      <div v-if="status?.current_task" class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">正在处理目录</div>
-          <div class="mt-1 truncate text-sm font-medium text-slate-900">
-            {{ status.current_task.current_dir || "暂无目录" }}
-          </div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">当前文件</div>
-          <div class="mt-1 truncate text-sm font-medium text-slate-900">
-            {{ status.current_task.current_file || "暂无文件" }}
-          </div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">累计成功</div>
-          <div class="mt-1 text-sm font-semibold text-emerald-700">{{ status.current_task.succeeded }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">累计失败</div>
-          <div class="mt-1 text-sm font-semibold text-rose-700">{{ status.current_task.failed }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">本次更新</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.current_task.updated }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">本次跳过</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.current_task.skipped }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">本次删除</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.current_task.deleted }}</div>
-        </div>
-      </div>
-
-      <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        <span>{{ status?.current_task?.scanned ?? 0 }} / {{ status?.current_task?.total ?? 0 }} 个文件</span>
-        <span>·</span>
-        <span>{{ status?.current_task?.progress ?? 0 }}%</span>
-        <span>·</span>
-        <span>{{ status?.current_task?.details ?? "" }}</span>
-      </div>
-    </div>
+    <DocMindTaskCard
+      :task="status?.current_task ?? null"
+      title="当前任务"
+      :description="status?.current_task?.label ?? '暂无任务'"
+      :badge-label="taskDisplayState.label"
+      :badge-tone="taskDisplayState.tone"
+      :badge-spinning="taskDisplayState.spinning"
+      class="mb-6"
+    />
 
     <div class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">

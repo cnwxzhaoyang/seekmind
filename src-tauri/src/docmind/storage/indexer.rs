@@ -1,26 +1,41 @@
 #![allow(dead_code)]
 
-use crate::docmind::models::IndexStatusView;
+use crate::docmind::models::{IndexRefreshProgressView, IndexStatusView};
 use crate::docmind::storage::scanner;
 use crate::docmind::storage::Database;
 use crate::docmind::storage::types::DocumentState;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
-pub async fn rebuild_all(database: &Database) -> Result<IndexStatusView, sqlx::Error> {
+pub async fn rebuild_all<F>(
+    database: &Database,
+    job_id: &str,
+    mut on_progress: F,
+) -> Result<IndexStatusView, sqlx::Error>
+where
+    F: FnMut(IndexRefreshProgressView) + Send,
+{
     database.clear_pause_request().await?;
     database.clear_index_checkpoint().await?;
     let dir_paths = database.enabled_index_dir_paths().await?;
     database.clear_failed_files().await?;
     database.clear_current_task().await?;
-    rebuild_paths(database, &dir_paths).await
+    rebuild_paths(database, &dir_paths, job_id, "all", &mut on_progress).await
 }
 
-pub async fn rebuild_dir(database: &Database, dir_path: &str) -> Result<IndexStatusView, sqlx::Error> {
+pub async fn rebuild_dir<F>(
+    database: &Database,
+    dir_path: &str,
+    job_id: &str,
+    mut on_progress: F,
+) -> Result<IndexStatusView, sqlx::Error>
+where
+    F: FnMut(IndexRefreshProgressView) + Send,
+{
     database.clear_pause_request().await?;
     database.clear_index_checkpoint().await?;
     let dir_paths = vec![dir_path.to_string()];
-    rebuild_paths(database, &dir_paths).await
+    rebuild_paths(database, &dir_paths, job_id, "dir", &mut on_progress).await
 }
 
 pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
@@ -71,7 +86,15 @@ pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
         deleted: checkpoint.deleted.max(0) as usize,
     };
 
-    process_index_plan(database, plan, &settings, &existing_by_path)
+    process_index_plan(
+        database,
+        plan,
+        &settings,
+        &existing_by_path,
+        "",
+        "resume",
+        &mut |_: IndexRefreshProgressView| {},
+    )
         .await
         .map_err(|error| error.to_string())
 }
@@ -104,7 +127,10 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
         .map_err(|error| error.to_string())?;
     let file = scanner::snapshot_supported_file(&dir_path, path_buf, &settings)?;
     match scanner::parse_document(&file) {
-        Ok((document, chunks)) => {
+        Ok((document, chunks, outcome)) => {
+            if let Some(warning) = outcome.warning {
+                eprintln!("[DocMind] retry_failed_file warning: {warning}");
+            }
             database
                 .clear_document_by_path(normalized)
                 .await
@@ -138,10 +164,16 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
         .map_err(|error| error.to_string())
 }
 
-async fn rebuild_paths(
+async fn rebuild_paths<F>(
     database: &Database,
     dir_paths: &[String],
-) -> Result<IndexStatusView, sqlx::Error> {
+    job_id: &str,
+    scope: &str,
+    on_progress: &mut F,
+) -> Result<IndexStatusView, sqlx::Error>
+where
+    F: FnMut(IndexRefreshProgressView) + Send,
+{
     if dir_paths.is_empty() {
         return database.get_index_status().await;
     }
@@ -202,7 +234,7 @@ async fn rebuild_paths(
         deleted: 0,
     };
 
-    process_index_plan(database, plan, &settings, &existing_by_path).await
+    process_index_plan(database, plan, &settings, &existing_by_path, job_id, scope, on_progress).await
 }
 
 struct IndexPlan {
@@ -218,12 +250,18 @@ struct IndexPlan {
     deleted: usize,
 }
 
-async fn process_index_plan(
+async fn process_index_plan<F>(
     database: &Database,
     mut plan: IndexPlan,
     settings: &crate::docmind::storage::types::IndexSettings,
     existing_by_path: &HashMap<String, DocumentState>,
-) -> Result<IndexStatusView, sqlx::Error> {
+    job_id: &str,
+    scope: &str,
+    on_progress: &mut F,
+) -> Result<IndexStatusView, sqlx::Error>
+where
+    F: FnMut(IndexRefreshProgressView) + Send,
+{
     trace_indexer(&format!(
         "process_index_plan dirs={:?} delete={} update={} total={} processed={}",
         plan.dir_paths,
@@ -276,8 +314,18 @@ async fn process_index_plan(
             plan.skipped,
             plan.deleted,
             false,
-        )
-        .await?;
+    )
+    .await?;
+    emit_index_progress(
+        database,
+        job_id,
+        scope,
+        "",
+        "running",
+        "正在重新索引本地文档",
+        on_progress,
+    )
+    .await?;
 
     for dir_path in &plan.dir_paths {
         database
@@ -309,6 +357,9 @@ async fn process_index_plan(
                 plan.updated,
                 plan.skipped,
                 plan.deleted,
+                job_id,
+                scope,
+                on_progress,
             )
             .await;
         }
@@ -353,6 +404,16 @@ async fn process_index_plan(
         }
 
         save_checkpoint(database, &plan, "delete", &current_dir, &path).await?;
+        emit_index_progress(
+            database,
+            job_id,
+            scope,
+            &path,
+            "running",
+            "已处理删除文件",
+            on_progress,
+        )
+        .await?;
     }
 
     while let Some(path) = plan.pending_update_paths.pop_front() {
@@ -374,6 +435,9 @@ async fn process_index_plan(
                 plan.updated,
                 plan.skipped,
                 plan.deleted,
+                job_id,
+                scope,
+                on_progress,
             )
             .await;
         }
@@ -402,8 +466,21 @@ async fn process_index_plan(
 
         let file = scanner::snapshot_supported_file(&current_dir, Path::new(&path), settings)
             .map_err(sqlx::Error::Protocol)?;
+        emit_index_progress(
+            database,
+            job_id,
+            scope,
+            &path,
+            "running",
+            "正在解析并索引文档",
+            on_progress,
+        )
+        .await?;
         match scanner::parse_document(&file) {
-            Ok((document, chunks)) => {
+            Ok((document, chunks, outcome)) => {
+                if let Some(warning) = outcome.warning {
+                    eprintln!("[DocMind] indexing warning for {}: {warning}", path);
+                }
                 match database.store_document(&document, &chunks).await {
                     Ok(()) => {
                         plan.succeeded += 1;
@@ -431,6 +508,16 @@ async fn process_index_plan(
         }
 
         save_checkpoint(database, &plan, "update", &current_dir, &path).await?;
+        emit_index_progress(
+            database,
+            job_id,
+            scope,
+            &path,
+            "running",
+            "已处理文档",
+            on_progress,
+        )
+        .await?;
     }
 
     database
@@ -481,7 +568,7 @@ async fn save_checkpoint(
         .await
 }
 
-async fn pause_current_task(
+async fn pause_current_task<F>(
     database: &Database,
     label: &str,
     details: &str,
@@ -495,7 +582,13 @@ async fn pause_current_task(
     updated: usize,
     skipped: usize,
     deleted: usize,
-) -> Result<IndexStatusView, sqlx::Error> {
+    job_id: &str,
+    scope: &str,
+    on_progress: &mut F,
+) -> Result<IndexStatusView, sqlx::Error>
+where
+    F: FnMut(IndexRefreshProgressView) + Send,
+{
     database
         .set_current_task(
             label,
@@ -514,6 +607,16 @@ async fn pause_current_task(
             true,
         )
         .await?;
+    emit_index_progress(
+        database,
+        job_id,
+        scope,
+        current_file,
+        "paused",
+        details,
+        on_progress,
+    )
+    .await?;
     database.get_index_status().await
 }
 
@@ -548,6 +651,31 @@ async fn existing_chunks_for_dir(database: &Database, dir_path: &str) -> Result<
         .into_iter()
         .map(|doc| doc.chunks)
         .sum())
+}
+
+async fn emit_index_progress<F>(
+    database: &Database,
+    job_id: &str,
+    scope: &str,
+    path: &str,
+    state: &str,
+    message: &str,
+    on_progress: &mut F,
+) -> Result<(), sqlx::Error>
+where
+    F: FnMut(IndexRefreshProgressView) + Send,
+{
+    let status = database.get_index_status().await?;
+    on_progress(IndexRefreshProgressView {
+        job_id: job_id.to_string(),
+        state: state.to_string(),
+        message: message.to_string(),
+        scope: scope.to_string(),
+        path: path.to_string(),
+        status,
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    });
+    Ok(())
 }
 
 fn trace_indexer(message: &str) {

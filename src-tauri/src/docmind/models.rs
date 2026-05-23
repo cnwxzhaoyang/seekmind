@@ -107,6 +107,42 @@ pub struct IndexStatusView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct DocumentRefreshStartView {
+    pub job_id: String,
+    pub status: IndexStatusView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DocumentRefreshProgressView {
+    pub job_id: String,
+    pub state: String,
+    pub message: String,
+    pub path: String,
+    pub file_name: String,
+    pub parser_source: String,
+    pub warning: Option<String>,
+    pub status: IndexStatusView,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexRefreshStartView {
+    pub job_id: String,
+    pub status: IndexStatusView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexRefreshProgressView {
+    pub job_id: String,
+    pub state: String,
+    pub message: String,
+    pub scope: String,
+    pub path: String,
+    pub status: IndexStatusView,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ParserRuntimeView {
     pub enabled: bool,
     pub available: bool,
@@ -187,6 +223,28 @@ pub struct SemanticModelStatusView {
     pub last_indexed_at: String,
     pub last_error: String,
     pub index_status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticRebuildProgressView {
+    pub job_id: String,
+    pub state: String,
+    pub message: String,
+    pub model: EmbeddingModelView,
+    pub total_chunks: usize,
+    pub processed_chunks: usize,
+    pub embedded_chunks: usize,
+    pub current_document: String,
+    pub current_chunk: String,
+    pub percent: u8,
+    pub last_error: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticRebuildStartView {
+    pub job_id: String,
+    pub status: SemanticModelStatusView,
 }
 
 #[derive(Debug, Clone, Serialize)]

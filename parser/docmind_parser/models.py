@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -17,6 +17,11 @@ class ParserRequest:
     command: str
     path: str
     options: ParserOptions
+    texts: List[str]
+    model_name: Optional[str]
+
+
+ProgressEmitter = Callable[[Dict[str, Any]], None]
 
 
 @dataclass
@@ -25,6 +30,7 @@ class ParsedChunk:
     page_no: Optional[int]
     text: str
     order: int
+    score: float = 1.0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -56,6 +62,50 @@ class ParserError:
         return asdict(self)
 
 
+@dataclass
+class EmbeddingStatus:
+    available: bool
+    provider: str
+    model_name: str
+    model_path: str
+    dimension: int
+    message: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class EmbeddingResponse:
+    vectors: List[List[float]]
+    status: EmbeddingStatus
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "vectors": self.vectors,
+            "status": self.status.to_dict(),
+        }
+
+
+@dataclass
+class ParserStreamMessage:
+    request_id: str
+    kind: str
+    event: str
+    message: str
+    stage: str
+    percent: int = 0
+    current: str = ""
+    total: int = 0
+    processed: int = 0
+    parser_source: str = ""
+    warning: Optional[str] = None
+    details: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
 def request_from_dict(data: Dict[str, Any]) -> ParserRequest:
     options = data.get("options") or {}
     return ParserRequest(
@@ -67,5 +117,8 @@ def request_from_dict(data: Dict[str, Any]) -> ParserRequest:
             max_chunk_chars=int(options.get("max_chunk_chars", 800)),
             max_chunks=options.get("max_chunks"),
         ),
+        texts=[str(item) for item in (data.get("texts") or []) if str(item).strip()],
+        model_name=(
+            str(data["model_name"]).strip() if str(data.get("model_name", "")).strip() else None
+        ),
     )
-

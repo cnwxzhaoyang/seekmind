@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use chrono::{TimeZone, Utc};
 use dirs::{data_dir, download_dir, document_dir};
@@ -24,11 +27,22 @@ use crate::docmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocume
 pub struct Database {
     pool: SqlitePool,
     search_index: Arc<SearchIndex>,
+    index_job_running: Arc<AtomicBool>,
 }
 
 impl Database {
     pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    pub(crate) fn try_begin_index_job(&self) -> bool {
+        self.index_job_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub(crate) fn end_index_job(&self) {
+        self.index_job_running.store(false, Ordering::SeqCst);
     }
 }
 
@@ -181,7 +195,11 @@ impl Database {
             .map_err(|error| error.to_string())?;
 
         let search_index = Arc::new(SearchIndex::open_or_init()?);
-        let database = Self { pool, search_index };
+        let database = Self {
+            pool,
+            search_index,
+            index_job_running: Arc::new(AtomicBool::new(false)),
+        };
         database
             .init_schema()
             .await
@@ -243,9 +261,9 @@ impl Database {
                 .map_err(|error| error.to_string())?;
 
             if indexed_docs == 0 {
-                let _ = indexer::rebuild_all(&database).await;
+                let _ = indexer::rebuild_all(&database, "bootstrap", |_| {}).await;
             } else if database.search_index.doc_count() == 0 {
-                let _ = indexer::rebuild_all(&database).await;
+                let _ = indexer::rebuild_all(&database, "bootstrap", |_| {}).await;
             }
         }
 
@@ -335,16 +353,39 @@ impl Database {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResultView>, sqlx::Error> {
-        let hits = self
+        let keyword_hits = self
             .search_index
             .search(query, limit.max(1))
             .map_err(sqlx::Error::Protocol)?;
 
-        if hits.is_empty() {
+        let semantic_hits = semantic_store::semantic_search_hits(self, query, limit.max(1))
+            .await
+            .unwrap_or_default();
+
+        if keyword_hits.is_empty() && semantic_hits.is_empty() {
             return Ok(Vec::new());
         }
 
-        let chunk_ids = hits.iter().map(|hit| hit.chunk_id.clone()).collect::<Vec<_>>();
+        let mut keyword_score_map = std::collections::HashMap::<String, f32>::new();
+        for hit in &keyword_hits {
+            keyword_score_map.insert(hit.chunk_id.clone(), hit.score);
+        }
+
+        let mut semantic_score_map = std::collections::HashMap::<String, f32>::new();
+        for hit in &semantic_hits {
+            semantic_score_map.insert(hit.chunk_id.clone(), hit.score);
+        }
+
+        let mut chunk_ids = keyword_hits
+            .iter()
+            .map(|hit| hit.chunk_id.clone())
+            .collect::<Vec<_>>();
+        for hit in &semantic_hits {
+            if !keyword_score_map.contains_key(&hit.chunk_id) {
+                chunk_ids.push(hit.chunk_id.clone());
+            }
+        }
+
         let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
         let mut rows_by_id = std::collections::HashMap::new();
         for row in rows {
@@ -354,12 +395,31 @@ impl Database {
         let mut results = Vec::new();
         let normalized_terms = normalize_query(query);
         let now = Utc::now().timestamp();
-        for hit in hits {
-            if let Some(row) = rows_by_id.remove(&hit.chunk_id) {
+        for chunk_id in chunk_ids {
+            if let Some(row) = rows_by_id.remove(&chunk_id) {
+                let keyword_score = keyword_score_map.get(&chunk_id).copied().unwrap_or(0.0);
+                let semantic_score = semantic_score_map.get(&chunk_id).copied().unwrap_or(0.0);
                 let (snippet, highlight_spans, snippet_window_start, snippet_window_end, snippet_source_len) =
                     build_search_snippet(&row.snippet, &normalized_terms, 220);
-                let (matched_field, match_origin) = matched_field_and_origin(&row, &normalized_terms);
-                let score = boosted_search_score(hit.score, &match_origin, row.modified_at, now);
+                let (matched_field, match_origin) = if keyword_score > 0.0 {
+                    matched_field_and_origin(&row, &normalized_terms)
+                } else if semantic_score > 0.0 {
+                    ("semantic".to_string(), "语义命中".to_string())
+                } else {
+                    matched_field_and_origin(&row, &normalized_terms)
+                };
+                let base_score = if keyword_score > 0.0 {
+                    keyword_score + semantic_score.max(0.0) * 0.25
+                } else {
+                    semantic_score.max(0.0)
+                };
+                let chunk_weight = row.score.clamp(0.25, 1.0);
+                let score = boosted_search_score(
+                    base_score * chunk_weight,
+                    &match_origin,
+                    row.modified_at,
+                    now,
+                );
                 results.push(SearchResultView {
                     id: row.id,
                     file_name: row.file_name,
@@ -380,6 +440,14 @@ impl Database {
                 });
             }
         }
+
+        results.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        results.truncate(limit.max(1));
 
         Ok(results)
     }
@@ -1504,10 +1572,24 @@ impl Database {
                 INSERT INTO embedding_models
                     (id, name, provider, model_path, dimension, enabled, available, is_default, status, created_at, updated_at)
                 VALUES
-                    ('default-local-embedding', 'BAAI/bge-small-zh-v1.5', 'local_fallback', '', 384, 1, 1, 1, 'ready', ?, ?)
+                    ('default-local-embedding', 'BAAI/bge-small-zh-v1.5', 'fastembed', '', 512, 1, 0, 1, 'unknown', ?, ?)
                 "#,
             )
             .bind(now)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            let now = current_unix_ts();
+            sqlx::query(
+                r#"
+                UPDATE embedding_models
+                SET provider = 'fastembed',
+                    dimension = 512,
+                    updated_at = ?
+                WHERE name = 'BAAI/bge-small-zh-v1.5'
+                "#,
+            )
             .bind(now)
             .execute(&self.pool)
             .await?;

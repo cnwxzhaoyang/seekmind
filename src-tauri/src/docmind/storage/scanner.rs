@@ -6,9 +6,9 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
-use crate::docmind::parser::{python_parse_or_fallback, ParsedDocument};
+use crate::docmind::parser::{ParserClientError, ParsedDocument, PythonParserClient};
 
-use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings};
+use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings, ParseOutcome, ParserSource};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "txt", "md", "markdown", "html", "htm", "docx", "pdf", "log", "toml", "json", "yaml", "yml", "xml",
@@ -84,14 +84,57 @@ pub fn extract_document(file: &DiscoveredFile) -> Result<ExtractedDocument, Stri
     extract_document_at(&file.dir_path, &file.path)
 }
 
-pub fn parse_document(file: &DiscoveredFile) -> Result<(ExtractedDocument, Vec<ChunkRecord>), String> {
-    if let Some(parsed) = python_parse_or_fallback(&file.path) {
-        return Ok(convert_python_document(file, parsed));
+pub fn parse_document(
+    file: &DiscoveredFile,
+) -> Result<(ExtractedDocument, Vec<ChunkRecord>, ParseOutcome), String> {
+    if crate::docmind::parser::python_parser_enabled() {
+        let client = PythonParserClient::from_env();
+        if client.is_configured() {
+            match client.parse_document(&file.path) {
+                Ok(parsed) => {
+                    let (document, chunks) = convert_python_document(file, parsed);
+                    return Ok((
+                        document,
+                        chunks,
+                        ParseOutcome {
+                            source: ParserSource::Python,
+                            warning: None,
+                        },
+                    ));
+                }
+                Err(error) => {
+                    let warning = match error {
+                        ParserClientError::ParserFailed(parser_error) => format!(
+                            "Python 解析失败，已回退 Rust：{} ({})",
+                            parser_error.message, parser_error.code
+                        ),
+                        other => format!("Python 解析失败，已回退 Rust：{other}"),
+                    };
+                    let document = extract_document_at(&file.dir_path, &file.path)?;
+                    let chunks = chunk_document(&document);
+                    return Ok((
+                        document,
+                        chunks,
+                        ParseOutcome {
+                            source: ParserSource::Rust,
+                            warning: Some(warning),
+                        },
+                    ));
+                }
+            }
+        }
     }
 
     let document = extract_document_at(&file.dir_path, &file.path)?;
     let chunks = chunk_document(&document);
-    Ok((document, chunks))
+    Ok((
+        document,
+        chunks,
+        ParseOutcome {
+            source: ParserSource::Rust,
+            warning: None,
+        },
+    ))
 }
 
 pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocument, String> {
@@ -282,8 +325,11 @@ fn extract_xml_text_nodes(xml: &str) -> String {
         if let Some(tag_end) = cursor.find('>') {
             cursor = &cursor[tag_end + 1..];
             if let Some(end) = cursor.find("</w:t>") {
-                text.push_str(&decode_entities(&cursor[..end]));
-                text.push('\n');
+                let piece = clean_docx_text(&decode_entities(&cursor[..end]));
+                if !piece.is_empty() {
+                    text.push_str(&piece);
+                    text.push('\n');
+                }
                 cursor = &cursor[end + 6..];
             } else {
                 break;
@@ -294,6 +340,25 @@ fn extract_xml_text_nodes(xml: &str) -> String {
     }
 
     text
+}
+
+fn clean_docx_text(input: &str) -> String {
+    let cleaned = normalize_whitespace(&decode_entities(input));
+    if cleaned.is_empty() || looks_like_docx_xml_noise(&cleaned) {
+        return String::new();
+    }
+    cleaned
+}
+
+fn looks_like_docx_xml_noise(text: &str) -> bool {
+    let lowered = text.to_lowercase();
+    if lowered.contains("<w:") || lowered.contains("</w:") || lowered.contains("xmlns:") {
+        return true;
+    }
+    if lowered.starts_with('<') && lowered.contains('>') && (lowered.contains("w:") || lowered.contains("xml")) {
+        return true;
+    }
+    false
 }
 
 fn strip_html_tags(input: &str) -> String {
@@ -397,7 +462,7 @@ fn truncate_snippet(input: &str, limit: usize) -> String {
     snippet
 }
 
-fn convert_python_document(file: &DiscoveredFile, parsed: ParsedDocument) -> (ExtractedDocument, Vec<ChunkRecord>) {
+pub(crate) fn convert_python_document(file: &DiscoveredFile, parsed: ParsedDocument) -> (ExtractedDocument, Vec<ChunkRecord>) {
     let content = normalize_whitespace(&parsed.content);
     let file_name = file
         .path
@@ -433,7 +498,7 @@ fn convert_python_document(file: &DiscoveredFile, parsed: ParsedDocument) -> (Ex
             snippet: truncate_snippet(&normalize_whitespace(&chunk.text), 800),
             paragraph: Some(chunk.order as i64),
             page: chunk.page_no.map(|value| value as i64),
-            score: 1.0,
+            score: chunk.score.clamp(0.25, 1.0),
         })
         .collect::<Vec<_>>();
 

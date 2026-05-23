@@ -1,0 +1,244 @@
+use std::fmt::{Display, Formatter};
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone)]
+pub struct PythonSemanticClient {
+    python_bin: String,
+    script_path: PathBuf,
+    timeout: Duration,
+}
+
+#[derive(Debug, Serialize)]
+struct SemanticRequest {
+    request_id: String,
+    command: String,
+    path: String,
+    options: SemanticOptions,
+    texts: Vec<String>,
+    model_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SemanticStatus {
+    pub available: bool,
+    pub provider: String,
+    pub model_name: String,
+    pub model_path: String,
+    pub dimension: usize,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SemanticResponse {
+    request_id: String,
+    ok: bool,
+    document: Option<serde_json::Value>,
+    vectors: Option<Vec<Vec<f32>>>,
+    embedding_status: Option<SemanticStatus>,
+    error: Option<SemanticError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SemanticOptions {
+    include_chunks: bool,
+    max_chunk_chars: usize,
+    max_chunks: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SemanticError {
+    code: String,
+    message: String,
+    details: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum SemanticClientError {
+    NotConfigured,
+    Timeout,
+    SpawnFailed(String),
+    Io(String),
+    InvalidResponse(String),
+    SidecarFailed(String),
+}
+
+impl Display for SemanticClientError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotConfigured => write!(f, "python semantic sidecar is not configured"),
+            Self::Timeout => write!(f, "python semantic sidecar timed out"),
+            Self::SpawnFailed(error) => write!(f, "failed to spawn python semantic sidecar: {error}"),
+            Self::Io(error) => write!(f, "python semantic sidecar io error: {error}"),
+            Self::InvalidResponse(error) => write!(f, "python semantic sidecar returned invalid response: {error}"),
+            Self::SidecarFailed(error) => write!(f, "python semantic sidecar failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for SemanticClientError {}
+
+impl PythonSemanticClient {
+    pub fn from_env() -> Self {
+        let python_bin = std::env::var("DOCMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
+        let script_path = std::env::var("DOCMIND_PARSER_SCRIPT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("parser/docmind_parser/__main__.py"));
+        let timeout_ms = std::env::var("DOCMIND_SEMANTIC_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .or_else(|| {
+                std::env::var("DOCMIND_PARSER_TIMEOUT_MS")
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+            })
+            .unwrap_or(300_000);
+
+        Self {
+            python_bin,
+            script_path,
+            timeout: Duration::from_millis(timeout_ms),
+        }
+    }
+
+    pub fn is_configured(&self) -> bool {
+        self.resolve_script_path().exists()
+    }
+
+    pub fn embedding_status(&self, model_name: Option<&str>) -> Result<SemanticStatus, SemanticClientError> {
+        let response = self.execute("embedding_status", "", &[], model_name)?;
+        response
+            .embedding_status
+            .ok_or_else(|| SemanticClientError::InvalidResponse("missing embedding_status".to_string()))
+    }
+
+    pub fn embed_texts(
+        &self,
+        texts: &[String],
+        model_name: Option<&str>,
+    ) -> Result<Vec<Vec<f32>>, SemanticClientError> {
+        let response = self.execute("embed_texts", "", texts, model_name)?;
+        if !response.ok {
+            return Err(SemanticClientError::SidecarFailed(
+                response
+                    .error
+                    .map(|error| format!("{} ({})", error.message, error.code))
+                    .unwrap_or_else(|| "embedding failed".to_string()),
+            ));
+        }
+
+        response
+            .vectors
+            .ok_or_else(|| SemanticClientError::InvalidResponse("missing vectors".to_string()))
+    }
+
+    fn execute(
+        &self,
+        command: &str,
+        path: &str,
+        texts: &[String],
+        model_name: Option<&str>,
+    ) -> Result<SemanticResponse, SemanticClientError> {
+        if !self.is_configured() {
+            return Err(SemanticClientError::NotConfigured);
+        }
+
+        let script_path = self.resolve_script_path();
+        let request = SemanticRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            command: command.to_string(),
+            path: path.to_string(),
+            options: SemanticOptions {
+                include_chunks: true,
+                max_chunk_chars: 800,
+                max_chunks: None,
+            },
+            texts: texts.to_vec(),
+            model_name: model_name.map(|value| value.to_string()),
+        };
+
+        let payload = serde_json::to_vec(&request).map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        let mut child = Command::new(&self.python_bin)
+            .arg(&script_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| SemanticClientError::SpawnFailed(error.to_string()))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(&payload)
+                .map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        }
+
+        let deadline = Instant::now() + self.timeout;
+        loop {
+            match child.try_wait().map_err(|error| SemanticClientError::Io(error.to_string()))? {
+                Some(_) => break,
+                None => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        return Err(SemanticClientError::Timeout);
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        let response: Result<SemanticResponse, _> = serde_json::from_slice(&output.stdout);
+        match response {
+            Ok(response) => {
+                if response.request_id != request.request_id {
+                    return Err(SemanticClientError::InvalidResponse("request_id mismatch".to_string()));
+                }
+                Ok(response)
+            }
+            Err(error) => {
+                if output.status.success() {
+                    Err(SemanticClientError::InvalidResponse(error.to_string()))
+                } else {
+                    Err(SemanticClientError::SpawnFailed(if stderr.is_empty() {
+                        format!("python semantic sidecar exited with non-zero status: {error}")
+                    } else {
+                        stderr
+                    }))
+                }
+            }
+        }
+    }
+
+    pub fn resolve_script_path(&self) -> PathBuf {
+        if self.script_path.is_absolute() {
+            return self.script_path.clone();
+        }
+
+        let candidates = [
+            std::env::current_dir().ok().map(|cwd| cwd.join(&self.script_path)),
+            std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.join("src-tauri").join(&self.script_path)),
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|parent| parent.join(&self.script_path))),
+            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(&self.script_path)),
+        ];
+
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+
+        self.script_path.clone()
+    }
+}

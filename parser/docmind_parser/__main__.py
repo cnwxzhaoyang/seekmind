@@ -10,13 +10,22 @@ if __package__ in (None, ""):
     if str(package_root) not in sys.path:
         sys.path.insert(0, str(package_root))
     from docmind_parser.models import ParserError, request_from_dict
-    from docmind_parser.parser import ParserException, parse_document
+    from docmind_parser.parser import (
+        ParserException,
+        embed_texts,
+        embedding_status,
+        parse_document,
+    )
 else:
     from .models import ParserError, request_from_dict
-    from .parser import ParserException, parse_document
+    from .parser import ParserException, embed_texts, embedding_status, parse_document
 
 
 def main() -> int:
+    if len(sys.argv) >= 2 and sys.argv[1] == "warmup-embedding":
+        model_name = sys.argv[2] if len(sys.argv) >= 3 else None
+        return warmup_embedding(model_name)
+
     try:
         raw = sys.stdin.read()
         if not raw.strip():
@@ -31,25 +40,68 @@ def main() -> int:
         payload = json.loads(raw)
         request = request_from_dict(payload)
 
-        if request.command != "parse_document":
-            return write_error(
-                request_id=request.request_id,
-                error=ParserError(
-                    code="invalid_request",
-                    message=f"unsupported command: {request.command}",
-                ),
-            )
+        if request.command in {"parse_document", "parse_document_stream"}:
+            def emit_progress(payload: dict) -> None:
+                sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+                sys.stdout.write("\n")
+                sys.stdout.flush()
 
-        document = parse_document(Path(request.path), request.options)
-        response = {
-            "request_id": request.request_id,
-            "ok": True,
-            "document": document.to_dict(),
-            "error": None,
-        }
-        sys.stdout.write(json.dumps(response, ensure_ascii=False))
-        sys.stdout.flush()
-        return 0
+            document = parse_document(
+                Path(request.path),
+                request.options,
+                emit=emit_progress if request.command == "parse_document_stream" else None,
+                request_id=request.request_id,
+            )
+            response = {
+                "kind": "response",
+                "request_id": request.request_id,
+                "ok": True,
+                "document": document.to_dict(),
+                "vectors": None,
+                "embedding_status": None,
+                "error": None,
+            }
+            sys.stdout.write(json.dumps(response, ensure_ascii=False))
+            sys.stdout.flush()
+            return 0
+
+        if request.command == "embed_texts":
+            embedding_result = embed_texts(request.texts, request.model_name)
+            response = {
+                "kind": "response",
+                "request_id": request.request_id,
+                "ok": True,
+                "document": None,
+                "vectors": embedding_result.vectors,
+                "embedding_status": embedding_result.status.to_dict(),
+                "error": None,
+            }
+            sys.stdout.write(json.dumps(response, ensure_ascii=False))
+            sys.stdout.flush()
+            return 0
+
+        if request.command == "embedding_status":
+            status = embedding_status(request.model_name)
+            response = {
+                "kind": "response",
+                "request_id": request.request_id,
+                "ok": True,
+                "document": None,
+                "vectors": None,
+                "embedding_status": status.to_dict(),
+                "error": None,
+            }
+            sys.stdout.write(json.dumps(response, ensure_ascii=False))
+            sys.stdout.flush()
+            return 0
+
+        return write_error(
+            request_id=request.request_id,
+            error=ParserError(
+                code="invalid_request",
+                message=f"unsupported command: {request.command}",
+            ),
+        )
     except ParserException as exc:
         return write_error(request_id=extract_request_id(raw if "raw" in locals() else ""), error=exc.error)
     except FileNotFoundError as exc:
@@ -69,6 +121,26 @@ def main() -> int:
         )
 
 
+def warmup_embedding(model_name: str | None) -> int:
+    try:
+        result = embed_texts(["DocMind embedding warmup"], model_name)
+        response = {
+            "ok": True,
+            "vectors": len(result.vectors),
+            "dimension": len(result.vectors[0]) if result.vectors else 0,
+            "embedding_status": result.status.to_dict(),
+        }
+        sys.stdout.write(json.dumps(response, ensure_ascii=False, indent=2))
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        return 0
+    except ParserException as exc:
+        sys.stderr.write(json.dumps({"ok": False, "error": exc.error.to_dict()}, ensure_ascii=False, indent=2))
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+        return 1
+
+
 def extract_request_id(raw: str) -> str:
     if not raw.strip():
         return ""
@@ -81,6 +153,7 @@ def extract_request_id(raw: str) -> str:
 
 def write_error(request_id: str, error: ParserError) -> int:
     response = {
+        "kind": "response",
         "request_id": request_id,
         "ok": False,
         "document": None,

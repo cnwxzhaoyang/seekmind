@@ -32,6 +32,18 @@ pub struct ChunkRecord {
 }
 
 #[derive(Debug, Clone)]
+pub enum ParserSource {
+    Python,
+    Rust,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParseOutcome {
+    pub source: ParserSource,
+    pub warning: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct DocumentState {
     pub path: String,
     pub file_size: i64,

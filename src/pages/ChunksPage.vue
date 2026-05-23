@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { FileText, FolderOpen, Layers3, RefreshCw } from "lucide-vue-next";
+import { Cpu, FileText, FolderOpen, Layers3, RefreshCw } from "lucide-vue-next";
+import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
-import type { ChunkView, DocumentView, IndexDirView } from "../types/docmind";
+import type {
+  ChunkView,
+  DocumentRefreshProgressView,
+  DocumentView,
+  IndexDirView,
+  ParserRuntimeView,
+} from "../types/docmind";
 
 const route = useRoute();
 const router = useRouter();
@@ -15,14 +22,32 @@ const documents = ref<DocumentView[]>([]);
 const chunks = ref<ChunkView[]>([]);
 const selectedDirPath = ref("");
 const selectedDocPath = ref("");
+const parserRuntime = ref<ParserRuntimeView | null>(null);
 const loading = ref(false);
 const loadingDocs = ref(false);
 const loadingChunks = ref(false);
+const refreshingDocPath = ref("");
+const refreshQueue = ref<DocumentView[]>([]);
+const refreshWorkerRunning = ref(false);
+const refreshWarnings = ref<Record<string, string>>({});
 const errorMessage = ref("");
 const docFilter = ref("");
+const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
+const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
+let unlistenRefreshProgress: null | (() => void) = null;
 
 const currentDocument = computed(
   () => documents.value.find((item) => item.path === selectedDocPath.value) ?? null,
+);
+
+const queuedDocPaths = computed(() => new Set(refreshQueue.value.map((doc) => doc.path)));
+
+const refreshTaskCount = computed(
+  () => refreshQueue.value.length + (refreshingDocPath.value ? 1 : 0),
+);
+
+const currentDocumentRefreshWarning = computed(() =>
+  currentDocument.value ? refreshWarnings.value[currentDocument.value.path] ?? "" : "",
 );
 
 const filteredDocuments = computed(() => {
@@ -53,6 +78,10 @@ const resolveDirFromPath = (path?: string | string[]) => {
 
 const loadDirs = async () => {
   dirs.value = await docmindApi.listIndexDirs();
+};
+
+const loadParserRuntime = async () => {
+  parserRuntime.value = await docmindApi.getParserRuntime();
 };
 
 const loadDocuments = async () => {
@@ -91,11 +120,116 @@ const loadChunks = async () => {
   }
 };
 
+const waitForRefreshJob = (jobId: string) => {
+  const buffered = refreshJobBufferedEvents.get(jobId);
+  if (buffered) {
+    refreshJobBufferedEvents.delete(jobId);
+    return Promise.resolve(buffered);
+  }
+
+  return new Promise<DocumentRefreshProgressView>((resolve) => {
+    refreshJobResolvers.set(jobId, resolve);
+  });
+};
+
+const installRefreshProgressListener = async () => {
+  if (unlistenRefreshProgress) {
+    return;
+  }
+
+  unlistenRefreshProgress = await listen<DocumentRefreshProgressView>(
+    "docmind:document-refresh-progress",
+    (event) => {
+      const payload = event.payload;
+
+      if (payload.state === "running") {
+        return;
+      }
+
+      const resolver = refreshJobResolvers.get(payload.job_id);
+      if (resolver) {
+        refreshJobResolvers.delete(payload.job_id);
+        resolver(payload);
+      } else {
+        refreshJobBufferedEvents.set(payload.job_id, payload);
+      }
+    },
+  );
+};
+
+void installRefreshProgressListener();
+
+const processRefreshQueue = async () => {
+  if (refreshWorkerRunning.value) {
+    return;
+  }
+
+  refreshWorkerRunning.value = true;
+
+  try {
+    while (refreshQueue.value.length > 0) {
+      const doc = refreshQueue.value.shift();
+      if (!doc) {
+        continue;
+      }
+
+      refreshingDocPath.value = doc.path;
+      errorMessage.value = "";
+
+      try {
+        const refreshStart = await docmindApi.refreshDocument(doc.path, doc.dir_path);
+        const refreshResult = await waitForRefreshJob(refreshStart.job_id);
+
+        if (refreshResult.state === "completed" && refreshResult.warning) {
+          refreshWarnings.value = {
+            ...refreshWarnings.value,
+            [doc.path]: refreshResult.warning,
+          };
+        } else {
+          const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
+          refreshWarnings.value = rest;
+        }
+        if (refreshResult.state === "completed" && doc.dir_path === selectedDirPath.value) {
+          await loadDocuments();
+          if (selectedDocPath.value === doc.path) {
+            await loadChunks();
+          }
+        }
+        if (refreshResult.state === "failed") {
+          errorMessage.value = formatDocmindError(
+            refreshResult.message,
+            `重新切片失败：${doc.file_name}`,
+          );
+        }
+      } catch (error) {
+        const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
+        refreshWarnings.value = rest;
+        errorMessage.value = formatDocmindError(error, `重新切片失败：${doc.file_name}`);
+        console.error("[DocMind] refreshDocument failed", error);
+      }
+    }
+  } finally {
+    refreshingDocPath.value = "";
+    refreshWorkerRunning.value = false;
+  }
+};
+
+const refreshDocument = async (doc: DocumentView) => {
+  if (refreshingDocPath.value === doc.path || queuedDocPaths.value.has(doc.path)) {
+    return;
+  }
+
+  refreshQueue.value.push(doc);
+  void processRefreshQueue();
+};
+
 const syncSelection = async () => {
   loading.value = true;
   errorMessage.value = "";
+  refreshWarnings.value = {};
 
   try {
+    await loadParserRuntime();
     await loadDirs();
     const routePath = resolveDirFromPath(route.query.path);
     selectedDirPath.value =
@@ -129,8 +263,24 @@ const selectDir = async (path: string) => {
 const selectDoc = async (path: string) => {
   selectedDocPath.value = path;
   await loadChunks();
+  if (!refreshWarnings.value[path]) {
+    errorMessage.value = "";
+  }
   void router.replace({ query: { ...route.query, path } });
 };
+
+onMounted(() => {
+  void installRefreshProgressListener();
+});
+
+onBeforeUnmount(() => {
+  if (unlistenRefreshProgress) {
+    unlistenRefreshProgress();
+    unlistenRefreshProgress = null;
+  }
+  refreshJobResolvers.clear();
+  refreshJobBufferedEvents.clear();
+});
 
 watch(
   () => route.query.path,
@@ -143,9 +293,20 @@ watch(
 
 <template>
   <div class="h-full overflow-y-auto p-8">
-    <div class="mb-7">
-      <h1 class="text-2xl font-semibold tracking-tight text-slate-950">文档切片</h1>
-      <p class="mt-1 text-sm text-slate-500">按目录选择文档，直接查看 docMind 如何把内容切成段落块。</p>
+    <div class="mb-7 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-950">文档切片</h1>
+        <p class="mt-1 text-sm text-slate-500">按目录选择文档，直接查看 docMind 如何把内容切成段落块。</p>
+        <p class="mt-1 text-xs text-slate-400">
+          当前解析器：
+          <span class="font-medium text-slate-600">{{ parserRuntime?.active === "python" ? "Python" : "Rust" }}</span>
+          ；点击“重新切片”会优先使用当前启用的解析链路。
+        </p>
+      </div>
+      <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
+        <Cpu class="mr-1" :size="13" />
+        {{ parserRuntime?.active === 'python' ? "Python 解析" : "Rust 回退" }}
+      </DocMindBadge>
     </div>
 
     <div v-if="errorMessage" class="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -187,10 +348,16 @@ watch(
             <div class="text-sm font-semibold text-slate-900">文档列表</div>
             <div class="mt-1 text-xs text-slate-500">{{ selectedDirPath || "请选择一个索引目录" }}</div>
           </div>
-          <DocMindBadge tone="default">
-            <FileText class="mr-1" :size="13" />
-            {{ filteredDocuments.length }}
-          </DocMindBadge>
+          <div class="flex items-center gap-2">
+            <DocMindBadge tone="default">
+              <FileText class="mr-1" :size="13" />
+              {{ filteredDocuments.length }}
+            </DocMindBadge>
+            <DocMindBadge v-if="refreshTaskCount > 0" tone="warning">
+              <RefreshCw class="mr-1" :size="13" />
+              队列 {{ refreshTaskCount }}
+            </DocMindBadge>
+          </div>
         </div>
 
         <input
@@ -204,11 +371,13 @@ watch(
           当前目录没有已解析文档。
         </div>
         <div v-else class="space-y-2">
-          <button
+          <div
             v-for="doc in filteredDocuments"
             :key="doc.id"
             class="w-full rounded-2xl border px-3 py-3 text-left transition"
             :class="selectedDocPath === doc.path ? 'border-slate-300 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'"
+            role="button"
+            tabindex="0"
             @click="selectDoc(doc.path)"
           >
             <div class="flex items-start gap-3">
@@ -221,9 +390,23 @@ watch(
                   <span>·</span>
                   <span>{{ doc.modified }}</span>
                 </div>
+                <div
+                  v-if="refreshWarnings[doc.path]"
+                  class="mt-2 inline-flex items-center rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700"
+                >
+                  本次回退到 Rust
+                </div>
               </div>
+              <button
+                class="inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="loadingDocs || refreshingDocPath === doc.path"
+                @click.stop="void refreshDocument(doc)"
+              >
+                <RefreshCw :size="13" :class="refreshingDocPath === doc.path ? 'animate-spin' : ''" />
+                {{ refreshingDocPath === doc.path ? "切片中" : queuedDocPaths.has(doc.path) ? "已排队" : "重新切片" }}
+              </button>
             </div>
-          </button>
+          </div>
         </div>
       </section>
 
@@ -250,6 +433,14 @@ watch(
           选中文档后，这里会显示它被切成的每个段落块。
         </div>
         <div v-else class="space-y-3">
+          <div
+            v-if="currentDocumentRefreshWarning"
+            class="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            <div class="font-medium">本次切片已从 Python 回退到 Rust</div>
+            <div class="mt-1 text-xs leading-6 text-amber-700">{{ currentDocumentRefreshWarning }}</div>
+          </div>
+
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div class="text-sm font-medium text-slate-900">{{ currentDocument.file_name }}</div>
             <div class="mt-1 break-all text-xs text-slate-500">{{ currentDocument.path }}</div>

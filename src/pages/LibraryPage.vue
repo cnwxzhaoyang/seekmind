@@ -1,17 +1,39 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
-import type { IndexDirView } from "../types/docmind";
+import type { IndexDirView, IndexRefreshProgressView, IndexStatusView } from "../types/docmind";
 
 const dirs = ref<IndexDirView[]>([]);
+const status = ref<IndexStatusView | null>(null);
 const loading = ref(false);
 const refreshing = ref(false);
 const busyPath = ref<string | null>(null);
 const errorMessage = ref("");
 const infoMessage = ref("");
+const refreshJobResolvers = new Map<string, (payload: IndexRefreshProgressView) => void>();
+const refreshJobBufferedEvents = new Map<string, IndexRefreshProgressView>();
+let unlistenIndexRefreshProgress: null | (() => void) = null;
+
+const taskDisplayState = computed(() => {
+  const task = status.value?.current_task;
+  if (!task) {
+    return { label: "空闲", tone: "default" as const, spinning: false };
+  }
+
+  if (task.state === "paused") {
+    return { label: "已暂停", tone: "default" as const, spinning: false };
+  }
+  if (task.state === "running") {
+    return { label: "运行中", tone: "warning" as const, spinning: true };
+  }
+
+  return { label: task.state || "处理中", tone: "warning" as const, spinning: true };
+});
 
 const loadDirs = async () => {
   loading.value = true;
@@ -26,6 +48,50 @@ const loadDirs = async () => {
     loading.value = false;
   }
 };
+
+const loadStatus = async () => {
+  try {
+    status.value = await docmindApi.getIndexStatus();
+  } catch (error) {
+    console.error("[DocMind] loadStatus failed", error);
+  }
+};
+
+const waitForIndexRefreshJob = (jobId: string) => {
+  const buffered = refreshJobBufferedEvents.get(jobId);
+  if (buffered) {
+    refreshJobBufferedEvents.delete(jobId);
+    return Promise.resolve(buffered);
+  }
+
+  return new Promise<IndexRefreshProgressView>((resolve) => {
+    refreshJobResolvers.set(jobId, resolve);
+  });
+};
+
+const installIndexRefreshListener = async () => {
+  if (unlistenIndexRefreshProgress) {
+    return;
+  }
+
+  unlistenIndexRefreshProgress = await listen<IndexRefreshProgressView>(
+    "docmind:index-refresh-progress",
+    (event) => {
+      const payload = event.payload;
+      status.value = payload.status;
+
+      const resolver = refreshJobResolvers.get(payload.job_id);
+      if (payload.state !== "running" && resolver) {
+        refreshJobResolvers.delete(payload.job_id);
+        resolver(payload);
+      } else if (payload.state !== "running") {
+        refreshJobBufferedEvents.set(payload.job_id, payload);
+      }
+    },
+  );
+};
+
+void installIndexRefreshListener();
 
 const chooseAndAddDir = async () => {
   errorMessage.value = "";
@@ -46,6 +112,7 @@ const chooseAndAddDir = async () => {
     await docmindApi.addIndexDir(selected);
     infoMessage.value = `已添加目录: ${selected}`;
     await loadDirs();
+    await loadStatus();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, "添加目录失败");
     console.error("[DocMind] addIndexDir failed", error);
@@ -60,8 +127,13 @@ const refreshIndex = async () => {
   infoMessage.value = "";
 
   try {
-    await docmindApi.refreshIndex();
+    const started = await docmindApi.refreshIndex();
+    const finished = await waitForIndexRefreshJob(started.job_id);
+    if (finished.state === "failed") {
+      throw new Error(finished.message || "重新索引失败");
+    }
     await loadDirs();
+    await loadStatus();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, "重新索引失败");
     console.error("[DocMind] refreshIndex failed", error);
@@ -76,9 +148,14 @@ const refreshSingleDir = async (path: string) => {
   infoMessage.value = "";
 
   try {
-    await docmindApi.refreshIndexDir(path);
+    const started = await docmindApi.refreshIndexDir(path);
+    const finished = await waitForIndexRefreshJob(started.job_id);
+    if (finished.state === "failed") {
+      throw new Error(finished.message || "目录重建失败");
+    }
     infoMessage.value = `已重新索引: ${path}`;
     await loadDirs();
+    await loadStatus();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, "目录重建失败");
     console.error("[DocMind] refreshIndexDir failed", error);
@@ -96,6 +173,7 @@ const toggleDir = async (dir: IndexDirView) => {
     await docmindApi.setIndexDirEnabled(dir.path, !dir.enabled);
     infoMessage.value = dir.enabled ? `已禁用: ${dir.path}` : `已启用: ${dir.path}`;
     await loadDirs();
+    await loadStatus();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, "目录状态更新失败");
     console.error("[DocMind] setIndexDirEnabled failed", error);
@@ -117,6 +195,7 @@ const removeDir = async (path: string) => {
     await docmindApi.removeIndexDir(path);
     infoMessage.value = `已删除目录: ${path}`;
     await loadDirs();
+    await loadStatus();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, "删除目录失败");
     console.error("[DocMind] removeIndexDir failed", error);
@@ -126,6 +205,20 @@ const removeDir = async (path: string) => {
 };
 
 onMounted(loadDirs);
+onMounted(loadStatus);
+
+onMounted(() => {
+  void installIndexRefreshListener();
+});
+
+onBeforeUnmount(() => {
+  if (unlistenIndexRefreshProgress) {
+    unlistenIndexRefreshProgress();
+    unlistenIndexRefreshProgress = null;
+  }
+  refreshJobResolvers.clear();
+  refreshJobBufferedEvents.clear();
+});
 </script>
 
 <template>
@@ -144,6 +237,16 @@ onMounted(loadDirs);
         添加目录
       </button>
     </div>
+
+    <DocMindTaskCard
+      :task="status?.current_task ?? null"
+      title="当前索引任务"
+      :description="status?.current_task?.details ?? '正在同步索引状态'"
+      :badge-label="taskDisplayState.label"
+      :badge-tone="taskDisplayState.tone"
+      :badge-spinning="taskDisplayState.spinning"
+      class="mb-6"
+    />
 
     <div v-if="errorMessage" class="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
       {{ errorMessage }}

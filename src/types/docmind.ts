@@ -95,6 +95,38 @@ export interface IndexStatusView {
   last_run: IndexRunSummaryView | null;
 }
 
+export interface DocumentRefreshStartView {
+  job_id: string;
+  status: IndexStatusView;
+}
+
+export interface DocumentRefreshProgressView {
+  job_id: string;
+  state: string;
+  message: string;
+  path: string;
+  file_name: string;
+  parser_source: "python" | "rust";
+  warning: string | null;
+  status: IndexStatusView;
+  updated_at: string;
+}
+
+export interface IndexRefreshStartView {
+  job_id: string;
+  status: IndexStatusView;
+}
+
+export interface IndexRefreshProgressView {
+  job_id: string;
+  state: string;
+  message: string;
+  scope: string;
+  path: string;
+  status: IndexStatusView;
+  updated_at: string;
+}
+
 export interface ParserRuntimeView {
   enabled: boolean;
   available: boolean;
@@ -168,6 +200,26 @@ export interface SemanticModelStatusView {
   last_indexed_at: string;
   last_error: string;
   index_status: string;
+}
+
+export interface SemanticRebuildStartView {
+  job_id: string;
+  status: SemanticModelStatusView;
+}
+
+export interface SemanticRebuildProgressView {
+  job_id: string;
+  state: string;
+  message: string;
+  model: EmbeddingModelView;
+  total_chunks: number;
+  processed_chunks: number;
+  embedded_chunks: number;
+  current_document: string;
+  current_chunk: string;
+  percent: number;
+  last_error: string;
+  updated_at: string;
 }
 
 export interface SemanticDebugHitView {

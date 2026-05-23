@@ -77,6 +77,32 @@ npm run tauri dev
 - Markdown / DOCX / HTML / TXT 会优先走 Python 解析
 - Rust 侧仍保留 fallback，便于调试和对照
 
+语义搜索的 embedding 也走 Python sidecar，依赖 `parser/requirements.txt` 里的 `fastembed`。首次启用前建议执行：
+
+```bash
+python3 -m pip install -r parser/requirements.txt
+```
+
+首次使用 `BAAI/bge-small-zh-v1.5` 时需要下载本地 ONNX 模型。建议先执行一次预热命令，确认模型已经缓存成功：
+
+```bash
+npm run semantic:warmup
+```
+
+如果模型下载超时，可以尝试 Hugging Face 镜像：
+
+```bash
+npm run semantic:warmup:mirror
+```
+
+开发环境会把 FastEmbed 模型缓存固定到：
+
+```text
+.docmind-cache/fastembed
+```
+
+如果之前下载中断过，直接重新执行预热命令即可，不会继续使用系统临时目录里的半截缓存。
+
 如果你想看索引流程日志，可以用：
 
 ```bash

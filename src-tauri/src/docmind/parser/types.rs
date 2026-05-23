@@ -14,6 +14,8 @@ pub struct ParsedChunk {
     pub page_no: Option<u32>,
     pub text: String,
     pub order: usize,
+    #[serde(default = "default_chunk_score")]
+    pub score: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +35,10 @@ impl Default for ParserOptions {
     }
 }
 
+fn default_chunk_score() -> f32 {
+    1.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParserRequest {
     pub request_id: String,
@@ -50,8 +56,62 @@ pub struct ParserError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParserResponse {
+    #[serde(default)]
+    pub kind: Option<String>,
     pub request_id: String,
     pub ok: bool,
     pub document: Option<ParsedDocument>,
     pub error: Option<ParserError>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ParserStreamEvent {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub request_id: String,
+    #[serde(default)]
+    pub event: String,
+    #[serde(default)]
+    pub stage: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub percent: u8,
+    #[serde(default)]
+    pub current: String,
+    #[serde(default)]
+    pub total: usize,
+    #[serde(default)]
+    pub processed: usize,
+    #[serde(default)]
+    pub parser_source: String,
+    #[serde(default)]
+    pub warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParserStreamMessage {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub request_id: String,
+    #[serde(default)]
+    pub event: String,
+    #[serde(default)]
+    pub stage: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub percent: u8,
+    #[serde(default)]
+    pub current: String,
+    #[serde(default)]
+    pub total: usize,
+    #[serde(default)]
+    pub processed: usize,
+    #[serde(default)]
+    pub parser_source: String,
+    #[serde(default)]
+    pub warning: Option<String>,
 }
