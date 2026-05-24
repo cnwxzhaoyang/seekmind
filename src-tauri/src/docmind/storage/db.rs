@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use chrono::{TimeZone, Utc};
-use dirs::{data_dir, download_dir, document_dir};
+use dirs::data_dir;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
@@ -278,11 +278,6 @@ impl Database {
                 .await
                 .map_err(|error| error.to_string())?;
         }
-
-        database
-            .seed_default_dirs_if_empty()
-            .await
-            .map_err(|error| error.to_string())?;
 
         let skip_bootstrap_index = std::env::var("DOCMIND_SKIP_BOOTSTRAP_INDEX").is_ok();
         if !skip_bootstrap_index {
@@ -2304,36 +2299,6 @@ impl Database {
         }
 
         Ok(altered)
-    }
-
-    async fn seed_default_dirs_if_empty(&self) -> Result<(), sqlx::Error> {
-        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM index_dirs").await?;
-        if count > 0 {
-            return Ok(());
-        }
-
-        let mut default_dirs = Vec::new();
-        if let Some(path) = document_dir() {
-            default_dirs.push(path);
-        }
-        if let Some(path) = download_dir() {
-            default_dirs.push(path);
-        }
-
-        for dir in default_dirs {
-            let path = dir.to_string_lossy().to_string();
-            sqlx::query(
-                r#"
-                INSERT OR REPLACE INTO index_dirs (path, enabled, docs, chunks, status)
-                VALUES (?, 1, 0, 0, 'pending')
-                "#,
-            )
-            .bind(path)
-            .execute(&self.pool)
-            .await?;
-        }
-
-        Ok(())
     }
 
     async fn failed_items(&self) -> Result<Vec<FailedFileView>, sqlx::Error> {
