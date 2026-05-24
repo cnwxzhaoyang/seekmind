@@ -6,3 +6,6 @@ __pycache__/
 /node_modules/
 /dist/
 /.docmind-cache/
+/.docmind-build/
+/src-tauri/app-resources/
+/src-tauri/resources/
