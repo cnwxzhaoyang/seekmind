@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use crate::docmind::parser::{ParserClientError, ParsedDocument, PythonParserClient};
+use crate::docmind::parser::types::ParserStreamEvent;
 
 use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings, ParseOutcome, ParserSource};
 
@@ -91,10 +92,22 @@ pub fn extract_document(file: &DiscoveredFile) -> Result<ExtractedDocument, Stri
 pub fn parse_document(
     file: &DiscoveredFile,
 ) -> Result<(ExtractedDocument, Vec<ChunkRecord>, ParseOutcome), String> {
+    parse_document_with_progress(file, |_| {})
+}
+
+pub fn parse_document_with_progress<F>(
+    file: &DiscoveredFile,
+    mut on_event: F,
+) -> Result<(ExtractedDocument, Vec<ChunkRecord>, ParseOutcome), String>
+where
+    F: FnMut(ParserStreamEvent),
+{
     if crate::docmind::parser::python_parser_enabled() {
         let client = PythonParserClient::from_env();
         if client.is_configured() {
-            match client.parse_document(&file.path) {
+            match client.parse_document_stream(&file.path, |event| {
+                on_event(event);
+            }) {
                 Ok(parsed) => {
                     let (document, chunks) = convert_python_document(file, parsed);
                     return Ok((

@@ -1,41 +1,42 @@
 #![allow(dead_code)]
 
 use crate::docmind::models::{IndexRefreshProgressView, IndexStatusView};
+use crate::docmind::parser::types::ParserStreamEvent;
 use crate::docmind::storage::scanner;
 use crate::docmind::storage::Database;
 use crate::docmind::storage::types::DocumentState;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::{mpsc, Arc};
+use std::thread;
 
-pub async fn rebuild_all<F>(
+type IndexProgressEmitter = Arc<dyn Fn(IndexRefreshProgressView) + Send + Sync>;
+
+pub async fn rebuild_all(
     database: &Database,
     job_id: &str,
-    mut on_progress: F,
+    on_progress: IndexProgressEmitter,
 ) -> Result<IndexStatusView, sqlx::Error>
-where
-    F: FnMut(IndexRefreshProgressView) + Send,
 {
     database.clear_pause_request().await?;
     database.clear_index_checkpoint().await?;
     let dir_paths = database.enabled_index_dir_paths().await?;
     database.clear_failed_files().await?;
     database.clear_current_task().await?;
-    rebuild_paths(database, &dir_paths, job_id, "all", &mut on_progress).await
+    rebuild_paths(database, &dir_paths, job_id, "all", on_progress).await
 }
 
-pub async fn rebuild_dir<F>(
+pub async fn rebuild_dir(
     database: &Database,
     dir_path: &str,
     job_id: &str,
-    mut on_progress: F,
+    on_progress: IndexProgressEmitter,
 ) -> Result<IndexStatusView, sqlx::Error>
-where
-    F: FnMut(IndexRefreshProgressView) + Send,
 {
     database.clear_pause_request().await?;
     database.clear_index_checkpoint().await?;
     let dir_paths = vec![dir_path.to_string()];
-    rebuild_paths(database, &dir_paths, job_id, "dir", &mut on_progress).await
+    rebuild_paths(database, &dir_paths, job_id, "dir", on_progress).await
 }
 
 pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
@@ -93,7 +94,7 @@ pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
         &existing_by_path,
         "",
         "resume",
-        &mut |_: IndexRefreshProgressView| {},
+        Arc::new(|_: IndexRefreshProgressView| {}),
     )
         .await
         .map_err(|error| error.to_string())
@@ -164,15 +165,13 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
         .map_err(|error| error.to_string())
 }
 
-async fn rebuild_paths<F>(
+async fn rebuild_paths(
     database: &Database,
     dir_paths: &[String],
     job_id: &str,
     scope: &str,
-    on_progress: &mut F,
+    on_progress: IndexProgressEmitter,
 ) -> Result<IndexStatusView, sqlx::Error>
-where
-    F: FnMut(IndexRefreshProgressView) + Send,
 {
     if dir_paths.is_empty() {
         return database.get_index_status().await;
@@ -250,17 +249,15 @@ struct IndexPlan {
     deleted: usize,
 }
 
-async fn process_index_plan<F>(
+async fn process_index_plan(
     database: &Database,
     mut plan: IndexPlan,
     settings: &crate::docmind::storage::types::IndexSettings,
     existing_by_path: &HashMap<String, DocumentState>,
     job_id: &str,
     scope: &str,
-    on_progress: &mut F,
+    on_progress: IndexProgressEmitter,
 ) -> Result<IndexStatusView, sqlx::Error>
-where
-    F: FnMut(IndexRefreshProgressView) + Send,
 {
     trace_indexer(&format!(
         "process_index_plan dirs={:?} delete={} update={} total={} processed={}",
@@ -323,7 +320,7 @@ where
         "",
         "running",
         "正在重新索引本地文档",
-        on_progress,
+        &on_progress,
     )
     .await?;
 
@@ -359,7 +356,7 @@ where
                 plan.deleted,
                 job_id,
                 scope,
-                on_progress,
+                &on_progress,
             )
             .await;
         }
@@ -411,7 +408,7 @@ where
             &path,
             "running",
             "已处理删除文件",
-            on_progress,
+            &on_progress,
         )
         .await?;
     }
@@ -437,7 +434,7 @@ where
                 plan.deleted,
                 job_id,
                 scope,
-                on_progress,
+                &on_progress,
             )
             .await;
         }
@@ -473,10 +470,35 @@ where
             &path,
             "running",
             "正在解析并索引文档",
-            on_progress,
+            &on_progress,
         )
         .await?;
-        match scanner::parse_document(&file) {
+        let processed_before_current = plan.processed.saturating_sub(1);
+        let (parser_tx, parser_thread) = spawn_parser_progress_forwarder(
+            database.clone(),
+            on_progress.clone(),
+            job_id.to_string(),
+            scope.to_string(),
+            current_dir.clone(),
+            path.clone(),
+            plan.processed,
+            plan.total,
+            processed_before_current,
+            plan.succeeded,
+            plan.failed,
+            plan.updated,
+            plan.skipped,
+            plan.deleted,
+            "正在解析并索引文档".to_string(),
+        );
+        let parser_tx_for_parse = parser_tx.clone();
+        let parse_result = scanner::parse_document_with_progress(&file, move |event| {
+            let _ = parser_tx_for_parse.send(event);
+        });
+        drop(parser_tx);
+        let _ = parser_thread.join();
+
+        match parse_result {
             Ok((document, chunks, outcome)) => {
                 if let Some(warning) = outcome.warning {
                     eprintln!("[DocMind] indexing warning for {}: {warning}", path);
@@ -515,7 +537,7 @@ where
             &path,
             "running",
             "已处理文档",
-            on_progress,
+            &on_progress,
         )
         .await?;
     }
@@ -568,7 +590,7 @@ async fn save_checkpoint(
         .await
 }
 
-async fn pause_current_task<F>(
+async fn pause_current_task(
     database: &Database,
     label: &str,
     details: &str,
@@ -584,10 +606,8 @@ async fn pause_current_task<F>(
     deleted: usize,
     job_id: &str,
     scope: &str,
-    on_progress: &mut F,
+    on_progress: &IndexProgressEmitter,
 ) -> Result<IndexStatusView, sqlx::Error>
-where
-    F: FnMut(IndexRefreshProgressView) + Send,
 {
     database
         .set_current_task(
@@ -653,17 +673,15 @@ async fn existing_chunks_for_dir(database: &Database, dir_path: &str) -> Result<
         .sum())
 }
 
-async fn emit_index_progress<F>(
+async fn emit_index_progress(
     database: &Database,
     job_id: &str,
     scope: &str,
     path: &str,
     state: &str,
     message: &str,
-    on_progress: &mut F,
+    on_progress: &IndexProgressEmitter,
 ) -> Result<(), sqlx::Error>
-where
-    F: FnMut(IndexRefreshProgressView) + Send,
 {
     let status = database.get_index_status().await?;
     on_progress(IndexRefreshProgressView {
@@ -676,6 +694,107 @@ where
         updated_at: chrono::Utc::now().to_rfc3339(),
     });
     Ok(())
+}
+
+fn spawn_parser_progress_forwarder(
+    database: Database,
+    on_progress: IndexProgressEmitter,
+    job_id: String,
+    scope: String,
+    current_dir: String,
+    path: String,
+    scanned: usize,
+    total: usize,
+    processed_before_current: usize,
+    succeeded: usize,
+    failed: usize,
+    updated: usize,
+    skipped: usize,
+    deleted: usize,
+    fallback_message: String,
+) -> (mpsc::Sender<ParserStreamEvent>, thread::JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel::<ParserStreamEvent>();
+
+    let handle = thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            let details = parser_event_message(&event, &fallback_message);
+            let progress = progress_with_stream(processed_before_current, total, event.percent);
+            let database = database.clone();
+            let on_progress = on_progress.clone();
+            let job_id = job_id.clone();
+            let scope = scope.clone();
+            let current_dir = current_dir.clone();
+            let path = path.clone();
+            let details_for_task = details.clone();
+            let _ = tauri::async_runtime::block_on(async move {
+                let _ = database
+                    .set_current_task(
+                        "正在重新索引本地文档",
+                        &details_for_task,
+                        "running",
+                        &current_dir,
+                        &path,
+                        progress,
+                        scanned,
+                        total,
+                        succeeded,
+                        failed,
+                        updated,
+                        skipped,
+                        deleted,
+                        false,
+                    )
+                    .await;
+
+                if let Ok(status) = database.get_index_status().await {
+                    on_progress(IndexRefreshProgressView {
+                        job_id,
+                        state: "running".to_string(),
+                        message: details_for_task,
+                        scope,
+                        path,
+                        status,
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    });
+                }
+            });
+        }
+    });
+
+    (tx, handle)
+}
+
+fn progress_with_stream(processed_before_current: usize, total: usize, event_percent: u8) -> u8 {
+    if total == 0 {
+        return 0;
+    }
+
+    let completed = processed_before_current as f32 + (event_percent as f32 / 100.0);
+    ((completed / total as f32) * 100.0).round().clamp(0.0, 100.0) as u8
+}
+
+fn parser_event_message(event: &ParserStreamEvent, fallback: &str) -> String {
+    if !event.message.trim().is_empty() {
+        if event.stage == "chunk" && !event.current.trim().is_empty() {
+            return format!("{} · {}", event.message.trim(), event.current.trim());
+        }
+        return event.message.trim().to_string();
+    }
+
+    match event.stage.as_str() {
+        "start" => "正在开始解析".to_string(),
+        "extract" => "正在提取内容块".to_string(),
+        "normalize" => "正在整理内容块".to_string(),
+        "chunk" => {
+            if !event.current.trim().is_empty() {
+                format!("正在生成切片 · {}", event.current.trim())
+            } else {
+                "正在生成切片".to_string()
+            }
+        }
+        "done" => "解析完成".to_string(),
+        _ => fallback.to_string(),
+    }
 }
 
 fn trace_indexer(message: &str) {
@@ -754,7 +873,9 @@ mod tests {
                 .add_index_dir(dir_path)
                 .await
                 .expect("add dir");
-            rebuild_dir(&database, dir_path).await.expect("rebuild dir")
+            rebuild_dir(&database, dir_path, "test", Arc::new(|_| {}))
+                .await
+                .expect("rebuild dir")
         });
 
         assert_eq!(result.indexed_docs, 4);

@@ -570,8 +570,13 @@ pub async fn refresh_index(
     };
     let database = state.inner().clone();
     let emit_app = app.clone();
+    let index_progress_app = emit_app.clone();
     let task_job_id = job_id.clone();
     let task_start_status = start_status.clone();
+    let index_progress_emitter: Arc<dyn Fn(super::models::IndexRefreshProgressView) + Send + Sync> =
+        Arc::new(move |payload: super::models::IndexRefreshProgressView| {
+            let _ = index_progress_app.emit("docmind:index-refresh-progress", payload);
+        });
     let initial_payload = super::models::IndexRefreshProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
@@ -585,11 +590,7 @@ pub async fn refresh_index(
 
     tauri::async_runtime::spawn(async move {
         let _guard = IndexJobGuard::new(database.clone());
-        let progress_app = emit_app.clone();
-        let result = indexer::rebuild_all(&database, &task_job_id, move |payload| {
-            let _ = progress_app.emit("docmind:index-refresh-progress", payload);
-        })
-        .await;
+        let result = indexer::rebuild_all(&database, &task_job_id, index_progress_emitter).await;
         match result {
             Ok(status) => {
                 eprintln!(
@@ -658,9 +659,14 @@ pub async fn refresh_index_dir(
     };
     let database = state.inner().clone();
     let emit_app = app.clone();
+    let index_progress_app = emit_app.clone();
     let task_job_id = job_id.clone();
     let path_for_task = normalized_path.clone();
     let task_start_status = start_status.clone();
+    let index_progress_emitter: Arc<dyn Fn(super::models::IndexRefreshProgressView) + Send + Sync> =
+        Arc::new(move |payload: super::models::IndexRefreshProgressView| {
+            let _ = index_progress_app.emit("docmind:index-refresh-progress", payload);
+        });
     let initial_payload = super::models::IndexRefreshProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
@@ -674,11 +680,7 @@ pub async fn refresh_index_dir(
 
     tauri::async_runtime::spawn(async move {
         let _guard = IndexJobGuard::new(database.clone());
-        let progress_app = emit_app.clone();
-        let result = indexer::rebuild_dir(&database, &path_for_task, &task_job_id, move |payload| {
-            let _ = progress_app.emit("docmind:index-refresh-progress", payload);
-        })
-        .await;
+        let result = indexer::rebuild_dir(&database, &path_for_task, &task_job_id, index_progress_emitter).await;
         match result {
             Ok(status) => {
                 eprintln!(

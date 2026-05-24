@@ -77,6 +77,10 @@ npm run tauri dev
 - Markdown / DOCX / HTML / TXT 会优先走 Python 解析
 - Rust 侧仍保留 fallback，便于调试和对照
 
+Python 侧任务调用约定和流式进度模式见：
+
+- [`docs/20-Python侧任务调用经验规范(2026-05-24).md`](/Users/zhaoyang/Desktop/enjoy/docmind/docs/20-Python侧任务调用经验规范(2026-05-24).md)
+
 语义搜索的 embedding 也走 Python sidecar，依赖 `parser/requirements.txt` 里的 `fastembed`。首次启用前建议执行：
 
 ```bash

@@ -140,19 +140,7 @@ impl PythonSemanticClient {
         texts: &[String],
         model_name: Option<&str>,
     ) -> Result<Vec<Vec<f32>>, SemanticClientError> {
-        let response = self.execute("embed_texts", "", texts, model_name)?;
-        if !response.ok {
-            return Err(SemanticClientError::SidecarFailed(
-                response
-                    .error
-                    .map(|error| format!("{} ({})", error.message, error.code))
-                    .unwrap_or_else(|| "embedding failed".to_string()),
-            ));
-        }
-
-        response
-            .vectors
-            .ok_or_else(|| SemanticClientError::InvalidResponse("missing vectors".to_string()))
+        self.embed_texts_stream(texts, model_name, |_| {})
     }
 
     pub fn embed_texts_stream<F>(

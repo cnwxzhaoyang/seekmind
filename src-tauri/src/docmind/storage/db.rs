@@ -292,9 +292,9 @@ impl Database {
                 .map_err(|error| error.to_string())?;
 
             if indexed_docs == 0 {
-                let _ = indexer::rebuild_all(&database, "bootstrap", |_| {}).await;
+                let _ = indexer::rebuild_all(&database, "bootstrap", Arc::new(|_| {})).await;
             } else if database.search_index.doc_count() == 0 {
-                let _ = indexer::rebuild_all(&database, "bootstrap", |_| {}).await;
+                let _ = indexer::rebuild_all(&database, "bootstrap", Arc::new(|_| {})).await;
             }
         }
 
