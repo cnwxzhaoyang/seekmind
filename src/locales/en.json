@@ -76,9 +76,15 @@
       "semanticDisabled": "Semantic Off",
       "semanticWeight": "Semantic Weight {weight}%",
       "semanticThreshold": "Semantic Threshold {threshold}%",
+      "semanticReady": "Semantic ready",
+      "semanticFallback": "Semantic fallback",
+      "semanticFallbackState": "Semantic State",
       "queryRewrite": "Query Rewrite",
       "queryRewriteApplied": "Light rewrite applied",
       "queryRewriteDisabled": "Rewrite disabled",
+      "historyExpansion": "History Expansion",
+      "historyApplied": "History expansion applied",
+      "historyDisabled": "History expansion disabled",
       "semanticCandidates": "Candidates {count}",
       "semanticFiltered": "Filtered {count}",
       "stats": {
@@ -95,6 +101,8 @@
         "recentOpen": "Recent Documents",
         "favorites": "Favorites",
         "quickDirs": "Quick Dirs",
+        "debugExpand": "Show debug details",
+        "debugCollapse": "Hide debug details",
         "noHistory": "No history",
         "noRecent": "No recent documents",
         "noFavorites": "No favorites",
@@ -274,6 +282,18 @@
         "threshold": "Semantic Threshold",
         "thresholdDesc": "Only candidates whose semantic score reaches this threshold will enter final ranking."
       },
+      "preference": {
+        "title": "Result Preferences",
+        "favorite": "Prefer favorites",
+        "recent": "Prefer recently opened",
+        "history": "Search history expansion"
+      },
+      "weight": {
+        "title": "Ranking Weights",
+        "titleWeight": "Title Weight",
+        "filenameWeight": "Filename Weight",
+        "preferenceWeight": "Preference Weight"
+      },
       "btn": {
         "reset": "Reset to Defaults",
         "save": "Save",
@@ -413,7 +433,14 @@
     "page": "Page {page}",
     "paragraph": "Para {para}",
     "hitSnippet": "Hit fragment",
-    "matchField": "Match: {field}"
+    "matchField": "Match: {field}",
+    "rankReason": "Ranking reason",
+    "scoreKeywords": "Keyword {score}",
+    "scoreSemantic": "Semantic {score}",
+    "scoreTitle": "Title {score}",
+    "scoreFilename": "Filename {score}",
+    "scorePreference": "Preference {score}",
+    "rankChange": "Rank {original} -> {final} (delta {delta})"
   },
 
   "searchResultGroupCard": {

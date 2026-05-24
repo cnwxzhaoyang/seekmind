@@ -284,235 +284,241 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-8">
-    <div class="mb-7">
-      <h1 class="text-2xl font-semibold tracking-tight text-slate-950">{{ t("page.status.title") }}</h1>
-      <p class="mt-1 text-sm text-slate-500">{{ t("page.status.subtitle") }}</p>
-    </div>
-    <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-4">
+  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold tracking-tight text-slate-950">{{ t("page.status.title") }}</h1>
+        <p class="mt-0.5 text-xs text-slate-500">{{ t("page.status.subtitle") }}</p>
+      </div>
+      <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
+        <Cpu class="mr-1" :size="13" />
+        {{ parserRuntime?.active === 'python' ? t("status.parser.python") : t("status.parser.pythonFallback") }}
+      </DocMindBadge>
+    </header>
+
+    <main class="min-h-0 flex-1 overflow-y-auto p-4">
+      <div class="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
         <div>
-          <div class="text-sm font-semibold text-slate-900">{{ t("page.status.section.taskOps") }}</div>
+          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.taskOps") }}</div>
           <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.taskOpsDesc") }}</div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button
-            class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-        :disabled="refreshing || loading || !status?.current_task || status.current_task.state === 'paused'"
-        @click="pauseIndexing"
+            class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            :disabled="refreshing || loading || !status?.current_task || status.current_task.state === 'paused'"
+            @click="pauseIndexing"
           >
-            <Loader2 v-if="actionState === 'pausing'" :size="16" class="animate-spin" />
+            <Loader2 v-if="actionState === 'pausing'" :size="15" class="animate-spin" />
             {{ actionState === 'pausing' ? t("page.status.btn.pausing") : t("page.status.btn.pause") }}
           </button>
           <button
-            class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+            class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
             :disabled="refreshing || loading || !status?.current_task || status.current_task.state !== 'paused'"
             @click="resumeIndexing"
           >
-            <Loader2 v-if="actionState === 'resuming'" :size="16" class="animate-spin" />
-            <RefreshCw v-else :size="16" />
+            <Loader2 v-if="actionState === 'resuming'" :size="15" class="animate-spin" />
+            <RefreshCw v-else :size="15" />
             {{ actionState === 'resuming' ? t("page.status.btn.resuming") : t("page.status.btn.resume") }}
           </button>
           <button
-            class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
             :disabled="refreshing || loading"
             @click="refreshIndex"
           >
-            <RefreshCw :size="16" :class="{ 'animate-spin': refreshing }" />
+            <RefreshCw :size="15" :class="{ 'animate-spin': refreshing }" />
             {{ refreshing ? t("page.status.btn.rebuilding") : t("page.status.btn.reindex") }}
           </button>
         </div>
       </div>
-    </div>
 
-    <div class="mb-6 grid grid-cols-4 gap-4">
-      <div v-for="card in [
-        { label: t('page.status.stats.scanned'), value: status?.scanned_docs ?? 0 },
-        { label: t('page.status.stats.indexed'), value: status?.indexed_docs ?? 0 },
-        { label: t('page.status.stats.chunks'), value: status?.indexed_chunks ?? 0 },
-        { label: t('page.status.stats.failed'), value: status?.failed_files ?? 0 },
-      ]" :key="card.label" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div class="text-xs text-slate-500">{{ card.label }}</div>
-        <div class="mt-2 text-2xl font-semibold text-slate-950">{{ card.value }}</div>
-      </div>
-    </div>
-
-    <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex items-center justify-between">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">{{ t("page.status.section.incrementalSummary") }}</div>
-          <div class="mt-1 text-xs text-slate-500">
-            {{ t("page.status.section.incrementalDesc") }}
-          </div>
-        </div>
-        <DocMindBadge tone="default">
-          {{ status?.last_run ? status.last_run.completed_at : t("status.noRecentRun") }}
-        </DocMindBadge>
-      </div>
-      <div v-if="status?.last_run" class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.updated") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.updated }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.skipped") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.skipped }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.deleted") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.deleted }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.scannedCandidates") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.scanned }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.successFail") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">
-            {{ status.last_run.succeeded }} / {{ status.last_run.failed }}
-          </div>
-        </div>
-      </div>
-      <div v-else class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-        {{ t("page.status.incremental.none") }}
-      </div>
-    </div>
-
-    <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex items-center justify-between">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">{{ t("page.status.section.parserStatus") }}</div>
-          <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.parserDesc") }}</div>
-        </div>
-        <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
-          <Cpu class="mr-1" :size="13" />
-          {{ parserRuntime?.active === 'python' ? t("status.parser.python") : t("status.parser.pythonFallback") }}
-        </DocMindBadge>
-      </div>
-      <div v-if="parserRuntime" class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.enabled") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">
-            {{ parserRuntime.enabled ? t("common.yes") : t("common.no") }}
-          </div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.available") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">
-            {{ parserRuntime.available ? t("common.yes") : t("common.no") }}
-          </div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.pythonBin") }}</div>
-          <div class="mt-1 truncate text-sm font-medium text-slate-900">{{ parserRuntime.python_bin }}</div>
-        </div>
-        <div class="rounded-2xl bg-slate-50 px-4 py-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.timeout") }}</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.timeout_ms }} ms</div>
-        </div>
-      </div>
-      <div v-if="parserRuntime" class="mt-3 text-xs text-slate-500">
-        {{ t("page.status.parser.script", { path: parserRuntime.script_path }) }}
-      </div>
-    </div>
-
-    <div class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex items-center justify-between">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">{{ t("page.status.section.indexDirs") }}</div>
-          <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.indexDirsDesc") }}</div>
-        </div>
-        <DocMindBadge tone="default">
-          <Database class="mr-1" :size="13" />
-          {{ dirs.length }} {{ t("page.status.section.indexDirs") }}
-        </DocMindBadge>
-      </div>
-      <div v-if="dirs.length === 0" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-        {{ t("page.status.emptyDirs") }}
-      </div>
-      <div v-else class="space-y-2">
+      <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div
-          v-for="dir in dirs"
-          :key="dir.path"
-          class="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"
+          v-for="card in [
+            { label: t('page.status.stats.scanned'), value: status?.scanned_docs ?? 0 },
+            { label: t('page.status.stats.indexed'), value: status?.indexed_docs ?? 0 },
+            { label: t('page.status.stats.chunks'), value: status?.indexed_chunks ?? 0 },
+            { label: t('page.status.stats.failed'), value: status?.failed_files ?? 0 },
+          ]"
+          :key="card.label"
+          class="rounded-md border border-slate-200 bg-white px-3 py-2"
         >
-          <div class="min-w-0">
-            <div class="truncate text-sm font-medium text-slate-800">{{ dir.path }}</div>
-            <div class="mt-1 text-xs text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
+          <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ card.label }}</div>
+          <div class="mt-1 text-xl font-semibold text-slate-950">{{ card.value }}</div>
+        </div>
+      </div>
+
+      <div class="mt-3 grid gap-3 xl:grid-cols-2">
+        <div class="rounded-md border border-slate-200 bg-white px-4 py-3">
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.incrementalSummary") }}</div>
+              <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.incrementalDesc") }}</div>
+            </div>
+            <DocMindBadge tone="default">
+              {{ status?.last_run ? status.last_run.completed_at : t("status.noRecentRun") }}
+            </DocMindBadge>
           </div>
-          <DocMindBadge :tone="dir.enabled ? 'success' : 'default'">
-            {{ dir.enabled ? t("common.enabled") : t("common.disabled") }}
+          <div v-if="status?.last_run" class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.updated") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.updated }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.skipped") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.skipped }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.deleted") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.deleted }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.scannedCandidates") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.scanned }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.successFail") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.succeeded }} / {{ status.last_run.failed }}</div>
+            </div>
+          </div>
+          <div v-else class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+            {{ t("page.status.incremental.none") }}
+          </div>
+        </div>
+
+        <div class="rounded-md border border-slate-200 bg-white px-4 py-3">
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.parserStatus") }}</div>
+              <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.parserDesc") }}</div>
+            </div>
+          </div>
+          <div v-if="parserRuntime" class="grid gap-2 md:grid-cols-2">
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.enabled") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.enabled ? t("common.yes") : t("common.no") }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.available") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.available ? t("common.yes") : t("common.no") }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.pythonBin") }}</div>
+              <div class="mt-1 truncate text-sm font-medium text-slate-900">{{ parserRuntime.python_bin }}</div>
+            </div>
+            <div class="rounded-md bg-slate-50 px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.timeout") }}</div>
+              <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.timeout_ms }} ms</div>
+            </div>
+          </div>
+          <div v-if="parserRuntime" class="mt-2 text-xs text-slate-500">
+            {{ t("page.status.parser.script", { path: parserRuntime.script_path }) }}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3 rounded-md border border-slate-200 bg-white px-4 py-3">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.indexDirs") }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.indexDirsDesc") }}</div>
+          </div>
+          <DocMindBadge tone="default">
+            <Database class="mr-1" :size="13" />
+            {{ dirs.length }} {{ t("page.status.section.indexDirs") }}
           </DocMindBadge>
         </div>
-      </div>
-    </div>
-
-    <div v-if="errorMessage" class="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-      {{ errorMessage }}
-    </div>
-
-    <div v-if="loading" class="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-      {{ t("page.status.subtitle") }}...
-    </div>
-
-    <DocMindTaskCard
-      :task="status?.current_task ?? null"
-      :title="t('taskCard.defaultTitle')"
-      :description="status?.current_task?.label ?? t('status.noRecentRun')"
-      :badge-label="taskDisplayState.label"
-      :badge-tone="taskDisplayState.tone"
-      :badge-spinning="taskDisplayState.spinning"
-      class="mb-6"
-    />
-
-    <div class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-        <AlertCircle :size="18" class="text-amber-500" />
-        {{ t("page.status.section.failedFiles") }}
-      </div>
-      <div v-if="failedGroups.length === 0" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-        {{ t("page.status.failed.noFailed") }}
-      </div>
-      <div v-else class="space-y-5">
-        <div v-for="group in failedGroups" :key="group.code" class="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <FolderOpen :size="14" />
-              {{ group.category }}
-              <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.code }}</span>
-              <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.items.length }}</span>
+        <div v-if="dirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+          {{ t("page.status.emptyDirs") }}
+        </div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="dir in dirs"
+            :key="dir.path"
+            class="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+          >
+            <div class="min-w-0">
+              <div class="truncate text-sm font-medium text-slate-950">{{ dir.path }}</div>
+              <div class="mt-1 text-[11px] text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
             </div>
-            <button
-              class="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="retryingTarget === group.code"
-              @click="retryFailedGroup(group.code, group.items)"
-            >
-              <RefreshCw :size="13" :class="{ 'animate-spin': retryingTarget === group.code }" />
-              {{ t("page.status.failed.retryGroup") }}
-            </button>
+            <DocMindBadge :tone="dir.enabled ? 'success' : 'default'">
+              {{ dir.enabled ? t("common.enabled") : t("common.disabled") }}
+            </DocMindBadge>
           </div>
-          <div class="space-y-3">
-            <div v-for="file in group.items" :key="file.file" class="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm">
-              <div>
-                <div class="text-sm font-medium text-slate-800">{{ file.file }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ file.reason }}</div>
-                <div class="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-                  <span>{{ t("page.status.failed.code", { code: file.code }) }}</span>
-                  <span>{{ t("page.status.failed.retryCount", { count: file.retry_count }) }}</span>
-                  <span>{{ file.last_failed_at }}</span>
-                </div>
+        </div>
+      </div>
+
+      <div v-if="errorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+        {{ errorMessage }}
+      </div>
+
+      <div v-if="loading" class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-4 py-5 text-xs text-slate-400">
+        {{ t("page.status.subtitle") }}...
+      </div>
+
+      <div class="mt-3">
+        <DocMindTaskCard
+          :task="status?.current_task ?? null"
+          :title="t('taskCard.defaultTitle')"
+          :description="status?.current_task?.label ?? t('status.noRecentRun')"
+          :badge-label="taskDisplayState.label"
+          :badge-tone="taskDisplayState.tone"
+          :badge-spinning="taskDisplayState.spinning"
+        />
+      </div>
+
+      <div class="mt-3 rounded-md border border-slate-200 bg-white px-4 py-3">
+        <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          <AlertCircle :size="16" class="text-amber-500" />
+          {{ t("page.status.section.failedFiles") }}
+        </div>
+        <div v-if="failedGroups.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+          {{ t("page.status.failed.noFailed") }}
+        </div>
+        <div v-else class="space-y-3">
+          <div v-for="group in failedGroups" :key="group.code" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <FolderOpen :size="13" />
+                {{ group.category }}
+                <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.code }}</span>
+                <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.items.length }}</span>
               </div>
               <button
-                class="text-xs font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="retryingTarget === file.file"
-                @click="retryFailedFile(file.file)"
+                class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="retryingTarget === group.code"
+                @click="retryFailedGroup(group.code, group.items)"
               >
-                {{ retryingTarget === file.file ? t("page.status.failed.retrying") : t("page.status.failed.retryFile") }}
+                <RefreshCw :size="13" :class="{ 'animate-spin': retryingTarget === group.code }" />
+                {{ t("page.status.failed.retryGroup") }}
               </button>
+            </div>
+            <div class="space-y-2">
+              <div
+                v-for="file in group.items"
+                :key="file.file"
+                class="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2"
+              >
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-medium text-slate-950">{{ file.file }}</div>
+                  <div class="mt-1 text-xs text-slate-500">{{ file.reason }}</div>
+                  <div class="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                    <span>{{ t("page.status.failed.code", { code: file.code }) }}</span>
+                    <span>{{ t("page.status.failed.retryCount", { count: file.retry_count }) }}</span>
+                    <span>{{ file.last_failed_at }}</span>
+                  </div>
+                </div>
+                <button
+                  class="shrink-0 text-xs font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-70"
+                  :disabled="retryingTarget === file.file"
+                  @click="retryFailedFile(file.file)"
+                >
+                  {{ retryingTarget === file.file ? t("page.status.failed.retrying") : t("page.status.failed.retryFile") }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </main>
   </div>
 </template>

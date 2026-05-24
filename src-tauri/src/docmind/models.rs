@@ -16,6 +16,28 @@ pub struct HighlightSpan {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SearchRankReasonView {
+    pub summary: String,
+    pub match_origin: String,
+    pub boosts: Vec<String>,
+    pub keyword_hit: bool,
+    pub semantic_hit: bool,
+    pub favorite_boost: bool,
+    pub recent_open_count: usize,
+    pub history_expanded: bool,
+    pub keyword_score: f32,
+    pub semantic_score: f32,
+    pub title_score: f32,
+    pub filename_score: f32,
+    pub preference_score: f32,
+    pub base_score: f32,
+    pub raw_score: f32,
+    pub original_rank: usize,
+    pub final_rank: usize,
+    pub rank_delta: isize,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchResultView {
     pub id: String,
     pub file_name: String,
@@ -33,6 +55,7 @@ pub struct SearchResultView {
     pub page: Option<u32>,
     pub modified: String,
     pub score: f32,
+    pub rank_reason: SearchRankReasonView,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,6 +183,9 @@ pub struct SearchDebugView {
     pub rewritten_query: String,
     pub rewritten_terms: Vec<String>,
     pub query_rewrite_applied: bool,
+    pub history_terms: Vec<String>,
+    pub history_rewrite_applied: bool,
+    pub expanded_query: String,
     pub sqlite_documents: usize,
     pub sqlite_chunks: usize,
     pub tantivy_documents: usize,
@@ -170,6 +196,8 @@ pub struct SearchDebugView {
     pub semantic_hit_count: usize,
     pub semantic_candidate_count: usize,
     pub semantic_filtered_count: usize,
+    pub semantic_fallback: bool,
+    pub semantic_fallback_reason: String,
     pub search_mode: String,
     pub hit_count: usize,
     pub hits: Vec<SearchResultView>,
@@ -211,6 +239,12 @@ pub struct IndexSettingsView {
     pub semantic_search_enabled: bool,
     pub semantic_weight: f32,
     pub semantic_threshold: f32,
+    pub title_weight: f32,
+    pub filename_weight: f32,
+    pub preference_weight: f32,
+    pub prefer_favorites_enabled: bool,
+    pub prefer_recent_enabled: bool,
+    pub prefer_history_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

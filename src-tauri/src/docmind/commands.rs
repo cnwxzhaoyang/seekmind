@@ -119,6 +119,9 @@ pub async fn get_search_debug_report(
         rewritten_query: search_debug.rewritten_query,
         rewritten_terms: search_debug.rewritten_terms,
         query_rewrite_applied,
+        history_terms: search_debug.history_terms,
+        history_rewrite_applied: search_debug.history_rewrite_applied,
+        expanded_query: search_debug.expanded_query,
         sqlite_documents,
         sqlite_chunks,
         tantivy_documents: state.tantivy_document_count(),
@@ -129,6 +132,8 @@ pub async fn get_search_debug_report(
         semantic_hit_count: search_debug.semantic_hit_count,
         semantic_candidate_count: search_debug.semantic_candidate_count,
         semantic_filtered_count: search_debug.semantic_filtered_count,
+        semantic_fallback: search_debug.semantic_fallback,
+        semantic_fallback_reason: search_debug.semantic_fallback_reason,
         search_mode: search_debug.search_mode,
         hit_count: search_debug.hits.len(),
         hits: search_debug.hits,
@@ -799,6 +804,12 @@ pub async fn get_index_settings(
         semantic_search_enabled: settings.semantic_search_enabled,
         semantic_weight: settings.semantic_weight,
         semantic_threshold: settings.semantic_threshold,
+        title_weight: settings.title_weight,
+        filename_weight: settings.filename_weight,
+        preference_weight: settings.preference_weight,
+        prefer_favorites_enabled: settings.prefer_favorites_enabled,
+        prefer_recent_enabled: settings.prefer_recent_enabled,
+        prefer_history_enabled: settings.prefer_history_enabled,
     })
 }
 
@@ -814,6 +825,12 @@ pub async fn save_index_settings(
         semantic_search_enabled: settings.semantic_search_enabled,
         semantic_weight: settings.semantic_weight,
         semantic_threshold: settings.semantic_threshold,
+        title_weight: settings.title_weight,
+        filename_weight: settings.filename_weight,
+        preference_weight: settings.preference_weight,
+        prefer_favorites_enabled: settings.prefer_favorites_enabled,
+        prefer_recent_enabled: settings.prefer_recent_enabled,
+        prefer_history_enabled: settings.prefer_history_enabled,
     };
     state
         .save_index_settings(&settings)

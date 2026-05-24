@@ -225,96 +225,104 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-8">
-    <div class="mb-7 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-950">{{ t("page.library.title") }}</h1>
-        <p class="mt-1 text-sm text-slate-500">{{ t("page.library.subtitle") }}</p>
+  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold tracking-tight text-slate-950">{{ t("page.library.title") }}</h1>
+        <p class="mt-0.5 text-xs text-slate-500">{{ t("page.library.subtitle") }}</p>
       </div>
       <button
-        class="flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+        class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
         :disabled="refreshing"
         @click="chooseAndAddDir"
       >
-        <FolderPlus :size="17" />
+        <FolderPlus :size="16" />
         {{ t("page.library.btn.addDir") }}
       </button>
-    </div>
+    </header>
 
-    <DocMindTaskCard
-      :task="status?.current_task ?? null"
-      :title="t('page.library.taskTitle')"
-      :description="status?.current_task?.details ?? t('page.library.taskSyncing')"
-      :badge-label="taskDisplayState.label"
-      :badge-tone="taskDisplayState.tone"
-      :badge-spinning="taskDisplayState.spinning"
-      class="mb-6"
-    />
+    <main class="min-h-0 flex-1 overflow-y-auto p-4">
+      <DocMindTaskCard
+        :task="status?.current_task ?? null"
+        :title="t('page.library.taskTitle')"
+        :description="status?.current_task?.details ?? t('page.library.taskSyncing')"
+        :badge-label="taskDisplayState.label"
+        :badge-tone="taskDisplayState.tone"
+        :badge-spinning="taskDisplayState.spinning"
+        class="mb-4"
+      />
 
-    <div v-if="errorMessage" class="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-      {{ errorMessage }}
-    </div>
+      <div v-if="errorMessage" class="mb-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        {{ errorMessage }}
+      </div>
 
-    <div v-if="infoMessage" class="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-      {{ infoMessage }}
-    </div>
+      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+        {{ infoMessage }}
+      </div>
 
-    <div v-if="loading" class="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-      {{ t("page.library.loading") }}
-    </div>
+      <div class="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.library.emptyState.title") }}</div>
+        <DocMindBadge tone="default">
+          <FolderOpen class="mr-1" :size="13" />
+          {{ dirs.length }}
+        </DocMindBadge>
+      </div>
 
-    <div v-else class="space-y-3">
-      <div v-for="dir in dirs" :key="dir.path" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-4">
-          <div class="flex min-w-0 items-center gap-4">
-            <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100">
-              <FolderOpen :size="20" class="text-slate-600" />
+      <div v-if="loading" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+        {{ t("page.library.loading") }}
+      </div>
+
+      <div v-else-if="dirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.library.emptyState.title") }}</div>
+        <div class="mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
+      </div>
+
+      <div v-else class="space-y-2">
+        <div
+          v-for="dir in dirs"
+          :key="dir.path"
+          class="rounded-md border border-slate-200 bg-white px-3 py-3"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-medium text-slate-950">{{ dir.path }}</div>
+              <div class="mt-1 text-[11px] text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
+              <div class="mt-2 inline-flex items-center gap-2 text-[11px] text-slate-500">
+                <span>{{ dir.enabled ? t("common.enabled") : t("common.disabled") }}</span>
+                <span>·</span>
+                <span>{{ dir.status }}</span>
+              </div>
             </div>
-            <div class="min-w-0">
-              <div class="truncate text-sm font-semibold text-slate-900">{{ dir.path }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
-            </div>
-          </div>
 
-          <div class="flex items-center gap-2">
-            <DocMindBadge v-if="dir.status === 'indexing'" tone="warning">
-              <Loader2 class="mr-1 animate-spin" :size="13" />
-              {{ t("page.library.status.indexing") }}
-            </DocMindBadge>
-            <DocMindBadge v-else tone="success">
-              <CheckCircle2 class="mr-1" :size="13" />
-              {{ t("page.library.status.completed") }}
-            </DocMindBadge>
-            <button
-              class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-              :disabled="busyPath === dir.path"
-              @click="refreshSingleDir(dir.path)"
-            >
-              <RefreshCw :size="16" />
-            </button>
-            <button
-              class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-              :disabled="busyPath === dir.path"
-              @click="toggleDir(dir)"
-            >
-              <component :is="dir.enabled ? ToggleRight : ToggleLeft" :size="16" />
-            </button>
-            <button
-              class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-              :disabled="busyPath === dir.path"
-              @click="removeDir(dir.path)"
-            >
-              <X :size="16" />
-            </button>
+            <div class="flex items-center gap-1.5">
+              <button
+                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="busyPath === dir.path"
+                :title="t('page.library.status.indexing')"
+                @click="refreshSingleDir(dir.path)"
+              >
+                <RefreshCw :size="14" />
+              </button>
+              <button
+                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="busyPath === dir.path"
+                :title="dir.enabled ? t('common.disabled') : t('common.enabled')"
+                @click="toggleDir(dir)"
+              >
+                <component :is="dir.enabled ? ToggleRight : ToggleLeft" :size="14" />
+              </button>
+              <button
+                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="busyPath === dir.path"
+                title="删除"
+                @click="removeDir(dir.path)"
+              >
+                <X :size="14" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="mt-8 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-      <FolderPlus class="mx-auto mb-3 text-slate-400" :size="28" />
-      <div class="text-sm font-medium text-slate-700">{{ t("page.library.emptyState.title") }}</div>
-      <div class="mt-1 text-xs text-slate-500">{{ t("page.library.emptyState.subtitle") }}</div>
-    </div>
+    </main>
   </div>
 </template>

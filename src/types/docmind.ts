@@ -23,6 +23,28 @@ export interface SearchResultView {
   page?: number | null;
   modified: string;
   score: number;
+  rank_reason: SearchRankReasonView;
+}
+
+export interface SearchRankReasonView {
+  summary: string;
+  match_origin: string;
+  boosts: string[];
+  keyword_hit: boolean;
+  semantic_hit: boolean;
+  favorite_boost: boolean;
+  recent_open_count: number;
+  history_expanded: boolean;
+  keyword_score: number;
+  semantic_score: number;
+  title_score: number;
+  filename_score: number;
+  preference_score: number;
+  base_score: number;
+  raw_score: number;
+  original_rank: number;
+  final_rank: number;
+  rank_delta: number;
 }
 
 export interface HighlightSpan {
@@ -143,6 +165,9 @@ export interface SearchDebugView {
   rewritten_query: string;
   rewritten_terms: string[];
   query_rewrite_applied: boolean;
+  history_terms: string[];
+  history_rewrite_applied: boolean;
+  expanded_query: string;
   sqlite_documents: number;
   sqlite_chunks: number;
   tantivy_documents: number;
@@ -153,6 +178,8 @@ export interface SearchDebugView {
   semantic_hit_count: number;
   semantic_candidate_count: number;
   semantic_filtered_count: number;
+  semantic_fallback: boolean;
+  semantic_fallback_reason: string;
   search_mode: string;
   hit_count: number;
   hits: SearchResultView[];
@@ -190,6 +217,12 @@ export interface IndexSettingsView {
   semantic_search_enabled: boolean;
   semantic_weight: number;
   semantic_threshold: number;
+  title_weight: number;
+  filename_weight: number;
+  preference_weight: number;
+  prefer_favorites_enabled: boolean;
+  prefer_recent_enabled: boolean;
+  prefer_history_enabled: boolean;
 }
 
 export interface EmbeddingModelView {

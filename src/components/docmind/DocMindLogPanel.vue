@@ -131,27 +131,28 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pointer-events-none fixed bottom-4 right-4 z-50">
+  <div class="pointer-events-none fixed bottom-0 left-[200px] right-0 z-50">
     <div
-      class="pointer-events-auto overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl transition-all duration-200"
-      :class="expanded ? 'w-[420px] max-h-[520px]' : 'w-[180px]'"
+      class="pointer-events-auto overflow-hidden border-t border-slate-200 bg-slate-100 shadow-lg transition-all duration-200"
+      :class="expanded ? 'w-full max-h-[320px]' : 'w-full'"
     >
       <button
-        class="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left"
+        class="flex h-6 w-full items-center justify-between gap-3 px-3 text-left"
         @click="toggleExpanded"
       >
         <div class="flex items-center gap-2">
-          <NotebookText class="text-slate-700" :size="16" />
-          <div>
-            <div class="text-sm font-semibold text-slate-900">{{ t("logPanel.title") }}</div>
-            <div class="text-[11px] text-slate-500">{{ t("logPanel.desc") }}</div>
-          </div>
+          <NotebookText class="text-slate-600" :size="14" />
+          <div class="text-[11px] font-medium text-slate-700">{{ t("logPanel.title") }}</div>
+          <div class="hidden text-[11px] text-slate-500 sm:block">{{ t("logPanel.desc") }}</div>
         </div>
-        <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-slate-500" />
+        <div class="flex items-center gap-3 text-[11px] text-slate-500">
+          <span>{{ t("logPanel.events", { count: entries.length }) }}</span>
+          <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-slate-500" />
+        </div>
       </button>
 
       <div v-if="expanded" class="max-h-[460px] overflow-hidden">
-        <div class="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+        <div class="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
           <div>{{ t("logPanel.events", { count: entries.length }) }}</div>
           <button class="inline-flex items-center gap-1 hover:text-slate-700" @click="clearLogs">
             <Trash2 :size="13" /> {{ t("logPanel.clear") }}

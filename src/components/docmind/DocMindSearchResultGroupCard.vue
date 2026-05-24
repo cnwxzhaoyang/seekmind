@@ -45,8 +45,11 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
 </script>
 
 <template>
-  <section class="rounded-3xl border bg-white p-4 shadow-sm transition" :class="isSelected ? 'border-slate-300 ring-2 ring-slate-200' : 'border-slate-200'">
-    <div class="flex items-start gap-3">
+  <section
+    class="rounded-lg border bg-white p-2.5 transition hover:border-indigo-400 hover:shadow-sm"
+    :class="isSelected ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200'"
+  >
+    <div class="flex items-start gap-2.5">
       <DocMindFileIcon :ext="group.ext" />
       <div class="min-w-0 flex-1">
         <div
@@ -57,21 +60,21 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
           @keydown.enter.prevent="emit('select', group.topResult.id)"
           @keydown.space.prevent="emit('select', group.topResult.id)"
         >
-          <div class="flex items-start justify-between gap-3">
+          <div class="flex items-start justify-between gap-2.5">
             <div class="min-w-0">
-              <div class="truncate text-sm font-semibold text-slate-900">
+              <div class="truncate text-[13px] font-semibold text-indigo-600">
                 <DocMindHighlightedText :text="group.fileName" :query="props.query" />
               </div>
-              <div class="mt-1 break-all text-xs text-slate-400">{{ group.path }}</div>
+              <div class="mt-1 break-all text-[11px] text-slate-400">{{ group.path }}</div>
             </div>
-            <div class="text-right text-xs text-slate-400">
-              <div>{{ Math.round(group.topResult.score * 100) }}%</div>
+            <div class="text-right text-[11px] text-slate-400">
+              <div class="font-medium text-slate-700">{{ Math.round(group.topResult.score * 100) }}%</div>
               <div class="mt-1">{{ t("searchResultGroupCard.segments", { count: group.count }) }}</div>
             </div>
           </div>
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
           <DocMindBadge>{{ group.ext.toUpperCase() }}</DocMindBadge>
           <span>{{ t("searchResultGroupCard.docGroup") }}</span>
           <span>·</span>
@@ -80,13 +83,16 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
           <span>{{ t("searchResultGroupCard.totalScore", { score: Math.round(group.totalScore * 100) }) }}</span>
         </div>
 
-        <div class="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
+        <div class="mt-2 text-sm leading-6 text-slate-700">
           <DocMindHighlightedText :text="group.topResult.snippet" :query="props.query" :spans="group.topResult.highlight_spans" />
         </div>
+        <div class="mt-1.5 text-[11px] text-slate-500">
+          {{ t("searchResultCard.rankReason") }}: {{ group.topResult.rank_reason.summary || t("common.none") }}
+        </div>
 
-        <div class="mt-3 flex items-center justify-between">
+        <div class="mt-2.5 flex items-center justify-between">
           <button
-            class="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
             type="button"
             @click="emit('toggle', group.path)"
           >
@@ -95,7 +101,7 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
             {{ props.expanded ? t("searchResultGroupCard.collapse") : t("searchResultGroupCard.expand") }}
           </button>
           <button
-            class="rounded-xl px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
+            class="rounded-md px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-slate-50"
             type="button"
             @click="emit('select', group.topResult.id)"
           >
@@ -105,7 +111,7 @@ const isSelected = computed(() => props.group.results.some((item) => item.id ===
       </div>
     </div>
 
-    <div v-if="props.expanded" class="mt-4 space-y-3 border-t border-slate-100 pt-4">
+  <div v-if="props.expanded" class="mt-4 space-y-2 border-t border-slate-100 pt-3">
       <DocMindSearchResultCard
         v-for="item in group.results"
         :key="item.id"

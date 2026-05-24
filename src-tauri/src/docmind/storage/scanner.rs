@@ -302,6 +302,12 @@ fn default_index_settings() -> IndexSettings {
         semantic_search_enabled: true,
         semantic_weight: 0.25,
         semantic_threshold: 0.2,
+        title_weight: 1.0,
+        filename_weight: 1.0,
+        preference_weight: 1.0,
+        prefer_favorites_enabled: true,
+        prefer_recent_enabled: true,
+        prefer_history_enabled: true,
     }
 }
 

@@ -76,9 +76,15 @@
       "semanticDisabled": "语义关闭",
       "semanticWeight": "语义权重 {weight}%",
       "semanticThreshold": "语义阈值 {threshold}%",
+      "semanticReady": "语义正常",
+      "semanticFallback": "语义回退",
+      "semanticFallbackState": "语义终态",
       "queryRewrite": "查询改写",
       "queryRewriteApplied": "已应用轻量改写",
       "queryRewriteDisabled": "未启用改写",
+      "historyExpansion": "历史扩展",
+      "historyApplied": "已应用历史扩展",
+      "historyDisabled": "未启用历史扩展",
       "semanticCandidates": "候选 {count} 个",
       "semanticFiltered": "过滤 {count} 个",
       "stats": {
@@ -95,6 +101,8 @@
         "recentOpen": "最近打开",
         "favorites": "收藏结果",
         "quickDirs": "常用目录",
+        "debugExpand": "展开调试信息",
+        "debugCollapse": "收起调试信息",
         "noHistory": "暂无历史",
         "noRecent": "暂无最近文档",
         "noFavorites": "暂无收藏",
@@ -270,6 +278,18 @@
         "threshold": "语义阈值",
         "thresholdDesc": "只有语义分数达到该阈值的候选才会参与最终排序。"
       },
+      "preference": {
+        "title": "结果偏好",
+        "favorite": "收藏优先",
+        "recent": "最近打开优先",
+        "history": "搜索历史扩展"
+      },
+      "weight": {
+        "title": "排序权重",
+        "titleWeight": "标题权重",
+        "filenameWeight": "文件名权重",
+        "preferenceWeight": "偏好权重"
+      },
       "btn": {
         "reset": "恢复默认",
         "save": "保存设置",
@@ -409,7 +429,14 @@
     "page": "第 {page} 页",
     "paragraph": "第 {para} 段",
     "hitSnippet": "命中片段",
-    "matchField": "命中：{field}"
+    "matchField": "命中：{field}",
+    "rankReason": "排序依据",
+    "scoreKeywords": "关键词 {score}",
+    "scoreSemantic": "语义 {score}",
+    "scoreTitle": "标题 {score}",
+    "scoreFilename": "文件名 {score}",
+    "scorePreference": "偏好 {score}",
+    "rankChange": "名次 {original} -> {final}（变化 {delta}）"
   },
 
   "searchResultGroupCard": {

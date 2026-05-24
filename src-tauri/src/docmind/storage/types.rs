@@ -59,4 +59,10 @@ pub struct IndexSettings {
     pub semantic_search_enabled: bool,
     pub semantic_weight: f32,
     pub semantic_threshold: f32,
+    pub title_weight: f32,
+    pub filename_weight: f32,
+    pub preference_weight: f32,
+    pub prefer_favorites_enabled: bool,
+    pub prefer_recent_enabled: bool,
+    pub prefer_history_enabled: bool,
 }

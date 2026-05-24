@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docMind Redesign Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        
+        :root {
+            --sidebar-bg: #f3f4f6;
+            --main-bg: #ffffff;
+            --accent-color: #4f46e5;
+            --border-color: #e5e7eb;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--sidebar-bg);
+            color: var(--text-main);
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+        }
+
+        /* 侧边栏优化：更窄，更原生 */
+        .sidebar {
+            width: 200px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 8px;
+            flex-shrink: 0;
+        }
+
+        .logo-area {
+            padding: 8px 12px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            background: var(--accent-color);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            margin-bottom: 2px;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            background-color: #e5e7eb;
+            color: var(--text-main);
+        }
+
+        .nav-item.active {
+            background-color: #e5e7eb;
+            color: var(--accent-color);
+            font-weight: 500;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            flex-grow: 1;
+            background-color: var(--main-bg);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 紧凑型顶部栏 */
+        .top-bar {
+            height: 48px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 16px;
+            justify-content: space-between;
+        }
+
+        .search-input-wrapper {
+            position: relative;
+            flex-grow: 1;
+            max-width: 600px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 6px 12px 6px 32px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .stats-strip {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .stats-item span {
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        /* 工作区布局 */
+        .workspace {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        /* 左侧面板：快捷入口/最近文件 */
+        .left-panel {
+            width: 260px;
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .panel-section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .list-item {
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .list-item:hover {
+            background-color: #f9fafb;
+        }
+
+        .list-item i {
+            width: 14px;
+            color: var(--text-muted);
+        }
+
+        /* 右侧面板：搜索结果/预览 */
+        .results-panel {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #f9fafb;
+        }
+
+        .results-header {
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+        }
+
+        .results-scroll {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .result-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+            transition: transform 0.1s;
+        }
+
+        .result-card:hover {
+            border-color: var(--accent-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .result-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .result-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 6px;
+            color: var(--accent-color);
+        }
+
+        .result-snippet {
+            font-size: 13px;
+            line-height: 1.5;
+            color: #4b5563;
+        }
+
+        .tag {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+
+        /* 状态栏 */
+        .status-bar {
+            height: 24px;
+            background: var(--sidebar-bg);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            font-size: 11px;
+            color: var(--text-muted);
+            gap: 16px;
+        }
+
+        .status-right {
+            margin-left: auto;
+            display: flex;
+            gap: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div class="logo-icon">dm</div>
+            <span class="font-bold text-sm">docMind</span>
+        </div>
+        <nav>
+            <a href="#" class="nav-item active"><i class="fa-solid fa-magnifying-glass"></i> 全局搜索</a>
+            <a href="#" class="nav-item"><i class="fa-solid fa-layer-group"></i> 文档切片</a>
+            <a href="#" class="nav-item"><i class="fa-solid fa-folder-tree"></i> 文档目录</a>
+            <a href="#" class="nav-item"><i class="fa-solid fa-chart-line"></i> 索引状态</a>
+            <a href="#" class="nav-item"><i class="fa-solid fa-gear"></i> 设置</a>
+        </nav>
+        
+        <div class="mt-auto p-2">
+            <div class="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                <p class="text-[10px] text-indigo-600 font-semibold mb-1">本地优先</p>
+                <p class="text-[10px] text-indigo-400 leading-tight">文档仅在当前 Mac 上解析和索引，不上传云端。</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主内容 -->
+    <main class="main-content">
+        <!-- 紧凑顶部栏 -->
+        <header class="top-bar">
+            <div class="search-input-wrapper">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" class="search-input" placeholder="搜索文档内容、标题或文件名... (Cmd+K)">
+            </div>
+            <div class="stats-strip">
+                <div class="stats-item">SQLite: <span>50/1773</span></div>
+                <div class="stats-item">Tantivy: <span>1773</span></div>
+                <div class="stats-item">语义权重: <span>25%</span></div>
+            </div>
+        </header>
+
+        <!-- 工作区 -->
+        <div class="workspace">
+            <!-- 左侧辅助面板 -->
+            <div class="left-panel">
+                <div class="panel-section">
+                    <div class="section-title">最近搜索</div>
+                    <div class="flex flex-wrap gap-1">
+                        <span class="tag">什么是AEOS</span>
+                        <span class="tag">数据加密</span>
+                        <span class="tag">Cd linux</span>
+                        <span class="tag">oracle</span>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="section-title">常用目录</div>
+                    <div class="list-item"><i class="fa-regular fa-folder"></i> /Documents/503-协同...</div>
+                    <div class="list-item"><i class="fa-regular fa-folder"></i> /Documents/803 一体...</div>
+                    <div class="list-item"><i class="fa-regular fa-folder"></i> /Documents/产品研发...</div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="section-title">最近打开</div>
+                    <div class="list-item"><i class="fa-regular fa-file-lines"></i> AI大模型与架构</div>
+                </div>
+            </div>
+
+            <!-- 搜索结果 -->
+            <div class="results-panel">
+                <div class="results-header">
+                    <span class="text-xs font-medium text-gray-500">找到 12 个相关文档，共 45 个相关段落</span>
+                    <button class="text-xs text-indigo-600 hover:underline"><i class="fa-solid fa-sliders"></i> 筛选</button>
+                </div>
+                <div class="results-scroll">
+                    <!-- 模拟结果 1 -->
+                    <div class="result-card">
+                        <div class="result-meta">
+                            <span><i class="fa-regular fa-file-pdf"></i> AEOS_Technical_Specs.pdf</span>
+                            <span>• 3MB</span>
+                            <span>• 2024-05-20</span>
+                        </div>
+                        <div class="result-title">AEOS 核心架构与安全性说明</div>
+                        <div class="result-snippet">
+                            ...AEOS 系统采用分层加密机制，其中 <strong>数据加密</strong> 模块位于内核态，确保了在高性能搜索的同时不牺牲安全性。在索引阶段，docMind 会自动提取...
+                        </div>
+                    </div>
+
+                    <!-- 模拟结果 2 -->
+                    <div class="result-card">
+                        <div class="result-meta">
+                            <span><i class="fa-regular fa-file-word"></i> 2024产品研发规划.docx</span>
+                            <span>• 1.2MB</span>
+                            <span>• 2024-05-15</span>
+                        </div>
+                        <div class="result-title">产品研发安全合规性要求</div>
+                        <div class="result-snippet">
+                            ...所有本地文档必须经过 <strong>本地优先</strong> 解析流程。文档仅在当前设备上进行索引，严禁上传至任何第三方云端 API 进行解析，除非用户手动开启...
+                        </div>
+                    </div>
+                    
+                    <div class="text-center py-8">
+                        <p class="text-xs text-gray-400">已加载全部结果</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态栏 -->
+        <footer class="status-bar">
+            <div><i class="fa-solid fa-circle-check text-green-500"></i> 已索引 50 个文档</div>
+            <div><i class="fa-solid fa-bolt text-yellow-500"></i> Python 解析已就绪</div>
+            <div class="status-right">
+                <span><i class="fa-solid fa-terminal"></i> 日志 (3)</span>
+                <span>v1.0.2</span>
+            </div>
+        </footer>
+    </main>
+</body>
+</html>

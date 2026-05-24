@@ -82,7 +82,19 @@ pub(crate) struct SearchDebugData {
     pub(crate) semantic_threshold: f32,
     pub(crate) rewritten_terms: Vec<String>,
     pub(crate) rewritten_query: String,
+    pub(crate) history_terms: Vec<String>,
+    pub(crate) history_rewrite_applied: bool,
+    pub(crate) expanded_query: String,
+    pub(crate) semantic_fallback: bool,
+    pub(crate) semantic_fallback_reason: String,
     pub(crate) search_mode: String,
+}
+
+#[derive(Debug, Clone)]
+struct SearchResultCandidate {
+    result: SearchResultView,
+    raw_score: f32,
+    final_score: f32,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -298,11 +310,17 @@ impl Database {
             semantic_search_enabled: i64,
             semantic_weight: f32,
             semantic_threshold: f32,
+            title_weight: f32,
+            filename_weight: f32,
+            preference_weight: f32,
+            prefer_favorites_enabled: i64,
+            prefer_recent_enabled: i64,
+            prefer_history_enabled: i64,
         }
 
         let row = sqlx::query_as::<_, IndexSettingsRow>(
             r#"
-            SELECT exclude_dirs, exclude_exts, max_file_size_mb, semantic_search_enabled, semantic_weight, semantic_threshold
+            SELECT exclude_dirs, exclude_exts, max_file_size_mb, semantic_search_enabled, semantic_weight, semantic_threshold, title_weight, filename_weight, preference_weight, prefer_favorites_enabled, prefer_recent_enabled, prefer_history_enabled
             FROM index_settings
             WHERE id = 1
             "#,
@@ -318,6 +336,12 @@ impl Database {
                 semantic_search_enabled: row.semantic_search_enabled != 0,
                 semantic_weight: row.semantic_weight.clamp(0.0, 1.0),
                 semantic_threshold: row.semantic_threshold.clamp(-1.0, 1.0),
+                title_weight: row.title_weight.clamp(0.0, 3.0),
+                filename_weight: row.filename_weight.clamp(0.0, 3.0),
+                preference_weight: row.preference_weight.clamp(0.0, 3.0),
+                prefer_favorites_enabled: row.prefer_favorites_enabled != 0,
+                prefer_recent_enabled: row.prefer_recent_enabled != 0,
+                prefer_history_enabled: row.prefer_history_enabled != 0,
             })
         } else {
             Ok(IndexSettings {
@@ -327,6 +351,12 @@ impl Database {
                 semantic_search_enabled: true,
                 semantic_weight: 0.25,
                 semantic_threshold: 0.2,
+                title_weight: 1.0,
+                filename_weight: 1.0,
+                preference_weight: 1.0,
+                prefer_favorites_enabled: true,
+                prefer_recent_enabled: true,
+                prefer_history_enabled: true,
             })
         }
     }
@@ -335,9 +365,14 @@ impl Database {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO index_settings
-                (id, exclude_dirs, exclude_exts, max_file_size_mb, semantic_search_enabled, semantic_weight, semantic_threshold)
+                (id, exclude_dirs, exclude_exts, max_file_size_mb, semantic_search_enabled, semantic_weight, semantic_threshold, title_weight, filename_weight, preference_weight, prefer_favorites_enabled, prefer_recent_enabled, prefer_history_enabled)
             VALUES (
                 1,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
                 ?,
                 ?,
                 ?,
@@ -353,6 +388,12 @@ impl Database {
         .bind(settings.semantic_search_enabled as i64)
         .bind(settings.semantic_weight)
         .bind(settings.semantic_threshold)
+        .bind(settings.title_weight)
+        .bind(settings.filename_weight)
+        .bind(settings.preference_weight)
+        .bind(settings.prefer_favorites_enabled as i64)
+        .bind(settings.prefer_recent_enabled as i64)
+        .bind(settings.prefer_history_enabled as i64)
         .execute(&self.pool)
         .await?;
 
@@ -438,6 +479,39 @@ impl Database {
             .collect())
     }
 
+    async fn derive_history_terms(&self, current_terms: &[String]) -> Result<Vec<String>, sqlx::Error> {
+        let history = self.list_search_history(30).await?;
+        let current_set = current_terms
+            .iter()
+            .map(|term| term.trim().to_lowercase())
+            .filter(|term| !term.is_empty())
+            .collect::<std::collections::HashSet<_>>();
+
+        let mut term_counts = std::collections::HashMap::<String, usize>::new();
+        for item in history {
+            let weight = item.hit_count.max(1);
+            for term in item.normalized_query.split_whitespace() {
+                let normalized = term.trim().to_lowercase();
+                if normalized.is_empty() || current_set.contains(&normalized) || normalized.len() < 2 {
+                    continue;
+                }
+                *term_counts.entry(normalized).or_insert(0) += weight;
+            }
+        }
+
+        let mut terms = term_counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect::<Vec<_>>();
+        terms.sort_by(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        Ok(terms.into_iter().take(4).map(|(term, _)| term).collect())
+    }
+
     pub async fn record_recent_document(
         &self,
         path: &str,
@@ -519,6 +593,27 @@ impl Database {
                 updated_at: format_unix_ts(row.updated_at),
             })
             .collect())
+    }
+
+    pub async fn default_embedding_model_available(&self) -> Result<bool, sqlx::Error> {
+        #[derive(Debug, sqlx::FromRow)]
+        struct DefaultEmbeddingModelRow {
+            available: i64,
+        }
+
+        let row = sqlx::query_as::<_, DefaultEmbeddingModelRow>(
+            r#"
+            SELECT available
+            FROM embedding_models
+            WHERE is_default = 1
+            ORDER BY updated_at DESC, name ASC
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|item| item.available != 0).unwrap_or(false))
     }
 
     pub async fn toggle_result_favorite(
@@ -716,19 +811,65 @@ impl Database {
         let semantic_threshold = settings.semantic_threshold.clamp(-1.0, 1.0);
         let rewritten_terms = rewrite_query_terms(query);
         let rewritten_query = rewrite_search_text(query);
-
-        let keyword_hits = self
-            .search_index
-            .search(query, limit.max(1))
-            .map_err(sqlx::Error::Protocol)?;
-
-        let semantic_candidates = if semantic_enabled {
-            let semantic_limit = limit.max(1).saturating_mul(3).max(limit.max(1));
-            semantic_store::semantic_search_hits(self, query, semantic_limit)
+        let semantic_model_available = self
+            .default_embedding_model_available()
+            .await
+            .unwrap_or(false);
+        let history_terms = if settings.prefer_history_enabled {
+            self.derive_history_terms(&rewritten_terms)
                 .await
                 .unwrap_or_default()
         } else {
             Vec::new()
+        };
+        let history_rewrite_applied = !history_terms.is_empty();
+        let mut expanded_terms = rewritten_terms.clone();
+        expanded_terms.extend(history_terms.iter().cloned());
+        let expanded_query = expanded_terms.join(" ");
+
+        let keyword_hits = self
+            .search_index
+            .search(&expanded_query, limit.max(1))
+            .map_err(sqlx::Error::Protocol)?;
+        let recent_documents = if settings.prefer_recent_enabled {
+            self.list_recent_documents(50).await.unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let favorites = if settings.prefer_favorites_enabled {
+            self.list_favorites(200).await.unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let recent_document_map = recent_documents
+            .into_iter()
+            .map(|item| (item.path, item.open_count))
+            .collect::<std::collections::HashMap<_, _>>();
+        let favorite_targets = favorites
+            .into_iter()
+            .map(|item| item.target)
+            .collect::<std::collections::HashSet<_>>();
+
+        let semantic_limit = limit.max(1).saturating_mul(3).max(limit.max(1));
+        let semantic_result = if semantic_enabled {
+            semantic_store::semantic_search_hits(self, query, semantic_limit).await
+        } else {
+            Ok(Vec::new())
+        };
+        let (semantic_candidates, semantic_fallback, semantic_fallback_reason) = match semantic_result {
+            Ok(hits) => (hits, false, String::new()),
+            Err(error) => (Vec::new(), true, error),
+        };
+        let semantic_fallback_reason_text = if semantic_fallback_reason.is_empty() {
+            if !semantic_enabled {
+                "语义检索已关闭".to_string()
+            } else if !semantic_model_available {
+                "语义模型不可用".to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            semantic_fallback_reason.clone()
         };
         let semantic_candidate_count = semantic_candidates.len();
         let semantic_hits: Vec<_> = semantic_candidates
@@ -749,6 +890,11 @@ impl Database {
                 semantic_threshold,
                 rewritten_terms,
                 rewritten_query,
+                history_terms,
+                history_rewrite_applied,
+                expanded_query,
+                semantic_fallback: semantic_fallback || !semantic_model_available,
+                semantic_fallback_reason: semantic_fallback_reason_text.clone(),
                 search_mode: if semantic_enabled {
                     "hybrid".to_string()
                 } else {
@@ -790,6 +936,36 @@ impl Database {
             if let Some(row) = rows_by_id.remove(&chunk_id) {
                 let keyword_score = keyword_score_map.get(&chunk_id).copied().unwrap_or(0.0);
                 let semantic_score = semantic_score_map.get(&chunk_id).copied().unwrap_or(0.0);
+                let title_score = if row.heading.trim().is_empty() {
+                    0.0
+                } else if contains_all_terms(&row.heading, &normalized_terms) {
+                    0.32
+                } else if contains_any_term(&row.heading, &normalized_terms) {
+                    0.18
+                } else {
+                    0.0
+                };
+                let filename_score = if row.file_name.trim().is_empty() {
+                    0.0
+                } else if contains_all_terms(&row.file_name, &normalized_terms) {
+                    0.45
+                } else if contains_any_term(&row.file_name, &normalized_terms) {
+                    0.25
+                } else {
+                    0.0
+                };
+                let is_favorite = favorite_targets.contains(&favorite_result_target(
+                    &row.path,
+                    &row.heading,
+                    row.paragraph.map(|value| value as u32),
+                    row.page.map(|value| value as u32),
+                ));
+                let recent_open_count = recent_document_map.get(&row.path).copied().unwrap_or(0);
+                let preference_score = rerank_bonus(
+                    is_favorite,
+                    recent_open_count,
+                    history_rewrite_applied,
+                );
                 let (snippet, highlight_spans, snippet_window_start, snippet_window_end, snippet_source_len) =
                     build_search_snippet(&row.snippet, &normalized_terms, 220);
                 let (matched_field, match_origin) = if keyword_score > 0.0 {
@@ -799,49 +975,106 @@ impl Database {
                 } else {
                     matched_field_and_origin(&row, &normalized_terms)
                 };
+                let rank_reason = search_rank_reason(
+                    &row,
+                    &normalized_terms,
+                    &match_origin,
+                    keyword_score,
+                    semantic_score,
+                    semantic_enabled,
+                    is_favorite,
+                    recent_open_count,
+                    history_rewrite_applied,
+                    title_score,
+                    filename_score,
+                    preference_score,
+                    row.modified_at,
+                    now,
+                );
                 let base_score = if keyword_score > 0.0 {
                     keyword_score + semantic_score.max(0.0) * semantic_weight
                 } else {
                     semantic_score.max(0.0)
                 };
                 let chunk_weight = row.score.clamp(0.25, 1.0);
-                let score = boosted_search_score(
+                let raw_score = boosted_search_score(
                     base_score * chunk_weight,
                     &match_origin,
                     row.modified_at,
                     now,
                 );
-                results.push(SearchResultView {
-                    id: row.id,
-                    file_name: row.file_name,
-                    path: row.path,
-                    ext: row.ext,
-                    heading: row.heading,
-                    snippet,
-                    matched_field,
-                    match_origin,
-                    highlight_spans,
-                    snippet_window_start,
-                    snippet_window_end,
-                    snippet_source_len,
-                    paragraph: row.paragraph.map(|value| value as u32),
-                    page: row.page.map(|value| value as u32),
-                    modified: row.modified,
-                    score,
+                let weighted_title_score = title_score * settings.title_weight;
+                let weighted_filename_score = filename_score * settings.filename_weight;
+                let weighted_preference_score = preference_score * settings.preference_weight;
+                let final_score = raw_score + weighted_preference_score + weighted_title_score + weighted_filename_score;
+                let mut rank_reason = rank_reason;
+                rank_reason.base_score = base_score;
+                rank_reason.raw_score = raw_score;
+                rank_reason.title_score = weighted_title_score;
+                rank_reason.filename_score = weighted_filename_score;
+                rank_reason.preference_score = weighted_preference_score;
+                results.push(SearchResultCandidate {
+                    result: SearchResultView {
+                        id: row.id,
+                        file_name: row.file_name,
+                        path: row.path,
+                        ext: row.ext,
+                        heading: row.heading,
+                        snippet,
+                        matched_field,
+                        match_origin,
+                        highlight_spans,
+                        snippet_window_start,
+                        snippet_window_end,
+                        snippet_source_len,
+                        paragraph: row.paragraph.map(|value| value as u32),
+                        page: row.page.map(|value| value as u32),
+                        modified: row.modified,
+                        score: final_score,
+                        rank_reason,
+                    },
+                    raw_score,
+                    final_score,
                 });
             }
         }
 
-        results.sort_by(|left, right| {
+        let mut original_rank_map = std::collections::HashMap::<String, usize>::new();
+        let mut original_order = results.clone();
+        original_order.sort_by(|left, right| {
             right
-                .score
-                .partial_cmp(&left.score)
+                .raw_score
+                .partial_cmp(&left.raw_score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        results.truncate(limit.max(1));
+        for (index, candidate) in original_order.iter().enumerate() {
+            original_rank_map.insert(candidate.result.id.clone(), index + 1);
+        }
+
+        results.sort_by(|left, right| {
+            right
+                .final_score
+                .partial_cmp(&left.final_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut final_results = Vec::new();
+        for (index, candidate) in results.into_iter().enumerate() {
+            let mut result = candidate.result;
+            let original_rank = original_rank_map
+                .get(&result.id)
+                .copied()
+                .unwrap_or(index + 1);
+            let final_rank = index + 1;
+            result.rank_reason.original_rank = original_rank;
+            result.rank_reason.final_rank = final_rank;
+            result.rank_reason.rank_delta = original_rank as isize - final_rank as isize;
+            final_results.push(result);
+        }
+        final_results.truncate(limit.max(1));
 
         Ok(SearchDebugData {
-            hits: results,
+            hits: final_results,
             keyword_hit_count: keyword_hits.len(),
             semantic_hit_count: semantic_hits.len(),
             semantic_candidate_count,
@@ -851,6 +1084,11 @@ impl Database {
             semantic_threshold,
             rewritten_terms,
             rewritten_query,
+            history_terms,
+            history_rewrite_applied,
+            expanded_query,
+            semantic_fallback: semantic_fallback || !semantic_model_available,
+            semantic_fallback_reason: semantic_fallback_reason_text,
             search_mode: if semantic_enabled {
                 "hybrid".to_string()
             } else {
@@ -1594,7 +1832,13 @@ impl Database {
                 max_file_size_mb INTEGER NOT NULL,
                 semantic_search_enabled INTEGER NOT NULL DEFAULT 1,
                 semantic_weight REAL NOT NULL DEFAULT 0.25,
-                semantic_threshold REAL NOT NULL DEFAULT 0.2
+                semantic_threshold REAL NOT NULL DEFAULT 0.2,
+                title_weight REAL NOT NULL DEFAULT 1,
+                filename_weight REAL NOT NULL DEFAULT 1,
+                preference_weight REAL NOT NULL DEFAULT 1,
+                prefer_favorites_enabled INTEGER NOT NULL DEFAULT 1,
+                prefer_recent_enabled INTEGER NOT NULL DEFAULT 1,
+                prefer_history_enabled INTEGER NOT NULL DEFAULT 1
             )
             "#,
             r#"
@@ -1683,6 +1927,12 @@ impl Database {
                 semantic_search_enabled: true,
                 semantic_weight: 0.25,
                 semantic_threshold: 0.2,
+                title_weight: 1.0,
+                filename_weight: 1.0,
+                preference_weight: 1.0,
+                prefer_favorites_enabled: true,
+                prefer_recent_enabled: true,
+                prefer_history_enabled: true,
             };
             self.save_index_settings(&defaults).await?;
         }
@@ -1879,6 +2129,36 @@ impl Database {
         if !columns.contains("semantic_threshold") {
             alter_statements.push(
                 "ALTER TABLE index_settings ADD COLUMN semantic_threshold REAL NOT NULL DEFAULT 0.2",
+            );
+        }
+        if !columns.contains("title_weight") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN title_weight REAL NOT NULL DEFAULT 1",
+            );
+        }
+        if !columns.contains("filename_weight") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN filename_weight REAL NOT NULL DEFAULT 1",
+            );
+        }
+        if !columns.contains("preference_weight") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN preference_weight REAL NOT NULL DEFAULT 1",
+            );
+        }
+        if !columns.contains("prefer_favorites_enabled") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN prefer_favorites_enabled INTEGER NOT NULL DEFAULT 1",
+            );
+        }
+        if !columns.contains("prefer_recent_enabled") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN prefer_recent_enabled INTEGER NOT NULL DEFAULT 1",
+            );
+        }
+        if !columns.contains("prefer_history_enabled") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN prefer_history_enabled INTEGER NOT NULL DEFAULT 1",
             );
         }
 
@@ -2302,6 +2582,146 @@ fn boosted_search_score(base_score: f32, match_origin: &str, modified_at: i64, n
     };
 
     base_score + field_boost + recency_boost
+}
+
+fn rerank_bonus(
+    is_favorite: bool,
+    recent_open_count: usize,
+    history_expanded: bool,
+) -> f32 {
+    let mut bonus = 0.0;
+
+    if is_favorite {
+        bonus += 0.12;
+    }
+
+    if recent_open_count > 0 {
+        bonus += 0.04;
+        if recent_open_count >= 3 {
+            bonus += 0.02;
+        }
+    }
+
+    if history_expanded {
+        bonus += 0.03;
+    }
+
+    bonus
+}
+
+fn search_rank_reason(
+    row: &SearchRow,
+    terms: &[String],
+    match_origin: &str,
+    keyword_score: f32,
+    semantic_score: f32,
+    semantic_enabled: bool,
+    is_favorite: bool,
+    recent_open_count: usize,
+    history_expanded: bool,
+    title_score: f32,
+    filename_score: f32,
+    preference_score: f32,
+    modified_at: i64,
+    now: i64,
+) -> crate::docmind::models::SearchRankReasonView {
+    let mut boosts = vec![match_origin.to_string()];
+
+    if contains_all_terms(&row.file_name, terms) {
+        boosts.push("文件名完整命中".to_string());
+    } else if contains_all_terms(&row.heading, terms) {
+        boosts.push("标题完整命中".to_string());
+    } else if contains_all_terms(&row.path, terms) {
+        boosts.push("路径完整命中".to_string());
+    }
+
+    if semantic_enabled {
+        if keyword_score > 0.0 && semantic_score > 0.0 {
+            boosts.push("全文+语义共同命中".to_string());
+        } else if semantic_score > 0.0 {
+            boosts.push("语义召回".to_string());
+        }
+    }
+
+    if is_favorite {
+        boosts.push("已收藏优先".to_string());
+    }
+
+    if recent_open_count > 0 {
+        if recent_open_count >= 3 {
+            boosts.push(format!("最近打开 {recent_open_count} 次"));
+        } else {
+            boosts.push("最近打开".to_string());
+        }
+    }
+
+    if history_expanded {
+        boosts.push("历史扩展".to_string());
+    }
+
+    if modified_at > 0 && now > modified_at {
+        let age_days = ((now - modified_at) as f32 / 86_400.0).min(3_650.0);
+        if age_days < 30.0 {
+            boosts.push("最近更新".to_string());
+        }
+    }
+
+    let boosts = dedupe_reason_parts(boosts);
+    crate::docmind::models::SearchRankReasonView {
+        summary: boosts.join(" · "),
+        match_origin: match_origin.to_string(),
+        boosts,
+        keyword_hit: keyword_score > 0.0,
+        semantic_hit: semantic_score > 0.0,
+        favorite_boost: is_favorite,
+        recent_open_count,
+        history_expanded,
+        keyword_score: keyword_score.max(0.0),
+        semantic_score: semantic_score.max(0.0),
+        title_score,
+        filename_score,
+        preference_score,
+        base_score: 0.0,
+        raw_score: 0.0,
+        original_rank: 0,
+        final_rank: 0,
+        rank_delta: 0,
+    }
+}
+
+fn dedupe_reason_parts(parts: Vec<String>) -> Vec<String> {
+    let mut deduped = Vec::new();
+    for part in parts {
+        if part.trim().is_empty() {
+            continue;
+        }
+        if !deduped.iter().any(|existing| existing == &part) {
+            deduped.push(part);
+        }
+    }
+    deduped
+}
+
+fn contains_all_terms(text: &str, terms: &[String]) -> bool {
+    let lower = text.to_lowercase();
+    let filtered_terms: Vec<String> = terms
+        .iter()
+        .map(|term| term.trim().to_lowercase())
+        .filter(|term| !term.is_empty())
+        .collect();
+
+    !filtered_terms.is_empty() && filtered_terms.iter().all(|term| lower.contains(term))
+}
+
+fn contains_any_term(text: &str, terms: &[String]) -> bool {
+    let lower = text.to_lowercase();
+    let filtered_terms: Vec<String> = terms
+        .iter()
+        .map(|term| term.trim().to_lowercase())
+        .filter(|term| !term.is_empty())
+        .collect();
+
+    !filtered_terms.is_empty() && filtered_terms.iter().any(|term| lower.contains(term))
 }
 
 fn truncate_by_chars(text: &str, limit: usize) -> String {
