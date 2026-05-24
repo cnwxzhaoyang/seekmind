@@ -42,6 +42,8 @@ const {
   visibleRows: visibleDirRows,
 } = useIndexDirTree(dirs);
 
+const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_explicit).length);
+
 const copyText = async (text: string, successMessage: string) => {
   if (!text.trim()) {
     return;
@@ -527,11 +529,11 @@ onBeforeUnmount(() => {
         {{ infoMessage }}
       </div>
 
-      <div class="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
+        <div class="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
         <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.library.emptyState.title") }}</div>
         <DocMindBadge tone="default">
           <FolderOpen class="mr-1" :size="13" />
-          {{ dirs.length }}
+          {{ explicitIndexDirCount }}
         </DocMindBadge>
       </div>
 
@@ -596,7 +598,7 @@ onBeforeUnmount(() => {
             </button>
             <button
               class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path"
+              :disabled="busyPath === row.dir.path || !row.dir.is_explicit"
               :title="t('page.library.status.indexing')"
               @click.stop="refreshSingleDir(row.dir.path)"
             >
@@ -604,7 +606,7 @@ onBeforeUnmount(() => {
             </button>
             <button
               class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path"
+              :disabled="busyPath === row.dir.path || !row.dir.is_explicit"
               :title="row.dir.enabled ? t('common.disabled') : t('common.enabled')"
               @click.stop="toggleDir(row.dir)"
             >
@@ -612,7 +614,7 @@ onBeforeUnmount(() => {
             </button>
             <button
               class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path"
+              :disabled="busyPath === row.dir.path || !row.dir.is_explicit"
               :title="t('common.clear')"
               @click.stop="removeDir(row.dir.path)"
             >

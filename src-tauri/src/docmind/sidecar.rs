@@ -1,4 +1,8 @@
 use std::path::PathBuf;
+use std::process::Command;
+
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 
 fn target_triple_suffix() -> String {
     match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -87,4 +91,158 @@ pub fn resolve_bundled_sidecar(base_name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+pub fn configure_sidecar_command(command: &mut Command) {
+    let cache_dir = ensure_fastembed_cache_dir();
+    command.env("DOCMIND_FASTEMBED_CACHE_DIR", &cache_dir);
+    command.env("HF_HOME", cache_dir.join("huggingface"));
+}
+
+fn ensure_fastembed_cache_dir() -> PathBuf {
+    let cache_dir = writable_fastembed_cache_dir();
+    if let Err(error) = std::fs::create_dir_all(&cache_dir) {
+        eprintln!(
+            "[DocMind] failed to create FastEmbed cache dir {}: {error}",
+            cache_dir.display()
+        );
+        return cache_dir;
+    }
+
+    let has_model_cache = cache_dir.join("models--Qdrant--bge-small-zh-v1.5").exists();
+    if !has_model_cache {
+        if let Some(archive) = bundled_fastembed_cache_archive() {
+            if let Err(error) = extract_fastembed_cache_archive(&archive, &cache_dir) {
+                eprintln!(
+                    "[DocMind] failed to extract bundled FastEmbed cache from {} to {}: {error}",
+                    archive.display(),
+                    cache_dir.display()
+                );
+            }
+        } else if let Some(bundled_cache) = bundled_fastembed_cache_dir() {
+            if let Err(error) = copy_dir_missing(&bundled_cache, &cache_dir) {
+                eprintln!(
+                    "[DocMind] failed to copy bundled FastEmbed cache from {} to {}: {error}",
+                    bundled_cache.display(),
+                    cache_dir.display()
+                );
+            }
+        }
+    }
+
+    cache_dir
+}
+
+fn writable_fastembed_cache_dir() -> PathBuf {
+    let base = dirs::cache_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("com.zhaoyang.docmind").join("fastembed")
+}
+
+fn bundled_fastembed_cache_dir() -> Option<PathBuf> {
+    for base_dir in resource_base_dirs() {
+        let candidate = base_dir.join("app-resources").join("fastembed");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+
+        let candidate = base_dir.join("fastembed");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn bundled_fastembed_cache_archive() -> Option<PathBuf> {
+    for base_dir in resource_base_dirs() {
+        let candidate = base_dir
+            .join("app-resources")
+            .join("fastembed-cache.tar.gz");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+
+        let candidate = base_dir.join("fastembed-cache.tar.gz");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn extract_fastembed_cache_archive(archive: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+    std::fs::create_dir_all(target)?;
+    let status = Command::new("/usr/bin/tar")
+        .arg("-xzf")
+        .arg(archive)
+        .arg("-C")
+        .arg(target)
+        .status()?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("tar exited with status {status}"),
+        ))
+    }
+}
+
+fn resource_base_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            if let Some(bundle_root) = parent.parent() {
+                dirs.push(bundle_root.join("Resources"));
+            }
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd.join("src-tauri").join("app-resources"));
+    }
+
+    dirs
+}
+
+fn copy_dir_missing(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+
+        if target_path.exists() {
+            continue;
+        }
+
+        let metadata = std::fs::symlink_metadata(&source_path)?;
+        let file_type = metadata.file_type();
+        if file_type.is_dir() {
+            copy_dir_missing(&source_path, &target_path)?;
+        } else if file_type.is_symlink() {
+            copy_symlink(&source_path, &target_path)?;
+        } else if file_type.is_file() {
+            std::fs::copy(&source_path, &target_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn copy_symlink(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+    let link_target = std::fs::read_link(source)?;
+    symlink(link_target, target)
+}
+
+#[cfg(not(unix))]
+fn copy_symlink(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+    let resolved = std::fs::canonicalize(source)?;
+    std::fs::copy(resolved, target).map(|_| ())
 }

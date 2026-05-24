@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::docmind::parser::types::ParserStreamEvent;
-use crate::docmind::sidecar::resolve_bundled_sidecar;
+use crate::docmind::sidecar::{configure_sidecar_command, resolve_bundled_sidecar};
 
 #[derive(Debug, Clone)]
 pub struct PythonSemanticClient {
@@ -405,7 +405,9 @@ impl PythonSemanticClient {
 
     fn spawn_command(&self) -> Result<Command, SemanticClientError> {
         if let Some(path) = &self.bundled_sidecar {
-            return Ok(Command::new(path));
+            let mut command = Command::new(path);
+            configure_sidecar_command(&mut command);
+            return Ok(command);
         }
 
         let script_path = self.resolve_script_path();
@@ -415,6 +417,7 @@ impl PythonSemanticClient {
 
         let mut command = Command::new(&self.python_bin);
         command.arg(script_path);
+        configure_sidecar_command(&mut command);
         Ok(command)
     }
 }

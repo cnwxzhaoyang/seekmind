@@ -7,6 +7,7 @@ pub struct IndexDirView {
     pub docs: usize,
     pub chunks: usize,
     pub status: String,
+    pub is_explicit: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

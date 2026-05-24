@@ -36,4 +36,13 @@ rm -rf "$APP_RESOURCE_DIR/$OUTPUT_NAME"
 cp -R "$DIST_DIR/$SIDE_CAR_BASE" "$APP_RESOURCE_DIR/$OUTPUT_NAME"
 chmod +x "$APP_RESOURCE_DIR/$OUTPUT_NAME/$SIDE_CAR_BASE"
 
+if [ -d "$ROOT_DIR/.docmind-cache/fastembed" ]; then
+  rm -rf "$APP_RESOURCE_DIR/fastembed"
+  rm -f "$APP_RESOURCE_DIR/fastembed-cache.tar.gz"
+  tar -czf "$APP_RESOURCE_DIR/fastembed-cache.tar.gz" -C "$ROOT_DIR/.docmind-cache/fastembed" .
+  echo "Bundled FastEmbed cache archive: $APP_RESOURCE_DIR/fastembed-cache.tar.gz"
+else
+  echo "FastEmbed cache not found at $ROOT_DIR/.docmind-cache/fastembed; semantic model may need runtime download"
+fi
+
 echo "Built parser sidecar: $APP_RESOURCE_DIR/$OUTPUT_NAME"

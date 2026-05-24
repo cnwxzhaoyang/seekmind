@@ -498,8 +498,12 @@ pub async fn open_file(path: String, state: tauri::State<'_, Database>) -> Resul
 }
 
 #[tauri::command]
-pub async fn quick_look_file(path: String, state: tauri::State<'_, Database>) -> Result<(), String> {
-    state.quick_look_file(&path).await
+pub async fn quick_look_file(
+    app: tauri::AppHandle,
+    path: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state.quick_look_file(&app, &path).await
 }
 
 #[tauri::command]

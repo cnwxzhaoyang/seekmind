@@ -2,6 +2,7 @@ mod docmind;
 
 use std::fs;
 
+#[cfg(debug_assertions)]
 use tauri::Manager;
 use tauri_plugin_dialog::init as dialog_init;
 use tauri_plugin_opener::init as opener_init;
@@ -9,6 +10,10 @@ use tauri_plugin_opener::init as opener_init;
 pub fn reset_local_storage() -> Result<(), String> {
     let sqlite_path = docmind::storage::db::sqlite_database_path();
     let tantivy_dir = docmind::storage::fulltext::fulltext_index_dir();
+    let legacy_tantivy_dir = {
+        let base = dirs::data_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        base.join("DocMind").join("tantivy")
+    };
 
     if sqlite_path.exists() {
         fs::remove_file(&sqlite_path).map_err(|error| error.to_string())?;
@@ -16,6 +21,10 @@ pub fn reset_local_storage() -> Result<(), String> {
 
     if tantivy_dir.exists() {
         fs::remove_dir_all(&tantivy_dir).map_err(|error| error.to_string())?;
+    }
+
+    if legacy_tantivy_dir.exists() {
+        fs::remove_dir_all(&legacy_tantivy_dir).map_err(|error| error.to_string())?;
     }
 
     Ok(())
@@ -29,10 +38,10 @@ pub fn run() {
         .manage(database)
         .plugin(dialog_init())
         .plugin(opener_init())
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(debug_assertions)]
             if std::env::var("DOCMIND_OPEN_DEVTOOLS").ok().as_deref() == Some("1") {
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = _app.get_webview_window("main") {
                     window.open_devtools();
                 }
             }

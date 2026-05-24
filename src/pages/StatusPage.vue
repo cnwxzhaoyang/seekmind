@@ -37,6 +37,8 @@ let unlistenIndexRefreshProgress: null | (() => void) = null;
 
 const { visibleRows: visibleDirRows } = useIndexDirTree(dirs);
 
+const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_explicit).length);
+
 const failedGroups = computed(() => {
   const groups = new Map<string, FailedFileView[]>();
 
@@ -488,7 +490,7 @@ onBeforeUnmount(() => {
           </div>
           <DocMindBadge tone="default">
             <Database class="mr-1" :size="13" />
-            {{ dirs.length }} {{ t("page.status.section.indexDirs") }}
+            {{ explicitIndexDirCount }} {{ t("page.status.section.indexDirs") }}
           </DocMindBadge>
         </div>
         <div v-if="dirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">

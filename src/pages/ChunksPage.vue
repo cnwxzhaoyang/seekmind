@@ -55,6 +55,8 @@ const {
   setExpanded: setDirExpanded,
 } = useIndexDirTree(dirs);
 
+const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_explicit).length);
+
 const currentDocument = computed(
   () => documents.value.find((item) => item.path === selectedDocPath.value) ?? null,
 );
@@ -634,7 +636,7 @@ watch(
           <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.indexDirs") }}</div>
           <DocMindBadge tone="default">
             <FolderOpen class="mr-1" :size="13" />
-            {{ dirs.length }}
+            {{ explicitIndexDirCount }}
           </DocMindBadge>
         </div>
 

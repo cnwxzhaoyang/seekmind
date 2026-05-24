@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::process::Command;
 
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
@@ -12,7 +13,7 @@ use crate::docmind::parser::types::ParserStreamEvent;
 use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings, ParseOutcome, ParserSource};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "markdown", "html", "htm", "docx", "pdf", "log", "toml", "json", "yaml", "yml", "xml",
+    "txt", "md", "markdown", "html", "htm", "doc", "docx", "pdf", "log", "toml", "json", "yaml", "yml", "xml",
     "csv", "rs", "js", "ts", "tsx", "jsx", "py",
 ];
 
@@ -173,6 +174,7 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
         "txt" | "md" | "markdown" | "log" | "toml" | "json" | "yaml" | "yml" | "xml"
         | "csv" | "rs" | "js" | "ts" | "tsx" | "jsx" | "py" => read_text_file(path)?,
         "html" | "htm" => strip_html_tags(&read_text_file(path)?),
+        "doc" => extract_doc_text_with_textutil(path)?,
         "docx" => extract_docx_text(path)?,
         "pdf" => {
             return Err("暂不支持 PDF 解析，请启用 Python 解析器或接入 PDF 文本提取".to_string());
@@ -340,6 +342,27 @@ fn extract_docx_text(path: &Path) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
 
     Ok(extract_xml_text_nodes(&document_xml))
+}
+
+fn extract_doc_text_with_textutil(path: &Path) -> Result<String, String> {
+    let output = Command::new("/usr/bin/textutil")
+        .arg("-stdout")
+        .arg("-convert")
+        .arg("txt")
+        .arg(path)
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "textutil failed for {}: {}",
+            path.to_string_lossy(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let text = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
+    Ok(normalize_whitespace(&text))
 }
 
 fn extract_xml_text_nodes(xml: &str) -> String {

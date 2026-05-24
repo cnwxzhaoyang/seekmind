@@ -22,7 +22,7 @@ from .models import (
     ParserOptions,
 )
 
-SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "docx", "pdf"}
+SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "doc", "docx", "pdf"}
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
 EMBEDDING_DIMENSION_HINTS = {
     "BAAI/bge-small-zh-v1.5": 512,
@@ -205,6 +205,8 @@ def parse_document(
         title, blocks = parse_text_like(path, ext)
     elif ext in {"html", "htm"}:
         title, blocks = parse_html(path)
+    elif ext == "doc":
+        title, blocks = parse_doc(path)
     elif ext == "docx":
         title, blocks = parse_docx(path)
     elif ext == "pdf":
@@ -604,6 +606,12 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
     return title or path.stem, blocks
 
 
+def parse_doc(path: Path) -> Tuple[Optional[str], List[Block]]:
+    text = extract_doc_text_with_textutil(path)
+    blocks = split_text_into_blocks(text)
+    return None, blocks
+
+
 def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], List[Block]]]:
     try:
         from docx import Document  # type: ignore
@@ -675,6 +683,24 @@ def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], Lis
         return None
 
     return title or path.stem, normalize_blocks(blocks)
+
+
+def extract_doc_text_with_textutil(path: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["/usr/bin/textutil", "-stdout", "-convert", "txt", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise parser_error("parse_failed", f"textutil failed: {exc}") from exc
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or str(path)
+        raise parser_error("parse_failed", f"textutil failed: {message}")
+
+    return normalize_whitespace(result.stdout)
 
 
 def parse_pdf(path: Path) -> Tuple[Optional[str], List[Block]]:

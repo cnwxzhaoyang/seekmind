@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::docmind::sidecar::resolve_bundled_sidecar;
+use crate::docmind::sidecar::{configure_sidecar_command, resolve_bundled_sidecar};
 
 use super::types::{
     ParsedDocument, ParserError, ParserOptions, ParserRequest, ParserResponse, ParserStreamEvent,
@@ -265,7 +265,9 @@ impl PythonParserClient {
 
     fn spawn_command(&self) -> Result<Command, ParserClientError> {
         if let Some(path) = &self.bundled_sidecar {
-            return Ok(Command::new(path));
+            let mut command = Command::new(path);
+            configure_sidecar_command(&mut command);
+            return Ok(command);
         }
 
         let script_path = self.resolve_script_path();
@@ -275,6 +277,7 @@ impl PythonParserClient {
 
         let mut command = Command::new(&self.python_bin);
         command.arg(script_path);
+        configure_sidecar_command(&mut command);
         Ok(command)
     }
 }

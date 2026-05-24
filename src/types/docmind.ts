@@ -4,6 +4,7 @@ export interface IndexDirView {
   docs: number;
   chunks: number;
   status: string;
+  is_explicit: boolean;
 }
 
 export interface ImportedPathView {

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use dirs::data_dir;
+use dirs::{cache_dir, data_dir};
 use tantivy::schema::{Field, Schema, STORED, STRING, TEXT};
 use tantivy::query::QueryParser;
 use tantivy::schema::Value;
@@ -29,7 +29,8 @@ pub struct SearchIndex {
 impl SearchIndex {
     pub fn open_or_init() -> Result<Self, String> {
         let index_dir = fulltext_index_dir();
-        std::fs::create_dir_all(&index_dir).map_err(|error| error.to_string())?;
+        eprintln!("[DocMind] Tantivy index dir: {}", index_dir.display());
+        ensure_index_dir_ready(&index_dir)?;
 
         let schema = build_schema();
         let index = match Index::open_in_dir(&index_dir) {
@@ -130,6 +131,12 @@ impl SearchIndex {
 
         writer.commit().map_err(|error| error.to_string())?;
         self.reader.reload().map_err(|error| error.to_string())?;
+        eprintln!(
+            "[DocMind] Tantivy indexed document path={} chunks={} total_docs={}",
+            document.path,
+            chunks.len(),
+            self.doc_count()
+        );
         Ok(())
     }
 
@@ -241,6 +248,31 @@ fn build_schema() -> Schema {
 }
 
 pub fn fulltext_index_dir() -> PathBuf {
+    let base = cache_dir()
+        .or_else(data_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("com.zhaoyang.docmind").join("tantivy")
+}
+
+fn legacy_fulltext_index_dir() -> PathBuf {
     let base = data_dir().unwrap_or_else(|| PathBuf::from("."));
     base.join("DocMind").join("tantivy")
+}
+
+fn ensure_index_dir_ready(index_dir: &PathBuf) -> Result<(), String> {
+    if index_dir.exists() {
+        return Ok(());
+    }
+
+    let legacy_dir = legacy_fulltext_index_dir();
+    if legacy_dir.exists() {
+        if let Some(parent) = index_dir.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        if std::fs::rename(&legacy_dir, index_dir).is_ok() {
+            return Ok(());
+        }
+    }
+
+    std::fs::create_dir_all(index_dir).map_err(|error| error.to_string())
 }
