@@ -80,6 +80,31 @@ def main() -> int:
             sys.stdout.flush()
             return 0
 
+        if request.command == "embed_texts_stream":
+            def emit_progress(payload: dict) -> None:
+                sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+
+            embedding_result = embed_texts(
+                request.texts,
+                request.model_name,
+                emit=emit_progress,
+                request_id=request.request_id,
+            )
+            response = {
+                "kind": "response",
+                "request_id": request.request_id,
+                "ok": True,
+                "document": None,
+                "vectors": embedding_result.vectors,
+                "embedding_status": embedding_result.status.to_dict(),
+                "error": None,
+            }
+            sys.stdout.write(json.dumps(response, ensure_ascii=False))
+            sys.stdout.flush()
+            return 0
+
         if request.command == "embedding_status":
             status = embedding_status(request.model_name)
             response = {

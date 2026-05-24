@@ -49,8 +49,8 @@ pub async fn rebuild_semantic_embeddings(
     let task_app = app.clone();
     let initial_payload = SemanticRebuildProgressView {
         job_id: job_id.clone(),
-        state: "initializing".to_string(),
-        message: "正在初始化语义模型".to_string(),
+        state: "running".to_string(),
+        message: "正在准备语义模型".to_string(),
         model: start_status.model.clone(),
         total_chunks: start_status.sqlite_chunks,
         processed_chunks: 0,

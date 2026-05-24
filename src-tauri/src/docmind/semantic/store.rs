@@ -25,6 +25,37 @@ fn emit_semantic_progress(
     }
 }
 
+fn emit_semantic_embedding_progress(
+    progress: Option<&SemanticProgressEmitter>,
+    job_id: &str,
+    model: &EmbeddingModelView,
+    total_chunks: usize,
+    base_processed: usize,
+    base_embedded: usize,
+    document_path: &str,
+    message: String,
+    current_chunk: String,
+    processed_in_doc: usize,
+) {
+    emit_semantic_progress(
+        progress,
+        crate::docmind::models::SemanticRebuildProgressView {
+            job_id: job_id.to_string(),
+            state: "running".to_string(),
+            message,
+            model: model.clone(),
+            total_chunks,
+            processed_chunks: base_processed.saturating_add(processed_in_doc),
+            embedded_chunks: base_embedded.saturating_add(processed_in_doc),
+            current_document: document_path.to_string(),
+            current_chunk,
+            percent: progress_percent(base_processed.saturating_add(processed_in_doc), total_chunks),
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
+}
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct EmbeddingModelRow {
     id: String,
@@ -227,8 +258,8 @@ pub async fn rebuild_all_embeddings(
         progress.as_ref(),
         crate::docmind::models::SemanticRebuildProgressView {
             job_id: job_id.clone(),
-            state: "initializing".to_string(),
-            message: "正在初始化语义模型".to_string(),
+            state: "running".to_string(),
+            message: "正在准备语义模型".to_string(),
             model: model.clone(),
             total_chunks,
             processed_chunks,
@@ -240,6 +271,10 @@ pub async fn rebuild_all_embeddings(
             updated_at: format_unix_ts(now_unix_ts()),
         },
     );
+
+    client
+        .embed_texts(&["DocMind semantic warmup".to_string()], Some(&model.name))
+        .map_err(|error| error.to_string())?;
 
     clear_all_embeddings(database).await?;
 
@@ -348,8 +383,69 @@ async fn upsert_document_embeddings_from_rows(
         })
         .collect();
 
+    emit_semantic_progress(
+        progress,
+        crate::docmind::models::SemanticRebuildProgressView {
+            job_id: job_id.to_string(),
+            state: "running".to_string(),
+            message: format!("正在处理 {file_name}"),
+            model: model.clone(),
+            total_chunks,
+            processed_chunks: *processed_chunks,
+            embedded_chunks: *embedded_chunks,
+            current_document: document_path.to_string(),
+            current_chunk: String::new(),
+            percent: progress_percent(*processed_chunks, total_chunks),
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
+
+    let base_processed = *processed_chunks;
+    let base_embedded = *embedded_chunks;
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        model,
+        total_chunks,
+        base_processed,
+        base_embedded,
+        document_path,
+        format!("正在生成 {file_name} 的语义向量"),
+        "准备生成".to_string(),
+        0,
+    );
+
     let vectors = client
-        .embed_texts(&semantic_texts, Some(&model.name))
+        .embed_texts_stream(&semantic_texts, Some(&model.name), |event| {
+            if event.kind != "event" {
+                return;
+            }
+
+            let processed_in_doc = event.processed.min(semantic_texts.len());
+            let current_chunk = if event.current.is_empty() {
+                format!("{processed_in_doc}/{}", semantic_texts.len())
+            } else {
+                event.current.clone()
+            };
+            let message = if event.message.is_empty() {
+                format!("正在生成 {file_name} 的语义向量")
+            } else {
+                event.message.clone()
+            };
+            emit_semantic_embedding_progress(
+                progress,
+                job_id,
+                model,
+                total_chunks,
+                base_processed,
+                base_embedded,
+                document_path,
+                message,
+                current_chunk,
+                processed_in_doc,
+            );
+        })
         .map_err(|error| error.to_string())?;
 
     if vectors.len() != chunks.len() {
@@ -360,55 +456,47 @@ async fn upsert_document_embeddings_from_rows(
         ));
     }
 
-    let batch_size = 8usize;
-    for (batch_index, batch) in chunks.chunks(batch_size).enumerate() {
-        for (offset, _chunk) in batch.iter().enumerate() {
-            let index = batch_index * batch_size + offset;
-            let chunk_id = format!("{document_id}:{index}");
-            let semantic_text = &semantic_texts[index];
-            let vector_json = serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
-            let now = now_unix_ts();
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        model,
+        total_chunks,
+        base_processed,
+        base_embedded,
+        document_path,
+        format!("正在写入 {file_name} 的语义索引"),
+        String::new(),
+        semantic_texts.len(),
+    );
 
-            sqlx::query(
-                r#"
-                INSERT OR REPLACE INTO chunk_embeddings
-                    (chunk_id, document_id, model_id, vector_json, dimension, text_hash, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)
-                "#,
-            )
-            .bind(&chunk_id)
-            .bind(document_id)
-            .bind(&model.id)
-            .bind(vector_json)
-            .bind(model.dimension as i64)
-            .bind(text_hash(semantic_text))
-            .bind(now)
-            .bind(now)
-            .execute(database.pool())
-            .await
-            .map_err(|error| error.to_string())?;
+    for (index, _chunk) in chunks.iter().enumerate() {
+        let chunk_id = format!("{document_id}:{index}");
+        let semantic_text = &semantic_texts[index];
+        let vector_json = serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
+        let now = now_unix_ts();
 
-            *processed_chunks += 1;
-            *embedded_chunks += 1;
-            emit_semantic_progress(
-                progress,
-                crate::docmind::models::SemanticRebuildProgressView {
-                    job_id: job_id.to_string(),
-                    state: "running".to_string(),
-                    message: format!("正在处理 {file_name}"),
-                    model: model.clone(),
-                    total_chunks,
-                    processed_chunks: *processed_chunks,
-                    embedded_chunks: *embedded_chunks,
-                    current_document: document_path.to_string(),
-                    current_chunk: chunk_id,
-                    percent: progress_percent(*processed_chunks, total_chunks),
-                    last_error: String::new(),
-                    updated_at: format_unix_ts(now_unix_ts()),
-                },
-            );
-        }
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO chunk_embeddings
+                (chunk_id, document_id, model_id, vector_json, dimension, text_hash, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)
+            "#,
+        )
+        .bind(&chunk_id)
+        .bind(document_id)
+        .bind(&model.id)
+        .bind(vector_json)
+        .bind(model.dimension as i64)
+        .bind(text_hash(semantic_text))
+        .bind(now)
+        .bind(now)
+        .execute(database.pool())
+        .await
+        .map_err(|error| error.to_string())?;
     }
+
+    *processed_chunks += semantic_texts.len();
+    *embedded_chunks += semantic_texts.len();
 
     update_vector_index_meta(database, &model.id, "ready", "").await?;
     Ok(())
@@ -428,6 +516,8 @@ pub async fn upsert_document_embeddings(
     document_id: &str,
     document: &ExtractedDocument,
     chunks: &[ChunkRecord],
+    job_id: &str,
+    progress: Option<&SemanticProgressEmitter>,
 ) -> Result<(), String> {
     let model = load_default_model(database).await?;
     let client = PythonSemanticClient::from_env();
@@ -456,8 +546,49 @@ pub async fn upsert_document_embeddings(
         })
         .collect();
 
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        &model,
+        semantic_texts.len(),
+        0,
+        0,
+        &document.path,
+        format!("正在生成 {} 的语义向量", document.file_name),
+        "准备生成".to_string(),
+        0,
+    );
+
     let vectors = client
-        .embed_texts(&semantic_texts, Some(&model.name))
+        .embed_texts_stream(&semantic_texts, Some(&model.name), |event| {
+            if event.kind != "event" {
+                return;
+            }
+
+            let processed_in_doc = event.processed.min(semantic_texts.len());
+            let current_chunk = if event.current.is_empty() {
+                format!("{processed_in_doc}/{}", semantic_texts.len())
+            } else {
+                event.current.clone()
+            };
+            let message = if event.message.is_empty() {
+                format!("正在生成 {} 的语义向量", document.file_name)
+            } else {
+                event.message.clone()
+            };
+            emit_semantic_embedding_progress(
+                progress,
+                job_id,
+                &model,
+                semantic_texts.len(),
+                0,
+                0,
+                &document.path,
+                message,
+                current_chunk,
+                processed_in_doc,
+            );
+        })
         .map_err(|error| error.to_string())?;
 
     if vectors.len() != chunks.len() {
@@ -467,6 +598,19 @@ pub async fn upsert_document_embeddings(
             vectors.len()
         ));
     }
+
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        &model,
+        semantic_texts.len(),
+        0,
+        0,
+        &document.path,
+        format!("正在写入 {} 的语义索引", document.file_name),
+        String::new(),
+        semantic_texts.len(),
+    );
 
     for (index, _chunk) in chunks.iter().enumerate() {
         let chunk_id = format!("{document_id}:{index}");

@@ -1053,6 +1053,20 @@ impl Database {
         Ok(())
     }
 
+    pub(crate) async fn document_id_by_path(&self, path: &str) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM documents
+            WHERE path = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(path)
+        .fetch_optional(&self.pool)
+        .await
+    }
+
     pub(crate) async fn store_document(
         &self,
         document: &ExtractedDocument,

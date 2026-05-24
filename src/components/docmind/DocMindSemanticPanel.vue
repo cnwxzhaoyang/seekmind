@@ -125,6 +125,21 @@ const runSemanticDebug = async () => {
 };
 
 const canSwitchModel = computed(() => selectedEmbeddingModelId.value !== semanticStatus.value?.model.id);
+const semanticIndexStatusLabel = computed(() => {
+  const status = semanticStatus.value?.index_status || "idle";
+  switch (status) {
+    case "idle":
+      return t("status.idle");
+    case "running":
+      return t("status.running");
+    case "completed":
+      return t("status.completed");
+    case "failed":
+      return t("status.failed");
+    default:
+      return status;
+  }
+});
 
 const installSemanticProgressListener = async () => {
   if (unlistenSemanticProgress) {
@@ -183,7 +198,7 @@ onBeforeUnmount(() => {
         <div class="text-sm font-semibold text-slate-900">{{ t("semantic.title") }}</div>
         <div class="mt-1 text-xs text-slate-500">{{ t("semantic.desc") }}</div>
       </div>
-      <DocMindBadge tone="default">{{ semanticStatus?.index_status || "idle" }}</DocMindBadge>
+      <DocMindBadge tone="default">{{ semanticIndexStatusLabel }}</DocMindBadge>
     </div>
 
     <div v-if="errorMessage" class="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">

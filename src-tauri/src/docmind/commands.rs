@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
 use super::models::{IndexStatusView, SearchDebugView};
+use crate::docmind::semantic::store as semantic_store;
 use super::search::{normalize_query, normalize_search_text};
 use super::storage::{indexer, scanner, Database};
 use super::parser::python_parser_config_json;
 use super::storage::types::IndexSettings;
 use std::path::Path;
+use std::sync::Arc;
 use tauri::Emitter;
 
 fn classify_failure(reason: &str, path: &str) -> (String, String) {
@@ -194,6 +196,11 @@ pub async fn refresh_document(
         .map_err(|error| error.to_string())?;
     let database = state.inner().clone();
     let emit_app = app.clone();
+    let semantic_emit_app = app.clone();
+    let semantic_progress_emitter: Arc<dyn Fn(crate::docmind::models::SemanticRebuildProgressView) + Send + Sync> =
+        Arc::new(move |payload: crate::docmind::models::SemanticRebuildProgressView| {
+            let _ = semantic_emit_app.emit("docmind:semantic:rebuild-progress", payload);
+        });
     let path_string = normalized_path.to_string();
     let dir_string = normalized_dir.to_string();
     let file_name = file
@@ -315,6 +322,49 @@ pub async fn refresh_document(
                 }
 
                 let _ = database.clear_failed_file(&path_string).await;
+                match database.document_id_by_path(&document.path).await {
+                    Ok(Some(document_id)) => {
+                        if let Err(error) = semantic_store::upsert_document_embeddings(
+                            &database,
+                            &document_id,
+                            &document,
+                            &chunks,
+                            &task_job_id,
+                            Some(&semantic_progress_emitter),
+                        )
+                        .await
+                        {
+                            eprintln!("[DocMind] semantic upsert failed for {path_string}: {error}");
+                            if let Ok(semantic_status) =
+                                semantic_store::get_embedding_model_status(&database).await
+                            {
+                                let _ = emit_app.emit(
+                                    "docmind:semantic:rebuild-progress",
+                                    crate::docmind::models::SemanticRebuildProgressView {
+                                        job_id: task_job_id.clone(),
+                                        state: "failed".to_string(),
+                                        message: "单文档语义向量更新失败".to_string(),
+                                        model: semantic_status.model,
+                                        total_chunks: semantic_status.sqlite_chunks,
+                                        processed_chunks: 0,
+                                        embedded_chunks: 0,
+                                        current_document: path_string.clone(),
+                                        current_chunk: String::new(),
+                                        percent: 0,
+                                        last_error: error,
+                                        updated_at: chrono::Utc::now().to_rfc3339(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        eprintln!("[DocMind] semantic upsert skipped: missing document id for {path_string}");
+                    }
+                    Err(error) => {
+                        eprintln!("[DocMind] semantic upsert skipped: {error}");
+                    }
+                }
                 let _ = database.refresh_index_dir_stats(&dir_string).await;
                 let status = database
                     .get_index_status()

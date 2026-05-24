@@ -244,7 +244,12 @@ def embedding_status(model_name: Optional[str] = None) -> EmbeddingStatus:
     )
 
 
-def embed_texts(texts: Sequence[str], model_name: Optional[str] = None) -> EmbeddingResponse:
+def embed_texts(
+    texts: Sequence[str],
+    model_name: Optional[str] = None,
+    emit: Optional[ProgressEmitter] = None,
+    request_id: str = "",
+) -> EmbeddingResponse:
     runtime = get_fastembed_runtime(model_name, eager=True)
     if not runtime.available or runtime.model is None:
         raise parser_error("embedding_unavailable", runtime.message or "fastembed is not available")
@@ -254,7 +259,58 @@ def embed_texts(texts: Sequence[str], model_name: Optional[str] = None) -> Embed
         return EmbeddingResponse(vectors=[], status=embedding_status(model_name))
 
     try:
-        vectors = [list(map(float, vector)) for vector in runtime.model.embed(normalized_texts)]
+        vectors: List[List[float]] = []
+        total = len(normalized_texts)
+        if emit is not None:
+            emit(
+                ParserStreamMessage(
+                    request_id=request_id,
+                    kind="event",
+                    event="progress",
+                    message=f"正在生成 {total} 个语义向量",
+                    stage="embedding",
+                    percent=0,
+                    current="",
+                    total=total,
+                    processed=0,
+                    parser_source="python",
+                ).to_dict()
+            )
+
+        for index, vector in enumerate(runtime.model.embed(normalized_texts), start=1):
+            vectors.append(list(map(float, vector)))
+            if emit is not None:
+                emit(
+                    ParserStreamMessage(
+                        request_id=request_id,
+                        kind="event",
+                        event="progress",
+                        message=f"正在生成语义向量 {index}/{total}",
+                        stage="embedding",
+                        percent=int(round(index / total * 100)),
+                        current=f"{index}/{total}",
+                        total=total,
+                        processed=index,
+                        parser_source="python",
+                    ).to_dict()
+                )
+
+        if emit is not None:
+            emit(
+                ParserStreamMessage(
+                    request_id=request_id,
+                    kind="event",
+                    event="progress",
+                    message="语义向量生成完成",
+                    stage="embedding",
+                    percent=100,
+                    current="",
+                    total=total,
+                    processed=total,
+                    parser_source="python",
+                ).to_dict()
+            )
+
         return EmbeddingResponse(vectors=vectors, status=embedding_status(model_name))
     except Exception as exc:  # noqa: BLE001
         raise parser_error("embedding_failed", normalize_embedding_error(exc)) from exc

@@ -1,10 +1,14 @@
 use std::fmt::{Display, Formatter};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+
+use crate::docmind::parser::types::ParserStreamEvent;
 
 #[derive(Debug, Clone)]
 pub struct PythonSemanticClient {
@@ -134,6 +138,164 @@ impl PythonSemanticClient {
         response
             .vectors
             .ok_or_else(|| SemanticClientError::InvalidResponse("missing vectors".to_string()))
+    }
+
+    pub fn embed_texts_stream<F>(
+        &self,
+        texts: &[String],
+        model_name: Option<&str>,
+        mut on_event: F,
+    ) -> Result<Vec<Vec<f32>>, SemanticClientError>
+    where
+        F: FnMut(ParserStreamEvent),
+    {
+        if !self.is_configured() {
+            return Err(SemanticClientError::NotConfigured);
+        }
+
+        let script_path = self.resolve_script_path();
+        let request = SemanticRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            command: "embed_texts_stream".to_string(),
+            path: String::new(),
+            options: SemanticOptions {
+                include_chunks: true,
+                max_chunk_chars: 800,
+                max_chunks: None,
+            },
+            texts: texts.to_vec(),
+            model_name: model_name.map(|value| value.to_string()),
+        };
+
+        let payload = serde_json::to_vec(&request).map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        let mut child = Command::new(&self.python_bin)
+            .arg(&script_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| SemanticClientError::SpawnFailed(error.to_string()))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(&payload)
+                .map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        }
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| SemanticClientError::SpawnFailed("missing stdout pipe".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| SemanticClientError::SpawnFailed("missing stderr pipe".to_string()))?;
+
+        let (tx, rx) = mpsc::channel::<String>();
+        let request_id = request.request_id.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                let _ = tx.send(line);
+            }
+        });
+
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut buf = String::new();
+            let mut sink = String::new();
+            loop {
+                buf.clear();
+                match reader.read_line(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => sink.push_str(&buf),
+                }
+            }
+            if !sink.trim().is_empty() {
+                eprintln!("[docmind:semantic] python stderr: {}", sink.trim());
+            }
+        });
+
+        let stream_timeout = std::env::var("DOCMIND_SEMANTIC_STREAM_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| std::cmp::max(self.timeout, Duration::from_secs(300)));
+        let mut last_activity = Instant::now();
+        let mut response: Option<SemanticResponse> = None;
+
+        loop {
+            if Instant::now().duration_since(last_activity) >= stream_timeout {
+                let _ = child.kill();
+                return Err(SemanticClientError::Timeout);
+            }
+
+            match rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(line) => {
+                    last_activity = Instant::now();
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    let event_value: Result<ParserStreamEvent, _> = serde_json::from_str(trimmed);
+                    if let Ok(event) = event_value {
+                        if event.kind == "event" && (event.request_id.is_empty() || event.request_id == request_id) {
+                            on_event(event);
+                            continue;
+                        }
+                    }
+
+                    let parsed: Result<SemanticResponse, _> = serde_json::from_str(trimmed);
+                    match parsed {
+                        Ok(parsed) => {
+                            if parsed.request_id != request.request_id {
+                                return Err(SemanticClientError::InvalidResponse("request_id mismatch".to_string()));
+                            }
+                            response = Some(parsed);
+                        }
+                        Err(error) => {
+                            return Err(SemanticClientError::InvalidResponse(error.to_string()));
+                        }
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if response.is_some() {
+                        if let Some(status) = child.try_wait().map_err(|error| SemanticClientError::Io(error.to_string()))? {
+                            if status.success() {
+                                break;
+                            }
+                            return Err(SemanticClientError::SpawnFailed(format!(
+                                "python semantic sidecar exited with status {status}"
+                            )));
+                        }
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if response.is_some() {
+                        break;
+                    }
+                    return Err(SemanticClientError::InvalidResponse(
+                        "python semantic stream closed unexpectedly".to_string(),
+                    ));
+                }
+            }
+        }
+
+        let response = response.ok_or_else(|| SemanticClientError::InvalidResponse("missing response".to_string()))?;
+
+        if response.ok {
+            response
+                .vectors
+                .ok_or_else(|| SemanticClientError::InvalidResponse("missing vectors".to_string()))
+        } else {
+            Err(SemanticClientError::SidecarFailed(
+                response
+                    .error
+                    .map(|error| format!("{} ({})", error.message, error.code))
+                    .unwrap_or_else(|| "embedding failed".to_string()),
+            ))
+        }
     }
 
     fn execute(
