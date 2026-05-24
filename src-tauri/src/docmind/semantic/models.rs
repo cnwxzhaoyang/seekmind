@@ -34,6 +34,7 @@ pub struct SemanticDebugHitView {
     pub document_path: String,
     pub file_name: String,
     pub heading: String,
+    pub title_path: String,
     pub snippet: String,
     pub paragraph: Option<u32>,
     pub page: Option<u32>,

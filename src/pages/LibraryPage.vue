@@ -3,12 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight, UploadCloud } from "lucide-vue-next";
+import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight, UploadCloud, Eye, Copy, FileText } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { formatDirectoryCitation } from "../utils/citation";
 import type {
   DocumentRefreshProgressView,
   IndexDirView,
@@ -40,6 +41,31 @@ let unlistenFileDrop: null | (() => void) = null;
 const {
   visibleRows: visibleDirRows,
 } = useIndexDirTree(dirs);
+
+const copyText = async (text: string, successMessage: string) => {
+  if (!text.trim()) {
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    infoMessage.value = successMessage;
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, successMessage);
+  }
+};
 
 const taskDisplayState = computed(() => {
   const task = status.value?.current_task;
@@ -282,6 +308,38 @@ const toggleDir = async (dir: IndexDirView) => {
   }
 };
 
+const quickLookDir = async (path: string) => {
+  busyPath.value = path;
+  errorMessage.value = "";
+  infoMessage.value = "";
+
+  try {
+    await docmindApi.quickLookFile(path);
+    infoMessage.value = t("page.library.action.quickLookOpened");
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, t("page.library.action.quickLookFailed"));
+    console.error("[DocMind] quickLookDir failed", error);
+  } finally {
+    busyPath.value = null;
+  }
+};
+
+const copyDirPath = async (path: string) => {
+  await copyText(path, t("page.library.action.copiedPath"));
+};
+
+const copyDirCitation = async (row: { displayName: string; fullPath: string; dir: IndexDirView }) => {
+  await copyText(
+    formatDirectoryCitation({
+      displayName: row.displayName,
+      path: row.fullPath,
+      docs: row.dir.docs,
+      chunks: row.dir.chunks,
+    }),
+    t("page.library.action.copiedCitation"),
+  );
+};
+
 const removeDir = async (path: string) => {
   if (!window.confirm(t("page.library.confirmRemove", { path }))) {
     return;
@@ -512,6 +570,30 @@ onBeforeUnmount(() => {
         </template>
         <template #actions="{ row }">
           <div class="flex items-center gap-1.5">
+            <button
+              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="busyPath === row.dir.path || row.isVirtual"
+              :title="t('page.library.action.quickLook')"
+              @click.stop="quickLookDir(row.dir.path)"
+            >
+              <Eye :size="14" />
+            </button>
+            <button
+              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="busyPath === row.dir.path"
+              :title="t('page.library.action.copyPath')"
+              @click.stop="copyDirPath(row.dir.path)"
+            >
+              <Copy :size="14" />
+            </button>
+            <button
+              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="busyPath === row.dir.path"
+              :title="t('page.library.action.copyCitation')"
+              @click.stop="copyDirCitation(row)"
+            >
+              <FileText :size="14" />
+            </button>
             <button
               class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
               :disabled="busyPath === row.dir.path"

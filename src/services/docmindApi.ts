@@ -94,4 +94,5 @@ export const docmindApi = {
   pauseIndexing: () => invoke<IndexStatusView>("pause_indexing"),
   resumeIndexing: () => invoke<IndexStatusView>("resume_indexing"),
   openFile: (path: string) => invoke<void>("open_file", { path }),
+  quickLookFile: (path: string) => invoke<void>("quick_look_file", { path }),
 };

@@ -2,13 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { Cpu, FileText, FolderOpen, RefreshCw } from "lucide-vue-next";
+import { Copy, Cpu, Eye, ExternalLink, FileText, FolderOpen, RefreshCw } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   ChunkView,
   DocumentRefreshProgressView,
@@ -39,6 +40,8 @@ const refreshOutcomes = ref<Record<string, "python" | "rust" | "failed">>({});
 const refreshStates = ref<Record<string, "idle" | "queued" | "running" | "completed" | "failed">>({});
 const refreshActiveSources = ref<Record<string, "python" | "rust">>({});
 const errorMessage = ref("");
+const actionMessage = ref("");
+const actionErrorMessage = ref("");
 const docFilter = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
@@ -143,6 +146,30 @@ const currentDocumentRefreshOutcome = computed(() =>
   currentDocument.value ? refreshOutcomes.value[currentDocument.value.path] ?? "idle" : "idle",
 );
 
+const currentDocumentCitation = computed(() => {
+  if (!currentDocument.value) {
+    return "";
+  }
+
+  const firstChunk = chunks.value[0];
+  return formatDocumentCitation({
+    fileName: currentDocument.value.file_name,
+    titlePath: resolveDocumentTitlePath({
+      fileName: currentDocument.value.file_name,
+      titlePath: firstChunk?.title_path,
+      heading: firstChunk?.heading,
+    }),
+    locationParts: firstChunk
+      ? buildDocumentLocationParts({
+          page: firstChunk.page,
+          paragraph: firstChunk.paragraph,
+          pageLabel: t("page.chunks.page", { page: firstChunk.page ?? 0 }),
+          paragraphLabel: t("page.chunks.paragraph", { para: firstChunk.paragraph ?? 1 }),
+        })
+      : [t("page.chunks.selectDoc")],
+  });
+});
+
 const filteredDocuments = computed(() => {
   const keyword = docFilter.value.trim().toLowerCase();
   if (!keyword) {
@@ -211,6 +238,91 @@ const loadChunks = async () => {
   } finally {
     loadingChunks.value = false;
   }
+};
+
+const setActionMessage = (message: string) => {
+  actionErrorMessage.value = "";
+  actionMessage.value = message;
+};
+
+const setActionError = (message: string) => {
+  actionMessage.value = "";
+  actionErrorMessage.value = message;
+};
+
+const copyText = async (text: string, successMessage: string) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (!copied) {
+        throw new Error("copy failed");
+      }
+    }
+    setActionMessage(successMessage);
+  } catch (error) {
+    console.error("[DocMind] copyText failed", error);
+    setActionError(t("page.chunks.action.copyFailed"));
+  }
+};
+
+const openCurrentDocument = async () => {
+  if (!currentDocument.value) {
+    return;
+  }
+
+  await docmindApi.openFile(currentDocument.value.path);
+};
+
+const quickLookCurrentDocument = async () => {
+  if (!currentDocument.value) {
+    return;
+  }
+
+  try {
+    await docmindApi.quickLookFile(currentDocument.value.path);
+    setActionMessage(t("page.chunks.action.quickLookOpened"));
+  } catch (error) {
+    setActionError(error instanceof Error ? error.message : t("page.chunks.action.quickLookFailed"));
+  }
+};
+
+const copyCurrentDocumentPath = async () => {
+  if (!currentDocument.value) {
+    return;
+  }
+
+  await copyText(currentDocument.value.path, t("page.chunks.action.copiedPath"));
+};
+
+const copyChunkCitation = async (chunk: ChunkView) => {
+  if (!currentDocument.value) {
+    return;
+  }
+
+  await copyText(
+    formatDocumentCitation({
+      fileName: currentDocument.value.file_name,
+      titlePath: chunk.title_path,
+      heading: chunk.heading,
+      locationParts: buildDocumentLocationParts({
+        page: chunk.page,
+        paragraph: chunk.paragraph,
+        pageLabel: t("page.chunks.page", { page: chunk.page ?? 0 }),
+        paragraphLabel: t("page.chunks.paragraph", { para: chunk.paragraph ?? 1 }),
+      }),
+    }),
+    t("page.chunks.action.copiedCitation"),
+  );
 };
 
 const waitForRefreshJob = (jobId: string) => {
@@ -693,6 +805,40 @@ watch(
               <DocMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</DocMindBadge>
               <DocMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</DocMindBadge>
             </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                :disabled="!currentDocument"
+                @click="quickLookCurrentDocument"
+              >
+                <Eye :size="14" />
+                {{ t("page.chunks.action.quickLook") }}
+              </button>
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                :disabled="!currentDocument"
+                @click="openCurrentDocument"
+              >
+                <ExternalLink :size="14" />
+                {{ t("common.openFile") }}
+              </button>
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                :disabled="!currentDocument"
+                @click="copyCurrentDocumentPath"
+              >
+                <Copy :size="14" />
+                {{ t("page.chunks.action.copyPath") }}
+              </button>
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                :disabled="!currentDocument"
+                @click="copyText(currentDocumentCitation, t('page.chunks.action.copiedCitation'))"
+              >
+                <FileText :size="14" />
+                {{ t("page.chunks.action.copyCitation") }}
+              </button>
+            </div>
             <div
               v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
               class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
@@ -713,6 +859,12 @@ watch(
             >
               {{ currentDocumentRefreshWarning }}
             </div>
+            <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              {{ actionMessage }}
+            </div>
+            <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {{ actionErrorMessage }}
+            </div>
           </div>
         </div>
 
@@ -727,10 +879,23 @@ watch(
           <div v-else class="space-y-3">
             <div v-for="chunk in chunks" :key="chunk.id" class="rounded-md border border-slate-200 bg-white p-3">
               <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-sm font-medium text-slate-950">{{ chunk.heading }}</div>
-                <DocMindBadge tone="default">
-                  {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
-                </DocMindBadge>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-slate-950">{{ chunk.title_path || chunk.heading }}</div>
+                  <div class="mt-1 text-[11px] text-slate-500">
+                    {{ t("page.chunks.titlePath") }}：{{ chunk.title_path || chunk.heading }}
+                  </div>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <DocMindBadge tone="default">
+                    {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
+                  </DocMindBadge>
+                  <button
+                    class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+                    @click="copyChunkCitation(chunk)"
+                  >
+                    {{ t("page.chunks.action.copyCitation") }}
+                  </button>
+                </div>
               </div>
               <p class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>
             </div>

@@ -498,6 +498,11 @@ pub async fn open_file(path: String, state: tauri::State<'_, Database>) -> Resul
 }
 
 #[tauri::command]
+pub async fn quick_look_file(path: String, state: tauri::State<'_, Database>) -> Result<(), String> {
+    state.quick_look_file(&path).await
+}
+
+#[tauri::command]
 pub async fn list_search_history(
     limit: usize,
     state: tauri::State<'_, Database>,

@@ -11,6 +11,7 @@
     "tauri:dev:trace": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" DOCMIND_TRACE_INDEXER=1 tauri dev",
     "tauri:dev:fresh": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" tauri dev -- --reset-local-storage",
     "tauri:dev:fresh:trace": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" DOCMIND_TRACE_INDEXER=1 tauri dev -- --reset-local-storage",
+    "tauri:build:macos:adhoc": "APPLE_SIGNING_IDENTITY=- tauri build",
     "semantic:warmup": "DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" python3 parser/docmind_parser/__main__.py warmup-embedding BAAI/bge-small-zh-v1.5",
     "semantic:warmup:mirror": "DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" HF_ENDPOINT=https://hf-mirror.com python3 parser/docmind_parser/__main__.py warmup-embedding BAAI/bge-small-zh-v1.5",
     "build": "vue-tsc --noEmit && vite build",

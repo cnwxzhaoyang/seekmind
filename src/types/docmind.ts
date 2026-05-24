@@ -26,6 +26,7 @@ export interface SearchResultView {
   path: string;
   ext: string;
   heading: string;
+  title_path: string;
   snippet: string;
   matched_field: string;
   match_origin: string;
@@ -79,6 +80,7 @@ export interface DocumentView {
 export interface ChunkView {
   id: string;
   heading: string;
+  title_path: string;
   snippet: string;
   paragraph?: number | null;
   page?: number | null;
@@ -288,6 +290,7 @@ export interface SemanticDebugHitView {
   document_path: string;
   file_name: string;
   heading: string;
+  title_path: string;
   snippet: string;
   paragraph?: number | null;
   page?: number | null;

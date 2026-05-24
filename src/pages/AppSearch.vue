@@ -2,16 +2,18 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import { Clock, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
+import { Clock, Copy, Eye, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi } from "../services/docmindApi";
+import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
 const { t } = useI18n();
 import type {
+  ChunkView,
   FavoriteView,
   IndexDirView,
   IndexSettingsView,
@@ -37,9 +39,14 @@ const searchHistory = ref<SearchHistoryView[]>([]);
 const recentDocuments = ref<RecentDocumentView[]>([]);
 const favorites = ref<FavoriteView[]>([]);
 const selectedChunkCount = ref<number | null>(null);
+const selectedDocumentChunks = ref<ChunkView[]>([]);
+const selectedChunkIndex = ref<number>(-1);
+const actionMessage = ref("");
+const actionErrorMessage = ref("");
 const loading = ref(false);
 const errorMessage = ref("");
 const expandedGroups = ref<Record<string, boolean>>({});
+let selectedContextRequestId = 0;
 
 const {
   visibleRows: visibleQuickDirRows,
@@ -58,6 +65,75 @@ interface SearchResultGroup {
 const selected = computed(
   () => results.value.find((item) => item.id === selectedId.value) ?? null,
 );
+
+const selectedTitlePath = computed(() =>
+  resolveDocumentTitlePath({
+    fileName: selected.value?.fileName,
+    titlePath: selected.value?.title_path,
+    heading: selected.value?.heading,
+  }),
+);
+
+const selectedCitation = computed(() => {
+  if (!selected.value) {
+    return "";
+  }
+
+  return formatDocumentCitation({
+    fileName: selected.value.fileName,
+    titlePath: selected.value.title_path,
+    heading: selected.value.heading,
+    locationParts: buildDocumentLocationParts({
+      page: selected.value.page,
+      paragraph: selected.value.paragraph,
+      pageLabel: t("page.appSearch.detail.pdfPage", { page: selected.value.page ?? 0 }),
+      paragraphLabel: t("searchResultCard.paragraph", { para: selected.value.paragraph ?? 0 }),
+    }),
+  });
+});
+
+const selectedChunk = computed(() => {
+  if (selectedChunkIndex.value < 0) {
+    return null;
+  }
+
+  return selectedDocumentChunks.value[selectedChunkIndex.value] ?? null;
+});
+
+const selectedChunkPositionLabel = computed(() => {
+  if (!selectedDocumentChunks.value.length || selectedChunkIndex.value < 0) {
+    return "—";
+  }
+
+  return t("page.appSearch.detail.chunkPosition", {
+    current: selectedChunkIndex.value + 1,
+    total: selectedDocumentChunks.value.length,
+  });
+});
+
+const selectedContextChunks = computed(() => {
+  if (!selectedDocumentChunks.value.length || selectedChunkIndex.value < 0) {
+    return [];
+  }
+
+  return [
+    {
+      key: "previous",
+      label: t("page.appSearch.detail.previousChunk"),
+      chunk: selectedDocumentChunks.value[selectedChunkIndex.value - 1] ?? null,
+    },
+    {
+      key: "current",
+      label: t("page.appSearch.detail.currentChunk"),
+      chunk: selectedDocumentChunks.value[selectedChunkIndex.value] ?? null,
+    },
+    {
+      key: "next",
+      label: t("page.appSearch.detail.nextChunk"),
+      chunk: selectedDocumentChunks.value[selectedChunkIndex.value + 1] ?? null,
+    },
+  ].filter((item) => item.chunk !== null);
+});
 
 const groupedResults = computed<SearchResultGroup[]>(() => {
   const groups = new Map<string, SearchResultView[]>();
@@ -103,6 +179,41 @@ const focusSearchInput = () => {
   searchInputRef.value?.select?.();
 };
 
+const setActionMessage = (message: string) => {
+  actionErrorMessage.value = "";
+  actionMessage.value = message;
+};
+
+const setActionError = (message: string) => {
+  actionMessage.value = "";
+  actionErrorMessage.value = message;
+};
+
+const copyText = async (text: string, successMessage: string) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (!copied) {
+        throw new Error("copy failed");
+      }
+    }
+    setActionMessage(successMessage);
+  } catch (error) {
+    console.error("[DocMind] copyText failed", error);
+    setActionError(t("page.appSearch.detail.copyFailed"));
+  }
+};
+
 const handleGlobalShortcut = (event: KeyboardEvent) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
@@ -110,7 +221,20 @@ const handleGlobalShortcut = (event: KeyboardEvent) => {
   }
 };
 
+const isSearchClickDebugEnabled = () => globalThis.localStorage?.getItem("DOCMIND_DEBUG_SEARCH_CLICK") === "1";
+
 const selectResult = (id: string) => {
+  if (isSearchClickDebugEnabled()) {
+    const item = results.value.find((result) => result.id === id);
+    console.debug("[AppSearch] selectResult received", {
+      id,
+      found: Boolean(item),
+      previousSelectedId: selectedId.value,
+      path: item?.path ?? null,
+      results: results.value.length,
+    });
+  }
+
   selectedId.value = id;
 };
 
@@ -147,22 +271,117 @@ const loadQuickPanels = async () => {
   favorites.value = favoriteList;
 };
 
-const loadSelectedChunkCount = async (path: string | undefined) => {
-  if (!path) {
+const normalizeMatchText = (value: string) => value.replace(/\s+/g, "").trim().toLowerCase();
+
+const resolveSelectedChunkIndex = (chunks: ChunkView[], current: SearchResultView) => {
+  const resultParagraph = current.paragraph ?? null;
+  const resultPage = current.page ?? null;
+  const resultHeading = normalizeMatchText(current.title_path ?? current.heading ?? "");
+  const resultSnippet = normalizeMatchText(current.snippet ?? "");
+
+  const exactIndex = chunks.findIndex((chunk) => {
+    if (resultParagraph !== null && chunk.paragraph !== null && chunk.paragraph === resultParagraph) {
+      return true;
+    }
+    if (resultPage !== null && chunk.page !== null && chunk.page === resultPage) {
+      return true;
+    }
+
+    const chunkHeading = normalizeMatchText(chunk.title_path ?? chunk.heading ?? "");
+    const chunkSnippet = normalizeMatchText(chunk.snippet ?? "");
+
+    if (resultHeading && chunkHeading && resultHeading === chunkHeading) {
+      return true;
+    }
+    if (resultSnippet && chunkSnippet && resultSnippet === chunkSnippet) {
+      return true;
+    }
+    if (resultSnippet && chunkSnippet && (chunkSnippet.includes(resultSnippet) || resultSnippet.includes(chunkSnippet))) {
+      return true;
+    }
+
+    return false;
+  });
+
+  return exactIndex;
+};
+
+const loadSelectedContext = async (current: SearchResultView | null | undefined) => {
+  const requestId = ++selectedContextRequestId;
+
+  if (!current) {
+    if (isSearchClickDebugEnabled()) {
+      console.debug("[AppSearch] loadSelectedContext skipped", {
+        reason: "empty selection",
+        requestId,
+      });
+    }
+
     selectedChunkCount.value = null;
+    selectedDocumentChunks.value = [];
+    selectedChunkIndex.value = -1;
     return;
   }
 
   try {
-    const chunks = await docmindApi.listDocumentChunks(path);
+    const chunks = await docmindApi.listDocumentChunks(current.path);
+    if (requestId !== selectedContextRequestId) {
+      if (isSearchClickDebugEnabled()) {
+        console.debug("[AppSearch] loadSelectedContext ignored stale response", {
+          requestId,
+          activeRequestId: selectedContextRequestId,
+          path: current.path,
+        });
+      }
+
+      return;
+    }
+
+    selectedDocumentChunks.value = chunks;
     selectedChunkCount.value = chunks.length;
+    selectedChunkIndex.value = resolveSelectedChunkIndex(chunks, current);
+
+    if (isSearchClickDebugEnabled()) {
+      console.debug("[AppSearch] loadSelectedContext resolved", {
+        requestId,
+        id: current.id,
+        path: current.path,
+        chunks: chunks.length,
+        selectedChunkIndex: selectedChunkIndex.value,
+      });
+    }
   } catch (error) {
+    if (requestId !== selectedContextRequestId) {
+      if (isSearchClickDebugEnabled()) {
+        console.debug("[AppSearch] loadSelectedContext ignored stale error", {
+          requestId,
+          activeRequestId: selectedContextRequestId,
+          path: current.path,
+        });
+      }
+
+      return;
+    }
+
     selectedChunkCount.value = null;
-    console.error("[DocMind] loadSelectedChunkCount failed", error);
+    selectedDocumentChunks.value = [];
+    selectedChunkIndex.value = -1;
+    console.error("[DocMind] loadSelectedContext failed", error);
   }
 };
 
 const runSearch = async () => {
+  if (!query.value.trim()) {
+    results.value = [];
+    selectedId.value = "";
+    expandedGroups.value = {};
+    debugReport.value = null;
+    selectedChunkCount.value = null;
+    selectedDocumentChunks.value = [];
+    selectedChunkIndex.value = -1;
+    return;
+  }
+
   loading.value = true;
   errorMessage.value = "";
 
@@ -191,6 +410,32 @@ const openSelectedFile = async () => {
   if (!selected.value) return;
   await docmindApi.openFile(selected.value.path);
   await loadQuickPanels();
+};
+
+const quickLookSelectedFile = async () => {
+  if (!selected.value) return;
+
+  try {
+    await docmindApi.quickLookFile(selected.value.path);
+    setActionMessage(t("page.appSearch.detail.quickLookOpened"));
+  } catch (error) {
+    setActionError(error instanceof Error ? error.message : t("page.appSearch.detail.quickLookFailed"));
+  }
+};
+
+const copySelectedPath = async () => {
+  if (!selected.value) return;
+  await copyText(selected.value.path, t("page.appSearch.detail.copiedPath"));
+};
+
+const copySelectedTitlePath = async () => {
+  if (!selected.value) return;
+  await copyText(selectedTitlePath.value || selected.value.heading, t("page.appSearch.detail.copiedTitlePath"));
+};
+
+const copySelectedCitation = async () => {
+  if (!selected.value) return;
+  await copyText(selectedCitation.value, t("page.appSearch.detail.copiedCitation"));
 };
 
 const viewChunks = async () => {
@@ -240,7 +485,15 @@ const openLibrary = async () => {
 
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
-  await Promise.all([loadStatus(), loadParserRuntime(), loadIndexSettings(), loadQuickPanels(), runSearch()]);
+  await Promise.all([loadStatus(), loadParserRuntime(), loadIndexSettings(), loadQuickPanels()]);
+  if (query.value.trim()) {
+    await runSearch();
+  } else {
+    results.value = [];
+    selectedId.value = "";
+    expandedGroups.value = {};
+    debugReport.value = null;
+  }
 });
 
 onBeforeUnmount(() => {
@@ -251,13 +504,26 @@ watch(query, () => {
   if (!query.value.trim()) {
     results.value = [];
     selectedId.value = "";
+    expandedGroups.value = {};
+    debugReport.value = null;
+    selectedChunkCount.value = null;
+    selectedDocumentChunks.value = [];
+    selectedChunkIndex.value = -1;
   }
 });
 
 watch(
-  () => selected.value?.path,
-  async (path) => {
-    await loadSelectedChunkCount(path);
+  () => selected.value,
+  async (current) => {
+    if (isSearchClickDebugEnabled()) {
+      console.debug("[AppSearch] selected watcher", {
+        selectedId: selectedId.value,
+        hasCurrent: Boolean(current),
+        path: current?.path ?? null,
+      });
+    }
+
+    await loadSelectedContext(current);
   },
   { immediate: true },
 );
@@ -450,13 +716,23 @@ watch(
                 {{ selected.ext.toUpperCase() }}
               </div>
             </div>
+            <div v-if="selectedTitlePath" class="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                {{ t("page.appSearch.detail.titlePath") }}
+              </div>
+              <div class="mt-1 text-sm leading-6 text-slate-800">
+                {{ selectedTitlePath }}
+              </div>
+            </div>
           </div>
 
           <div class="mb-4 flex flex-wrap gap-2">
             <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
             <DocMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</DocMindBadge>
+            <DocMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</DocMindBadge>
             <DocMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</DocMindBadge>
             <DocMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
+            <DocMindBadge tone="default">{{ selectedChunkPositionLabel }}</DocMindBadge>
             <DocMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</DocMindBadge>
             <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
           </div>
@@ -470,11 +746,36 @@ watch(
 
           <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.contextPreview") }}</div>
-            <p class="text-sm leading-7 text-slate-500">{{ t("page.appSearch.detail.previousPara") }}</p>
-            <p class="mt-3 text-sm leading-7 text-slate-800">
-              {{ t("page.appSearch.detail.currentPara") }}<DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
-            </p>
-            <p class="mt-3 text-sm leading-7 text-slate-500">{{ t("page.appSearch.detail.nextPara") }}</p>
+            <div v-if="selectedChunk" class="space-y-3">
+              <div
+                v-for="item in selectedContextChunks"
+                :key="item.key"
+                class="rounded-md border px-3 py-2"
+                :class="item.key === 'current' ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-white/70'"
+              >
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" :class="item.key === 'current' ? 'text-indigo-600' : 'text-slate-500'">
+                  {{ item.label }}
+                </div>
+                <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-slate-500">
+                  {{ t("page.appSearch.detail.titlePath") }}：{{ item.chunk?.title_path || item.chunk?.heading }}
+                </div>
+                <p class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-slate-800' : 'text-slate-600'">
+                  <DocMindHighlightedText
+                    v-if="item.key === 'current'"
+                    :text="item.chunk?.snippet ?? ''"
+                    :query="query"
+                    :spans="selected.highlight_spans"
+                  />
+                  <span v-else>{{ item.chunk?.snippet }}</span>
+                </p>
+                <div class="mt-1 text-[11px] text-slate-400">
+                  {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
+                </div>
+              </div>
+            </div>
+            <div v-else class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+              {{ t("page.appSearch.detail.noContext") }}
+            </div>
             <p class="mt-3 text-xs text-slate-400">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
           </div>
 
@@ -495,6 +796,30 @@ watch(
               <FileText :size="16" />
               {{ t("common.viewChunks") }}
             </button>
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="quickLookSelectedFile">
+              <Eye :size="14" />
+              {{ t("page.appSearch.detail.quickLook") }}
+            </button>
+            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedPath">
+              <Copy :size="14" />
+              {{ t("page.appSearch.detail.copyPath") }}
+            </button>
+            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedTitlePath">
+              <Copy :size="14" />
+              {{ t("page.appSearch.detail.copyTitlePath") }}
+            </button>
+            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedCitation">
+              <FileText :size="14" />
+              {{ t("page.appSearch.detail.copyCitation") }}
+            </button>
+          </div>
+          <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            {{ actionMessage }}
+          </div>
+          <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {{ actionErrorMessage }}
           </div>
         </div>
       </aside>

@@ -433,6 +433,10 @@ impl Database {
 
     pub async fn record_search_history(&self, query: &str, hit_count: usize) -> Result<(), sqlx::Error> {
         let normalized_query = normalize_query(query).join(" ");
+        if normalized_query.trim().is_empty() {
+            return Ok(());
+        }
+
         let now = current_unix_ts();
         sqlx::query(
             r#"
@@ -460,6 +464,7 @@ impl Database {
             r#"
             SELECT query, normalized_query, hit_count, last_hit_at
             FROM search_history
+            WHERE trim(query) <> '' AND trim(normalized_query) <> ''
             ORDER BY last_hit_at DESC, hit_count DESC, query ASC
             LIMIT ?
             "#,
@@ -752,7 +757,8 @@ impl Database {
             .into_iter()
             .map(|row| ChunkView {
                 id: row.id,
-                heading: row.heading,
+                heading: row.heading.clone(),
+                title_path: row.heading,
                 snippet: row.snippet,
                 paragraph: row.paragraph.map(|value| value as u32),
                 page: row.page.map(|value| value as u32),
@@ -1019,7 +1025,8 @@ impl Database {
                         file_name: row.file_name,
                         path: row.path,
                         ext: row.ext,
-                        heading: row.heading,
+                        heading: row.heading.clone(),
+                        title_path: row.heading,
                         snippet,
                         matched_field,
                         match_origin,
@@ -1027,8 +1034,8 @@ impl Database {
                         snippet_window_start,
                         snippet_window_end,
                         snippet_source_len,
-                        paragraph: row.paragraph.map(|value| value as u32),
-                        page: row.page.map(|value| value as u32),
+                    paragraph: row.paragraph.map(|value| value as u32),
+                    page: row.page.map(|value| value as u32),
                         modified: row.modified,
                         score: final_score,
                         rank_reason,
@@ -1117,6 +1124,10 @@ impl Database {
                 .await;
         }
         result
+    }
+
+    pub async fn quick_look_file(&self, path: &str) -> Result<(), String> {
+        file_ops::quick_look_file_path(path)
     }
 
     pub(crate) async fn add_index_dir(&self, path: &str) -> Result<(), sqlx::Error> {

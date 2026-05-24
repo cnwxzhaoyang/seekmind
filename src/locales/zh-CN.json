@@ -118,9 +118,23 @@
       "detail": {
         "hitParagraph": "命中段落",
         "contextPreview": "上下文预览",
-        "previousPara": "上一段：构建离线仓库时，需要先解析项目的 parent POM、BOM 以及 build plugins。",
-        "currentPara": "当前段：",
-        "nextPara": "下一段：生成后的 .offline-repo 可以通过 settings.xml 指定为本地仓库路径。",
+        "previousChunk": "上一段",
+        "currentChunk": "当前段",
+        "nextChunk": "下一段",
+        "chunkPosition": "第 {current} / {total} 段",
+        "titlePath": "标题路径",
+        "pdfPage": "PDF 页码 {page}",
+        "quickLook": "Quick Look",
+        "quickLookOpened": "已打开 Quick Look 预览",
+        "quickLookFailed": "Quick Look 打开失败",
+        "copyPath": "复制路径",
+        "copyTitlePath": "复制标题路径",
+        "copyCitation": "复制引用",
+        "copiedPath": "已复制路径",
+        "copiedTitlePath": "已复制标题路径",
+        "copiedCitation": "已复制引用",
+        "copyFailed": "复制失败",
+        "noContext": "暂无可展示的上下文。",
         "snippetSource": "摘要来自原文字符区间 {start} - {end} / {length}",
         "chunkCount": "切片数 {count}"
       }
@@ -149,6 +163,17 @@
         "selectDocToView": "选中文档后，这里会显示它被切成的每个段落块。"
       },
       "filterPlaceholder": "过滤文件名或路径...",
+      "titlePath": "标题路径",
+      "action": {
+        "quickLook": "Quick Look",
+        "quickLookOpened": "已打开 Quick Look 预览",
+        "quickLookFailed": "Quick Look 打开失败",
+        "copyPath": "复制路径",
+        "copyCitation": "复制引用",
+        "copiedPath": "已复制路径",
+        "copiedCitation": "已复制引用",
+        "copyFailed": "复制失败"
+      },
       "btn": {
         "refresh": "刷新",
         "queue": "队列 {count}",
@@ -178,6 +203,15 @@
       "subtitle": "添加需要索引的文件夹，docMind 会在本地解析和建立索引。",
       "btn": {
         "addDir": "添加目录"
+      },
+      "action": {
+        "quickLook": "Quick Look",
+        "quickLookOpened": "已打开 Quick Look 预览",
+        "quickLookFailed": "Quick Look 打开失败",
+        "copyPath": "复制路径",
+        "copyCitation": "复制引用",
+        "copiedPath": "已复制路径",
+        "copiedCitation": "已复制引用"
       },
       "virtualDir": "虚拟目录",
       "dropHint": "拖入目录或支持的文档到这里，系统会自动归类并开始导入。",
@@ -228,6 +262,15 @@
         "resuming": "恢复中...",
         "reindex": "重新索引",
         "rebuilding": "重建中..."
+      },
+      "action": {
+        "quickLook": "Quick Look",
+        "quickLookOpened": "已打开 Quick Look 预览",
+        "quickLookFailed": "Quick Look 打开失败",
+        "copyPath": "复制路径",
+        "copyCitation": "复制引用",
+        "copiedPath": "已复制路径",
+        "copiedCitation": "已复制引用"
       },
       "section": {
         "taskOps": "任务操作",

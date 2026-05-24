@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ChevronLeft, ChevronRight, Database, FolderOpen, Layers3, Search, Settings } from "lucide-vue-next";
 import { useRoute } from "vue-router";
+import { useSidebarState } from "../../composables/useSidebarState";
 
 const { t } = useI18n();
 const route = useRoute();
-const sidebarCollapsed = ref(false);
-const storageKey = "docmind.sidebar.collapsed";
+const { sidebarCollapsed, toggleSidebar } = useSidebarState();
 
 const items = computed(() => [
   { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
@@ -26,14 +26,6 @@ const activeKey = computed(() => {
   return "search";
 });
 
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value;
-  window.localStorage.setItem(storageKey, sidebarCollapsed.value ? "1" : "0");
-};
-
-onMounted(() => {
-  sidebarCollapsed.value = window.localStorage.getItem(storageKey) === "1";
-});
 </script>
 
 <template>

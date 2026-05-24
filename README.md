@@ -109,7 +109,38 @@ npm run semantic:warmup:mirror
 npm run tauri:dev:trace
 ```
 
-### 4. 如果要清空并重新启动开发环境
+### 5. 打包 macOS App
+
+DocMind 可以直接打包成 macOS 应用。当前开发阶段如果还没有 Apple 开发者签名，可以先用 ad-hoc 签名：
+
+```bash
+npm run tauri:build:macos:adhoc
+```
+
+这条命令等价于：
+
+```bash
+APPLE_SIGNING_IDENTITY=- tauri build
+```
+
+构建产物会输出到：
+
+```text
+src-tauri/target/release/bundle/macos/
+```
+
+通常会包含：
+
+- `.app`
+- `.dmg`
+
+说明：
+
+- `APPLE_SIGNING_IDENTITY=-` 是 Tauri 支持的 ad-hoc 签名方式
+- 如果是 Apple Silicon 机器，macOS 对未签名应用的安装限制会更明显，ad-hoc 仍可能需要在“隐私与安全性”里手动放行
+- 后续如果接入正式 Apple 开发者证书，再把这个环境变量替换成真实 signing identity 即可
+
+### 6. 如果要清空并重新启动开发环境
 
 ```bash
 npm run tauri:dev:fresh

@@ -2,12 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Loader2, RefreshCw, FolderOpen, Database, Cpu } from "lucide-vue-next";
+import { AlertCircle, Loader2, RefreshCw, FolderOpen, Database, Cpu, Eye, Copy, FileText } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { formatDirectoryCitation } from "../utils/citation";
 import type {
   FailedFileView,
   IndexDirView,
@@ -24,7 +25,9 @@ const parserRuntime = ref<ParserRuntimeView | null>(null);
 const loading = ref(false);
 const refreshing = ref(false);
 const retryingTarget = ref<string | null>(null);
+const treeActionTarget = ref<string | null>(null);
 const errorMessage = ref("");
+const infoMessage = ref("");
 const dashboardRefreshing = ref(false);
 const actionState = ref<"pausing" | "resuming" | null>(null);
 let pollTimer: number | null = null;
@@ -63,6 +66,31 @@ const loadStatus = async () => {
     console.error("[DocMind] loadStatus failed", error);
   } finally {
     loading.value = false;
+  }
+};
+
+const copyText = async (text: string, successMessage: string) => {
+  if (!text.trim()) {
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    infoMessage.value = successMessage;
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, successMessage);
   }
 };
 
@@ -271,6 +299,38 @@ const retryFailedGroup = async (code: string, items: FailedFileView[]) => {
   }
 };
 
+const quickLookDir = async (path: string) => {
+  treeActionTarget.value = path;
+  errorMessage.value = "";
+  infoMessage.value = "";
+
+  try {
+    await docmindApi.quickLookFile(path);
+    infoMessage.value = t("page.status.action.quickLookOpened");
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, t("page.status.action.quickLookFailed"));
+    console.error("[DocMind] quickLookDir failed", error);
+  } finally {
+    treeActionTarget.value = null;
+  }
+};
+
+const copyDirPath = async (path: string) => {
+  await copyText(path, t("page.status.action.copiedPath"));
+};
+
+const copyDirCitation = async (row: { displayName: string; fullPath: string; dir: IndexDirView }) => {
+  await copyText(
+    formatDirectoryCitation({
+      displayName: row.displayName,
+      path: row.fullPath,
+      docs: row.dir.docs,
+      chunks: row.dir.chunks,
+    }),
+    t("page.status.action.copiedCitation"),
+  );
+};
+
 onMounted(async () => {
   await installIndexRefreshListener();
   await syncDashboardState();
@@ -455,7 +515,39 @@ onBeforeUnmount(() => {
               {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
             </DocMindBadge>
           </template>
+          <template #actions="{ row }">
+            <div class="flex items-center gap-1.5">
+              <button
+                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="treeActionTarget === row.dir.path || row.isVirtual"
+                :title="t('page.status.action.quickLook')"
+                @click.stop="quickLookDir(row.dir.path)"
+              >
+                <Eye :size="14" />
+              </button>
+              <button
+                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="treeActionTarget === row.dir.path"
+                :title="t('page.status.action.copyPath')"
+                @click.stop="copyDirPath(row.dir.path)"
+              >
+                <Copy :size="14" />
+              </button>
+              <button
+                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="treeActionTarget === row.dir.path"
+                :title="t('page.status.action.copyCitation')"
+                @click.stop="copyDirCitation(row)"
+              >
+                <FileText :size="14" />
+              </button>
+            </div>
+          </template>
         </DocMindIndexTree>
+      </div>
+
+      <div v-if="infoMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700">
+        {{ infoMessage }}
       </div>
 
       <div v-if="errorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-xs text-red-700">

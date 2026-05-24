@@ -23,7 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  select: [];
+  select: [event: MouseEvent | KeyboardEvent];
   toggleFavorite: [];
 }>();
 
@@ -39,13 +39,36 @@ const matchedFieldLabel = computed(() => {
 });
 
 const favoriteTitle = computed(() => props.favorited ? t("searchResultCard.unfavorite") : t("searchResultCard.favorite"));
+
+const debugClick = (event: MouseEvent | KeyboardEvent) => {
+  if (globalThis.localStorage?.getItem("DOCMIND_DEBUG_SEARCH_CLICK") !== "1") {
+    return;
+  }
+
+  console.debug("[DocMindSearchResultCard] row click", {
+    id: props.item.id,
+    path: props.item.path,
+    selected: props.selected,
+    eventType: event.type,
+    target: event.target instanceof HTMLElement ? event.target.tagName : null,
+  });
+};
+
+const emitSelect = (event: MouseEvent | KeyboardEvent) => {
+  debugClick(event);
+  emit("select", event);
+};
 </script>
 
 <template>
-  <button
-    class="w-full rounded-lg border bg-white p-2.5 text-left transition"
+  <div
+    class="w-full cursor-pointer rounded-lg border bg-white p-2.5 text-left transition"
     :class="props.selected ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200 hover:border-indigo-300'"
-    @click="emit('select')"
+    role="button"
+    tabindex="0"
+    @click="emitSelect($event)"
+    @keydown.enter.prevent="emitSelect($event)"
+    @keydown.space.prevent="emitSelect($event)"
   >
     <div class="flex gap-2.5">
       <DocMindFileIcon :ext="item.ext" />
@@ -67,13 +90,14 @@ const favoriteTitle = computed(() => props.favorited ? t("searchResultCard.unfav
           </div>
         </div>
         <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+        <div v-if="item.title_path || item.heading" class="mt-1 text-[11px] text-slate-500">
+          {{ t("page.appSearch.detail.titlePath") }}：<DocMindHighlightedText :text="item.title_path || item.heading" :query="props.query" />
+        </div>
         <div class="mt-2 text-sm leading-6 text-slate-700">
           <DocMindHighlightedText :text="item.snippet" :query="props.query" :spans="item.highlight_spans" />
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-          <DocMindBadge>
-            <DocMindHighlightedText :text="item.heading" :query="props.query" />
-          </DocMindBadge>
+          <DocMindBadge>{{ t("page.appSearch.detail.titlePath") }}</DocMindBadge>
           <span>{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</span>
           <span>·</span>
           <span>{{ t("searchResultCard.rankReason") }}</span>
@@ -107,5 +131,5 @@ const favoriteTitle = computed(() => props.favorited ? t("searchResultCard.unfav
         </div>
       </div>
     </div>
-  </button>
+  </div>
 </template>

@@ -118,9 +118,23 @@
       "detail": {
         "hitParagraph": "Matched Paragraph",
         "contextPreview": "Context Preview",
-        "previousPara": "Previous: Building an offline repo requires parsing the parent POM, BOM, and build plugins first.",
-        "currentPara": "Current: ",
-        "nextPara": "Next: The generated .offline-repo can be specified as a local repository path in settings.xml.",
+        "previousChunk": "Previous",
+        "currentChunk": "Current",
+        "nextChunk": "Next",
+        "chunkPosition": "Chunk {current} / {total}",
+        "titlePath": "Title Path",
+        "pdfPage": "PDF Page {page}",
+        "quickLook": "Quick Look",
+        "quickLookOpened": "Quick Look preview opened",
+        "quickLookFailed": "Quick Look failed to open",
+        "copyPath": "Copy Path",
+        "copyTitlePath": "Copy Title Path",
+        "copyCitation": "Copy Citation",
+        "copiedPath": "Path copied",
+        "copiedTitlePath": "Title path copied",
+        "copiedCitation": "Citation copied",
+        "copyFailed": "Copy failed",
+        "noContext": "No context available.",
         "snippetSource": "Snippet from char range {start} - {end} / {length}",
         "chunkCount": "{count} chunks"
       }
@@ -149,6 +163,17 @@
         "selectDocToView": "Select a document to view its chunks."
       },
       "filterPlaceholder": "Filter by file name or path...",
+      "titlePath": "Title Path",
+      "action": {
+        "quickLook": "Quick Look",
+        "quickLookOpened": "Quick Look preview opened",
+        "quickLookFailed": "Quick Look failed to open",
+        "copyPath": "Copy Path",
+        "copyCitation": "Copy Citation",
+        "copiedPath": "Path copied",
+        "copiedCitation": "Citation copied",
+        "copyFailed": "Copy failed"
+      },
       "btn": {
         "refresh": "Refresh",
         "queue": "Queue {count}",
@@ -182,6 +207,15 @@
       "subtitle": "Add folders to index. docMind parses and indexes them locally.",
       "btn": {
         "addDir": "Add Directory"
+      },
+      "action": {
+        "quickLook": "Quick Look",
+        "quickLookOpened": "Quick Look preview opened",
+        "quickLookFailed": "Failed to open Quick Look",
+        "copyPath": "Copy Path",
+        "copyCitation": "Copy Citation",
+        "copiedPath": "Path copied",
+        "copiedCitation": "Citation copied"
       },
       "virtualDir": "Virtual Directory",
       "dropHint": "Drop directories or supported documents here. docMind will classify and import them automatically.",
@@ -232,6 +266,15 @@
         "resuming": "Resuming...",
         "reindex": "Re-index",
         "rebuilding": "Rebuilding..."
+      },
+      "action": {
+        "quickLook": "Quick Look",
+        "quickLookOpened": "Quick Look preview opened",
+        "quickLookFailed": "Failed to open Quick Look",
+        "copyPath": "Copy Path",
+        "copyCitation": "Copy Citation",
+        "copiedPath": "Path copied",
+        "copiedCitation": "Citation copied"
       },
       "section": {
         "taskOps": "Task Operations",

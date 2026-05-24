@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
               <div class="font-medium text-slate-900">{{ hit.file_name }}</div>
               <DocMindBadge tone="default">{{ hit.score.toFixed(3) }}</DocMindBadge>
             </div>
-            <div class="mt-1 text-xs text-slate-500">{{ hit.heading || t("semantic.debug.noHitHeading") }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ hit.title_path || hit.heading || t("semantic.debug.noHitHeading") }}</div>
             <div class="mt-2 line-clamp-2 text-slate-600">{{ hit.snippet }}</div>
           </div>
         </div>

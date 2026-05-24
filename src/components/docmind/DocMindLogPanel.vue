@@ -4,9 +4,11 @@ import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { ChevronDown, ChevronUp, RefreshCw, NotebookText, FileText, Database, Sparkles, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
+import { useSidebarState } from "../../composables/useSidebarState";
 import type { DocumentRefreshProgressView, IndexRefreshProgressView, SemanticRebuildProgressView } from "../../types/docmind";
 
 const { t } = useI18n();
+const { sidebarWidth } = useSidebarState();
 
 type LogScope = "index" | "document" | "semantic";
 type LogLevel = "info" | "success" | "warning" | "error";
@@ -131,7 +133,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pointer-events-none fixed bottom-0 left-[200px] right-0 z-50">
+  <div class="pointer-events-none fixed bottom-0 right-0 z-50" :style="{ left: `${sidebarWidth}px` }">
     <div
       class="pointer-events-auto overflow-hidden border-t border-slate-200 bg-slate-100 shadow-lg transition-all duration-200"
       :class="expanded ? 'w-full max-h-[320px]' : 'w-full'"

@@ -53,6 +53,7 @@ pub fn run() {
             crate::docmind::commands::get_parser_runtime,
             crate::docmind::commands::get_index_settings,
             crate::docmind::commands::open_file,
+            crate::docmind::commands::quick_look_file,
             crate::docmind::commands::toggle_result_favorite,
             crate::docmind::commands::refresh_index,
             crate::docmind::commands::refresh_index_dir,
