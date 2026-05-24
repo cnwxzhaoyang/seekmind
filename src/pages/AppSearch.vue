@@ -4,8 +4,10 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { Clock, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
+import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi } from "../services/docmindApi";
 
 const { t } = useI18n();
@@ -38,6 +40,10 @@ const selectedChunkCount = ref<number | null>(null);
 const loading = ref(false);
 const errorMessage = ref("");
 const expandedGroups = ref<Record<string, boolean>>({});
+
+const {
+  visibleRows: visibleQuickDirRows,
+} = useIndexDirTree(quickDirs);
 
 interface SearchResultGroup {
   path: string;
@@ -364,17 +370,35 @@ watch(
             <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
               {{ t("page.appSearch.section.noDirs") }}
             </div>
-            <div v-else class="space-y-2">
-              <button
-                v-for="dir in quickDirs"
-                :key="dir.path"
-                class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
-                @click="openLibrary"
-              >
-                <div class="truncate font-medium text-slate-900">{{ dir.path }}</div>
-                <div class="mt-1 text-[11px] text-slate-400">{{ t("page.appSearch.section.dirStats", { docs: dir.docs, chunks: dir.chunks }) }}</div>
-              </button>
-            </div>
+            <DocMindIndexTree
+              v-else
+              :rows="visibleQuickDirRows"
+              :selectable="false"
+              :path-tooltip="true"
+              :virtual-label="t('common.virtualDir')"
+              :expand-title="t('sidebar.expand')"
+              :collapse-title="t('sidebar.collapse')"
+              :node-padding-base="0"
+              :node-padding-step="12"
+              density="compact"
+            >
+              <template #meta="{ row }">
+                {{ t("page.appSearch.section.dirStats", { docs: row.dir.docs, chunks: row.dir.chunks }) }}
+              </template>
+              <template #status="{ row }">
+                <DocMindBadge tone="default">
+                  {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
+                </DocMindBadge>
+              </template>
+              <template #actions>
+                <button
+                  class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50"
+                  @click="openLibrary"
+                >
+                  {{ t("common.open") }}
+                </button>
+              </template>
+            </DocMindIndexTree>
           </section>
         </div>
       </aside>
