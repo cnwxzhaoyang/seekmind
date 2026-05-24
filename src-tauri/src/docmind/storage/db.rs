@@ -18,7 +18,7 @@ use crate::docmind::models::{
     IndexDirView, IndexStatusView, RecentDocumentView, SearchHistoryView, SearchResultView,
 };
 use crate::docmind::semantic::store as semantic_store;
-use crate::docmind::search::normalize_query;
+use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::indexer;
 use crate::docmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocument, IndexSettings};
@@ -68,6 +68,21 @@ struct SearchRow {
     modified: String,
     modified_at: i64,
     score: f32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SearchDebugData {
+    pub(crate) hits: Vec<SearchResultView>,
+    pub(crate) keyword_hit_count: usize,
+    pub(crate) semantic_hit_count: usize,
+    pub(crate) semantic_candidate_count: usize,
+    pub(crate) semantic_filtered_count: usize,
+    pub(crate) semantic_enabled: bool,
+    pub(crate) semantic_weight: f32,
+    pub(crate) semantic_threshold: f32,
+    pub(crate) rewritten_terms: Vec<String>,
+    pub(crate) rewritten_query: String,
+    pub(crate) search_mode: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -217,6 +232,10 @@ impl Database {
             .await
             .map_err(|error| error.to_string())?;
         database
+            .ensure_index_settings_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
             .ensure_index_settings_row()
             .await
             .map_err(|error| error.to_string())?;
@@ -276,11 +295,14 @@ impl Database {
             exclude_dirs: String,
             exclude_exts: String,
             max_file_size_mb: i64,
+            semantic_search_enabled: i64,
+            semantic_weight: f32,
+            semantic_threshold: f32,
         }
 
         let row = sqlx::query_as::<_, IndexSettingsRow>(
             r#"
-            SELECT exclude_dirs, exclude_exts, max_file_size_mb
+            SELECT exclude_dirs, exclude_exts, max_file_size_mb, semantic_search_enabled, semantic_weight, semantic_threshold
             FROM index_settings
             WHERE id = 1
             "#,
@@ -293,12 +315,18 @@ impl Database {
                 exclude_dirs: serde_json::from_str(&row.exclude_dirs).unwrap_or_default(),
                 exclude_exts: serde_json::from_str(&row.exclude_exts).unwrap_or_default(),
                 max_file_size_mb: row.max_file_size_mb.max(0) as u64,
+                semantic_search_enabled: row.semantic_search_enabled != 0,
+                semantic_weight: row.semantic_weight.clamp(0.0, 1.0),
+                semantic_threshold: row.semantic_threshold.clamp(-1.0, 1.0),
             })
         } else {
             Ok(IndexSettings {
                 exclude_dirs: default_exclude_dirs(),
                 exclude_exts: Vec::new(),
                 max_file_size_mb: 50,
+                semantic_search_enabled: true,
+                semantic_weight: 0.25,
+                semantic_threshold: 0.2,
             })
         }
     }
@@ -307,9 +335,12 @@ impl Database {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO index_settings
-                (id, exclude_dirs, exclude_exts, max_file_size_mb)
+                (id, exclude_dirs, exclude_exts, max_file_size_mb, semantic_search_enabled, semantic_weight, semantic_threshold)
             VALUES (
                 1,
+                ?,
+                ?,
+                ?,
                 ?,
                 ?,
                 ?
@@ -319,6 +350,9 @@ impl Database {
         .bind(serde_json::to_string(&settings.exclude_dirs).unwrap_or_else(|_| "[]".to_string()))
         .bind(serde_json::to_string(&settings.exclude_exts).unwrap_or_else(|_| "[]".to_string()))
         .bind(settings.max_file_size_mb as i64)
+        .bind(settings.semantic_search_enabled as i64)
+        .bind(settings.semantic_weight)
+        .bind(settings.semantic_threshold)
         .execute(&self.pool)
         .await?;
 
@@ -353,103 +387,7 @@ impl Database {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResultView>, sqlx::Error> {
-        let keyword_hits = self
-            .search_index
-            .search(query, limit.max(1))
-            .map_err(sqlx::Error::Protocol)?;
-
-        let semantic_hits = semantic_store::semantic_search_hits(self, query, limit.max(1))
-            .await
-            .unwrap_or_default();
-
-        if keyword_hits.is_empty() && semantic_hits.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut keyword_score_map = std::collections::HashMap::<String, f32>::new();
-        for hit in &keyword_hits {
-            keyword_score_map.insert(hit.chunk_id.clone(), hit.score);
-        }
-
-        let mut semantic_score_map = std::collections::HashMap::<String, f32>::new();
-        for hit in &semantic_hits {
-            semantic_score_map.insert(hit.chunk_id.clone(), hit.score);
-        }
-
-        let mut chunk_ids = keyword_hits
-            .iter()
-            .map(|hit| hit.chunk_id.clone())
-            .collect::<Vec<_>>();
-        for hit in &semantic_hits {
-            if !keyword_score_map.contains_key(&hit.chunk_id) {
-                chunk_ids.push(hit.chunk_id.clone());
-            }
-        }
-
-        let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
-        let mut rows_by_id = std::collections::HashMap::new();
-        for row in rows {
-            rows_by_id.insert(row.id.clone(), row);
-        }
-
-        let mut results = Vec::new();
-        let normalized_terms = normalize_query(query);
-        let now = Utc::now().timestamp();
-        for chunk_id in chunk_ids {
-            if let Some(row) = rows_by_id.remove(&chunk_id) {
-                let keyword_score = keyword_score_map.get(&chunk_id).copied().unwrap_or(0.0);
-                let semantic_score = semantic_score_map.get(&chunk_id).copied().unwrap_or(0.0);
-                let (snippet, highlight_spans, snippet_window_start, snippet_window_end, snippet_source_len) =
-                    build_search_snippet(&row.snippet, &normalized_terms, 220);
-                let (matched_field, match_origin) = if keyword_score > 0.0 {
-                    matched_field_and_origin(&row, &normalized_terms)
-                } else if semantic_score > 0.0 {
-                    ("semantic".to_string(), "语义命中".to_string())
-                } else {
-                    matched_field_and_origin(&row, &normalized_terms)
-                };
-                let base_score = if keyword_score > 0.0 {
-                    keyword_score + semantic_score.max(0.0) * 0.25
-                } else {
-                    semantic_score.max(0.0)
-                };
-                let chunk_weight = row.score.clamp(0.25, 1.0);
-                let score = boosted_search_score(
-                    base_score * chunk_weight,
-                    &match_origin,
-                    row.modified_at,
-                    now,
-                );
-                results.push(SearchResultView {
-                    id: row.id,
-                    file_name: row.file_name,
-                    path: row.path,
-                    ext: row.ext,
-                    heading: row.heading,
-                    snippet,
-                    matched_field,
-                    match_origin,
-                    highlight_spans,
-                    snippet_window_start,
-                    snippet_window_end,
-                    snippet_source_len,
-                    paragraph: row.paragraph.map(|value| value as u32),
-                    page: row.page.map(|value| value as u32),
-                    modified: row.modified,
-                    score,
-                });
-            }
-        }
-
-        results.sort_by(|left, right| {
-            right
-                .score
-                .partial_cmp(&left.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        results.truncate(limit.max(1));
-
-        Ok(results)
+        Ok(self.build_search_results(query, limit).await?.hits)
     }
 
     pub async fn record_search_history(&self, query: &str, hit_count: usize) -> Result<(), sqlx::Error> {
@@ -757,6 +695,168 @@ impl Database {
 
     pub fn tantivy_document_count(&self) -> usize {
         self.search_index.doc_count() as usize
+    }
+
+    pub(crate) async fn search_documents_debug(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchDebugData, sqlx::Error> {
+        self.build_search_results(query, limit).await
+    }
+
+    async fn build_search_results(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchDebugData, sqlx::Error> {
+        let settings = self.get_index_settings().await?;
+        let semantic_enabled = settings.semantic_search_enabled;
+        let semantic_weight = settings.semantic_weight.clamp(0.0, 1.0);
+        let semantic_threshold = settings.semantic_threshold.clamp(-1.0, 1.0);
+        let rewritten_terms = rewrite_query_terms(query);
+        let rewritten_query = rewrite_search_text(query);
+
+        let keyword_hits = self
+            .search_index
+            .search(query, limit.max(1))
+            .map_err(sqlx::Error::Protocol)?;
+
+        let semantic_candidates = if semantic_enabled {
+            let semantic_limit = limit.max(1).saturating_mul(3).max(limit.max(1));
+            semantic_store::semantic_search_hits(self, query, semantic_limit)
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let semantic_candidate_count = semantic_candidates.len();
+        let semantic_hits: Vec<_> = semantic_candidates
+            .into_iter()
+            .filter(|hit| hit.score >= semantic_threshold)
+            .collect();
+        let semantic_filtered_count = semantic_candidate_count.saturating_sub(semantic_hits.len());
+
+        if keyword_hits.is_empty() && semantic_hits.is_empty() {
+            return Ok(SearchDebugData {
+                hits: Vec::new(),
+                keyword_hit_count: 0,
+                semantic_hit_count: 0,
+                semantic_candidate_count,
+                semantic_filtered_count,
+                semantic_enabled,
+                semantic_weight,
+                semantic_threshold,
+                rewritten_terms,
+                rewritten_query,
+                search_mode: if semantic_enabled {
+                    "hybrid".to_string()
+                } else {
+                    "fulltext".to_string()
+                },
+            });
+        }
+
+        let mut keyword_score_map = std::collections::HashMap::<String, f32>::new();
+        for hit in &keyword_hits {
+            keyword_score_map.insert(hit.chunk_id.clone(), hit.score);
+        }
+
+        let mut semantic_score_map = std::collections::HashMap::<String, f32>::new();
+        for hit in &semantic_hits {
+            semantic_score_map.insert(hit.chunk_id.clone(), hit.score);
+        }
+
+        let mut chunk_ids = keyword_hits
+            .iter()
+            .map(|hit| hit.chunk_id.clone())
+            .collect::<Vec<_>>();
+        for hit in &semantic_hits {
+            if !keyword_score_map.contains_key(&hit.chunk_id) {
+                chunk_ids.push(hit.chunk_id.clone());
+            }
+        }
+
+        let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
+        let mut rows_by_id = std::collections::HashMap::new();
+        for row in rows {
+            rows_by_id.insert(row.id.clone(), row);
+        }
+
+        let mut results = Vec::new();
+        let normalized_terms = normalize_query(query);
+        let now = Utc::now().timestamp();
+        for chunk_id in chunk_ids {
+            if let Some(row) = rows_by_id.remove(&chunk_id) {
+                let keyword_score = keyword_score_map.get(&chunk_id).copied().unwrap_or(0.0);
+                let semantic_score = semantic_score_map.get(&chunk_id).copied().unwrap_or(0.0);
+                let (snippet, highlight_spans, snippet_window_start, snippet_window_end, snippet_source_len) =
+                    build_search_snippet(&row.snippet, &normalized_terms, 220);
+                let (matched_field, match_origin) = if keyword_score > 0.0 {
+                    matched_field_and_origin(&row, &normalized_terms)
+                } else if semantic_score > 0.0 {
+                    ("semantic".to_string(), "语义命中".to_string())
+                } else {
+                    matched_field_and_origin(&row, &normalized_terms)
+                };
+                let base_score = if keyword_score > 0.0 {
+                    keyword_score + semantic_score.max(0.0) * semantic_weight
+                } else {
+                    semantic_score.max(0.0)
+                };
+                let chunk_weight = row.score.clamp(0.25, 1.0);
+                let score = boosted_search_score(
+                    base_score * chunk_weight,
+                    &match_origin,
+                    row.modified_at,
+                    now,
+                );
+                results.push(SearchResultView {
+                    id: row.id,
+                    file_name: row.file_name,
+                    path: row.path,
+                    ext: row.ext,
+                    heading: row.heading,
+                    snippet,
+                    matched_field,
+                    match_origin,
+                    highlight_spans,
+                    snippet_window_start,
+                    snippet_window_end,
+                    snippet_source_len,
+                    paragraph: row.paragraph.map(|value| value as u32),
+                    page: row.page.map(|value| value as u32),
+                    modified: row.modified,
+                    score,
+                });
+            }
+        }
+
+        results.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        results.truncate(limit.max(1));
+
+        Ok(SearchDebugData {
+            hits: results,
+            keyword_hit_count: keyword_hits.len(),
+            semantic_hit_count: semantic_hits.len(),
+            semantic_candidate_count,
+            semantic_filtered_count,
+            semantic_enabled,
+            semantic_weight,
+            semantic_threshold,
+            rewritten_terms,
+            rewritten_query,
+            search_mode: if semantic_enabled {
+                "hybrid".to_string()
+            } else {
+                "fulltext".to_string()
+            },
+        })
     }
 
     pub async fn open_file(&self, path: &str) -> Result<(), String> {
@@ -1477,7 +1577,10 @@ impl Database {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 exclude_dirs TEXT NOT NULL,
                 exclude_exts TEXT NOT NULL,
-                max_file_size_mb INTEGER NOT NULL
+                max_file_size_mb INTEGER NOT NULL,
+                semantic_search_enabled INTEGER NOT NULL DEFAULT 1,
+                semantic_weight REAL NOT NULL DEFAULT 0.25,
+                semantic_threshold REAL NOT NULL DEFAULT 0.2
             )
             "#,
             r#"
@@ -1563,6 +1666,9 @@ impl Database {
                 exclude_dirs: default_exclude_dirs(),
                 exclude_exts: Vec::new(),
                 max_file_size_mb: 50,
+                semantic_search_enabled: true,
+                semantic_weight: 0.25,
+                semantic_threshold: 0.2,
             };
             self.save_index_settings(&defaults).await?;
         }
@@ -1731,6 +1837,41 @@ impl Database {
         if count == 0 {
             self.save_index_run_summary(0, 0, 0, 0, 0, 0, 0).await?;
         }
+        Ok(())
+    }
+
+    async fn ensure_index_settings_columns(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(index_settings)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        let mut alter_statements = Vec::new();
+        if !columns.contains("semantic_search_enabled") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN semantic_search_enabled INTEGER NOT NULL DEFAULT 1",
+            );
+        }
+        if !columns.contains("semantic_weight") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN semantic_weight REAL NOT NULL DEFAULT 0.25",
+            );
+        }
+        if !columns.contains("semantic_threshold") {
+            alter_statements.push(
+                "ALTER TABLE index_settings ADD COLUMN semantic_threshold REAL NOT NULL DEFAULT 0.2",
+            );
+        }
+
+        for statement in alter_statements {
+            sqlx::query(statement).execute(&self.pool).await?;
+        }
+
         Ok(())
     }
 

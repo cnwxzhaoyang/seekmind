@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::docmind::models::{
     EmbeddingModelView, SemanticDebugHitView, SemanticDebugView, SemanticModelStatusView,
 };
-use crate::docmind::search::normalize_query;
+use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::storage::types::{ChunkRecord, ExtractedDocument};
 use crate::docmind::storage::Database;
 
@@ -563,7 +563,14 @@ pub async fn semantic_debug_report(
     limit: usize,
 ) -> Result<SemanticDebugView, String> {
     let model = load_default_model(database).await?;
+    let index_settings = database
+        .get_index_settings()
+        .await
+        .map_err(|error| error.to_string())?;
     let normalized_query = normalize_query(query).join(" ");
+    let rewritten_terms = rewrite_query_terms(query);
+    let rewritten_query = rewrite_search_text(query);
+    let query_rewrite_applied = !query.trim().is_empty() && !rewritten_query.trim().is_empty();
     let client = PythonSemanticClient::from_env();
     let query_status = match client.embedding_status(Some(&model.name)) {
         Ok(status) => status,
@@ -585,11 +592,11 @@ pub async fn semantic_debug_report(
     sync_model_runtime(database, &model.id, query_status.available, &query_status.message).await?;
     let model = load_default_model(database).await?;
 
-    let query_vectors = if normalized_query.trim().is_empty() || !model.available {
+    let query_vectors = if rewritten_query.trim().is_empty() || !model.available {
         Vec::new()
     } else {
         client
-            .embed_texts(&[normalized_query.clone()], Some(&model.name))
+            .embed_texts(&[rewritten_query.clone()], Some(&model.name))
             .map_err(|error| error.to_string())?
     };
     let query_vector = query_vectors.first().cloned().unwrap_or_default();
@@ -648,6 +655,9 @@ pub async fn semantic_debug_report(
     Ok(SemanticDebugView {
         query: query.to_string(),
         normalized_query,
+        rewritten_query,
+        rewritten_terms,
+        query_rewrite_applied,
         query_vector_dim,
         query_vector_ready,
         query_vector_norm,
@@ -655,6 +665,9 @@ pub async fn semantic_debug_report(
         sqlite_chunks,
         embedded_chunks,
         hit_count: hits.len(),
+        semantic_threshold: index_settings.semantic_threshold,
+        semantic_candidate_count: hits.len(),
+        semantic_filtered_count: 0,
         hits,
         index_status: meta.status,
         last_error: meta.last_error,

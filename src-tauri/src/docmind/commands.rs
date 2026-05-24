@@ -96,8 +96,8 @@ pub async fn get_search_debug_report(
     limit: usize,
     state: tauri::State<'_, Database>,
 ) -> Result<SearchDebugView, String> {
-    let hits = state
-        .search_documents(&query, limit)
+    let search_debug = state
+        .search_documents_debug(&query, limit)
         .await
         .map_err(|error| error.to_string())?;
     let (sqlite_documents, sqlite_chunks) = state
@@ -105,19 +105,31 @@ pub async fn get_search_debug_report(
         .await
         .map_err(|error| error.to_string())?;
     state
-        .record_search_history(&query, hits.len())
+        .record_search_history(&query, search_debug.hits.len())
         .await
         .map_err(|error| error.to_string())?;
+    let query_rewrite_applied = !query.trim().is_empty() && !search_debug.rewritten_query.trim().is_empty();
 
     Ok(SearchDebugView {
         query: query.clone(),
         normalized_terms: normalize_query(&query),
         normalized_search_text: normalize_search_text(&query),
+        rewritten_query: search_debug.rewritten_query,
+        rewritten_terms: search_debug.rewritten_terms,
+        query_rewrite_applied,
         sqlite_documents,
         sqlite_chunks,
         tantivy_documents: state.tantivy_document_count(),
-        hit_count: hits.len(),
-        hits,
+        semantic_enabled: search_debug.semantic_enabled,
+        semantic_weight: search_debug.semantic_weight,
+        semantic_threshold: search_debug.semantic_threshold,
+        keyword_hit_count: search_debug.keyword_hit_count,
+        semantic_hit_count: search_debug.semantic_hit_count,
+        semantic_candidate_count: search_debug.semantic_candidate_count,
+        semantic_filtered_count: search_debug.semantic_filtered_count,
+        search_mode: search_debug.search_mode,
+        hit_count: search_debug.hits.len(),
+        hits: search_debug.hits,
     })
 }
 
@@ -734,6 +746,9 @@ pub async fn get_index_settings(
         exclude_dirs: settings.exclude_dirs,
         exclude_exts: settings.exclude_exts,
         max_file_size_mb: settings.max_file_size_mb,
+        semantic_search_enabled: settings.semantic_search_enabled,
+        semantic_weight: settings.semantic_weight,
+        semantic_threshold: settings.semantic_threshold,
     })
 }
 
@@ -746,6 +761,9 @@ pub async fn save_index_settings(
         exclude_dirs: settings.exclude_dirs,
         exclude_exts: settings.exclude_exts,
         max_file_size_mb: settings.max_file_size_mb,
+        semantic_search_enabled: settings.semantic_search_enabled,
+        semantic_weight: settings.semantic_weight,
+        semantic_threshold: settings.semantic_threshold,
     };
     state
         .save_index_settings(&settings)

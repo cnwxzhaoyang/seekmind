@@ -20,12 +20,18 @@ const factoryDefaultSettings: IndexSettingsView = {
   exclude_dirs: ["node_modules", ".git", "target", "Library", "Caches", "Application Support"],
   exclude_exts: [],
   max_file_size_mb: 50,
+  semantic_search_enabled: true,
+  semantic_weight: 0.25,
+  semantic_threshold: 0.2,
 };
 
 const savedSettings = ref<IndexSettingsView | null>(null);
 const excludeDirsText = ref("");
 const excludeExtsText = ref("");
 const maxFileSizeMb = ref(50);
+const semanticSearchEnabled = ref(true);
+const semanticWeight = ref(0.25);
+const semanticThreshold = ref(0.2);
 const loading = ref(false);
 const saving = ref(false);
 const clearing = ref(false);
@@ -47,7 +53,10 @@ const hasChanges = computed(() => {
   return (
     normalize(excludeDirsText.value) !== savedSettings.value.exclude_dirs.join(",") ||
     normalize(excludeExtsText.value) !== savedSettings.value.exclude_exts.join(",") ||
-    Number(maxFileSizeMb.value) !== savedSettings.value.max_file_size_mb
+    Number(maxFileSizeMb.value) !== savedSettings.value.max_file_size_mb ||
+    Boolean(semanticSearchEnabled.value) !== savedSettings.value.semantic_search_enabled ||
+    Number(semanticWeight.value) !== savedSettings.value.semantic_weight ||
+    Number(semanticThreshold.value) !== savedSettings.value.semantic_threshold
   );
 });
 
@@ -66,6 +75,9 @@ const applySettings = (settings: IndexSettingsView) => {
   excludeDirsText.value = settings.exclude_dirs.join(", ");
   excludeExtsText.value = settings.exclude_exts.join(", ");
   maxFileSizeMb.value = settings.max_file_size_mb;
+  semanticSearchEnabled.value = settings.semantic_search_enabled;
+  semanticWeight.value = settings.semantic_weight;
+  semanticThreshold.value = settings.semantic_threshold;
 };
 
 const loadSettings = async () => {
@@ -93,6 +105,9 @@ const saveSettings = async () => {
     exclude_dirs: parseList(excludeDirsText.value),
     exclude_exts: parseList(excludeExtsText.value),
     max_file_size_mb: Math.max(1, Math.floor(Number(maxFileSizeMb.value) || 50)),
+    semantic_search_enabled: semanticSearchEnabled.value,
+    semantic_weight: Math.max(0, Math.min(1, Number(semanticWeight.value) || 0.25)),
+    semantic_threshold: Math.max(0, Math.min(1, Number(semanticThreshold.value) || 0.2)),
   };
 
   try {
@@ -222,6 +237,52 @@ onMounted(loadSettings);
               <div class="text-xs text-slate-500">{{ t("page.settings.label.currentStatus") }}</div>
               <div class="mt-2 text-sm font-medium text-slate-900">
                 {{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.semantic.title") }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.semantic.desc") }}</div>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900" />
+                {{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}
+              </label>
+            </div>
+
+            <div class="mt-4">
+              <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+                <span>{{ t("page.settings.semantic.weight") }}</span>
+                <span>{{ Math.round(semanticWeight * 100) }}%</span>
+              </div>
+              <input
+                v-model.number="semanticWeight"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                class="w-full accent-slate-900"
+              />
+            </div>
+
+            <div class="mt-4">
+              <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+                <span>{{ t("page.settings.semantic.threshold") }}</span>
+                <span>{{ Math.round(semanticThreshold * 100) }}%</span>
+              </div>
+              <input
+                v-model.number="semanticThreshold"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                class="w-full accent-slate-900"
+              />
+              <div class="mt-2 text-xs text-slate-500">
+                {{ t("page.settings.semantic.thresholdDesc") }}
               </div>
             </div>
           </div>

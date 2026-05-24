@@ -299,6 +299,9 @@ fn default_index_settings() -> IndexSettings {
         ],
         exclude_exts: Vec::new(),
         max_file_size_mb: 50,
+        semantic_search_enabled: true,
+        semantic_weight: 0.25,
+        semantic_threshold: 0.2,
     }
 }
 

@@ -71,13 +71,24 @@
       "indexedDocs": "已索引 {count} 个文档",
       "parserPython": "Python 解析",
       "parserRust": "Rust 回退",
+      "semanticHybrid": "混合检索",
+      "semanticFullText": "仅全文",
+      "semanticDisabled": "语义关闭",
+      "semanticWeight": "语义权重 {weight}%",
+      "semanticThreshold": "语义阈值 {threshold}%",
+      "queryRewrite": "查询改写",
+      "queryRewriteApplied": "已应用轻量改写",
+      "queryRewriteDisabled": "未启用改写",
+      "semanticCandidates": "候选 {count} 个",
+      "semanticFiltered": "过滤 {count} 个",
       "stats": {
         "foundDocs": "找到 {count} 个相关文档，共 {total} 个相关段落",
         "documents": "SQLite 文档 / 段落",
         "paragraphs": "Tantivy 文档",
         "trim": "摘要裁剪",
         "hitCount": "命中数量",
-        "normalizedQueryLabel": "归一化查询"
+        "normalizedQueryLabel": "归一化查询",
+        "semanticBreakdown": "全文 / 语义"
       },
       "section": {
         "recentSearch": "最近搜索",
@@ -250,6 +261,15 @@
     "settings": {
       "title": "设置",
       "subtitle": "配置索引排除规则、最大文件大小，并管理本地索引数据。",
+      "semantic": {
+        "title": "语义检索",
+        "desc": "开启后，搜索会同时使用全文和语义召回。",
+        "enabled": "已启用",
+        "disabled": "已关闭",
+        "weight": "语义权重",
+        "threshold": "语义阈值",
+        "thresholdDesc": "只有语义分数达到该阈值的候选才会参与最终排序。"
+      },
       "btn": {
         "reset": "恢复默认",
         "save": "保存设置",

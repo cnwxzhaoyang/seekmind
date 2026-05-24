@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import { CheckCircle2, Clock, Cpu, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
+import { CheckCircle2, Clock, Cpu, ExternalLink, FileText, Filter, FolderOpen, History, Search, Sparkles, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
@@ -12,6 +12,7 @@ const { t } = useI18n();
 import type {
   FavoriteView,
   IndexDirView,
+  IndexSettingsView,
   IndexStatusView,
   ParserRuntimeView,
   RecentDocumentView,
@@ -27,6 +28,7 @@ const results = ref<SearchResultView[]>([]);
 const debugReport = ref<SearchDebugView | null>(null);
 const status = ref<IndexStatusView | null>(null);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
+const indexSettings = ref<IndexSettingsView | null>(null);
 const quickDirs = ref<IndexDirView[]>([]);
 const searchHistory = ref<SearchHistoryView[]>([]);
 const recentDocuments = ref<RecentDocumentView[]>([]);
@@ -108,6 +110,10 @@ const loadParserRuntime = async () => {
   parserRuntime.value = await docmindApi.getParserRuntime();
 };
 
+const loadIndexSettings = async () => {
+  indexSettings.value = await docmindApi.getIndexSettings();
+};
+
 const loadQuickPanels = async () => {
   const [dirs, history, recent, favoriteList] = await Promise.all([
     docmindApi.listIndexDirs(),
@@ -148,6 +154,7 @@ const runSearch = async () => {
     expandedGroups.value = {};
     debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20);
     await loadQuickPanels();
+    await loadIndexSettings();
   } catch (error) {
     results.value = [];
     selectedId.value = "";
@@ -155,6 +162,7 @@ const runSearch = async () => {
     errorMessage.value = error instanceof Error ? error.message : t("page.appSearch.searchFailed");
     debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20).catch(() => null);
     await loadQuickPanels();
+    await loadIndexSettings();
   } finally {
     loading.value = false;
   }
@@ -212,7 +220,7 @@ const openLibrary = async () => {
 };
 
 onMounted(async () => {
-  await Promise.all([loadStatus(), loadParserRuntime(), loadQuickPanels(), runSearch()]);
+  await Promise.all([loadStatus(), loadParserRuntime(), loadIndexSettings(), loadQuickPanels(), runSearch()]);
 });
 
 watch(query, () => {
@@ -247,6 +255,16 @@ watch(
             <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
               <Cpu class="mr-1" :size="13" />
               {{ parserRuntime?.active === 'python' ? t("page.appSearch.parserPython") : t("page.appSearch.parserRust") }}
+            </DocMindBadge>
+            <DocMindBadge :tone="indexSettings?.semantic_search_enabled ? 'success' : 'default'">
+              <Sparkles class="mr-1" :size="13" />
+              {{ indexSettings?.semantic_search_enabled ? t("page.appSearch.semanticHybrid") : t("page.appSearch.semanticFullText") }}
+            </DocMindBadge>
+            <DocMindBadge tone="default">
+              {{ t("page.appSearch.semanticWeight", { weight: Math.round((indexSettings?.semantic_weight ?? 0.25) * 100) }) }}
+            </DocMindBadge>
+            <DocMindBadge tone="default">
+              {{ t("page.appSearch.semanticThreshold", { threshold: Math.round((indexSettings?.semantic_threshold ?? 0.2) * 100) }) }}
             </DocMindBadge>
           </div>
         </div>
@@ -283,6 +301,40 @@ watch(
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.hitCount") }}</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">{{ debugReport.hit_count }}</div>
+        </div>
+        <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.semanticBreakdown") }}</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">
+            {{ debugReport.keyword_hit_count }} / {{ debugReport.semantic_hit_count }}
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            {{ debugReport.search_mode === 'hybrid' ? t("page.appSearch.semanticHybrid") : t("page.appSearch.semanticFullText") }}
+            <span v-if="!debugReport.semantic_enabled">· {{ t("page.appSearch.semanticDisabled") }}</span>
+          </div>
+        </div>
+        <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.queryRewrite") }}</div>
+          <div class="mt-1 break-words text-sm font-semibold text-slate-900">
+            {{ debugReport.rewritten_query || t("common.none") }}
+          </div>
+          <div v-if="debugReport.rewritten_terms.length > 0" class="mt-1 break-words text-xs text-slate-500">
+            {{ debugReport.rewritten_terms.join(" · ") }}
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            {{ debugReport.query_rewrite_applied ? t("page.appSearch.queryRewriteApplied") : t("page.appSearch.queryRewriteDisabled") }}
+          </div>
+        </div>
+        <div class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.semanticThreshold") }}</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">
+            {{ Math.round((debugReport.semantic_threshold ?? 0.2) * 100) }}%
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            {{ t("page.appSearch.semanticCandidates", { count: debugReport.semantic_candidate_count }) }}
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            {{ t("page.appSearch.semanticFiltered", { count: debugReport.semantic_filtered_count }) }}
+          </div>
         </div>
         <div v-if="selected" class="rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("page.appSearch.stats.trim") }}</div>

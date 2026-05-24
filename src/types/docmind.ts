@@ -140,9 +140,20 @@ export interface SearchDebugView {
   query: string;
   normalized_terms: string[];
   normalized_search_text: string;
+  rewritten_query: string;
+  rewritten_terms: string[];
+  query_rewrite_applied: boolean;
   sqlite_documents: number;
   sqlite_chunks: number;
   tantivy_documents: number;
+  semantic_enabled: boolean;
+  semantic_weight: number;
+  semantic_threshold: number;
+  keyword_hit_count: number;
+  semantic_hit_count: number;
+  semantic_candidate_count: number;
+  semantic_filtered_count: number;
+  search_mode: string;
   hit_count: number;
   hits: SearchResultView[];
 }
@@ -176,6 +187,9 @@ export interface IndexSettingsView {
   exclude_dirs: string[];
   exclude_exts: string[];
   max_file_size_mb: number;
+  semantic_search_enabled: boolean;
+  semantic_weight: number;
+  semantic_threshold: number;
 }
 
 export interface EmbeddingModelView {

@@ -8,6 +8,47 @@ pub fn normalize_search_text(input: &str) -> String {
     tokenize_search_text(input).join(" ")
 }
 
+pub fn rewrite_query_terms(input: &str) -> Vec<String> {
+    let mut terms = tokenize_search_text(input);
+    let lower = input.to_lowercase();
+    let mut expanded = Vec::new();
+
+    if lower.contains("离线仓库") || lower.contains("offline") || lower.contains("repo") || lower.contains("repository") {
+        expanded.push("offline".to_string());
+        expanded.push("repo".to_string());
+        expanded.push("repository".to_string());
+        expanded.push("local repository".to_string());
+    }
+    if lower.contains("语义搜索") || lower.contains("semantic") || lower.contains("embedding") || lower.contains("向量") {
+        expanded.push("semantic search".to_string());
+        expanded.push("embedding".to_string());
+        expanded.push("vector".to_string());
+    }
+    if lower.contains("切片") || lower.contains("chunk") || lower.contains("chunks") {
+        expanded.push("chunk".to_string());
+        expanded.push("paragraph".to_string());
+        expanded.push("snippet".to_string());
+    }
+    if lower.contains("markdown") || lower == "md" || lower.contains(" md ") || lower.starts_with("md ") || lower.ends_with(" md") {
+        expanded.push("markdown".to_string());
+        expanded.push("md".to_string());
+    }
+    if lower.contains("docx") || lower.contains("word") {
+        expanded.push("docx".to_string());
+        expanded.push("word".to_string());
+    }
+    if lower.contains("html") {
+        expanded.push("html".to_string());
+    }
+
+    terms.append(&mut expanded);
+    dedupe_terms(terms)
+}
+
+pub fn rewrite_search_text(input: &str) -> String {
+    rewrite_query_terms(input).join(" ")
+}
+
 fn tokenize_search_text(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut ascii = String::new();
@@ -57,7 +98,20 @@ fn tokenize_search_text(input: &str) -> Vec<String> {
     flush_ascii(&mut ascii, &mut tokens);
     flush_chinese(&mut chinese, &mut tokens);
 
-    tokens
+    dedupe_terms(tokens)
+}
+
+fn dedupe_terms(terms: Vec<String>) -> Vec<String> {
+    let mut deduped = Vec::new();
+    for term in terms {
+        if term.trim().is_empty() {
+            continue;
+        }
+        if !deduped.iter().any(|existing| existing == &term) {
+            deduped.push(term);
+        }
+    }
+    deduped
 }
 
 fn is_han_character(ch: char) -> bool {

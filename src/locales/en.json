@@ -71,13 +71,24 @@
       "indexedDocs": "{count} documents indexed",
       "parserPython": "Python Parser",
       "parserRust": "Rust Fallback",
+      "semanticHybrid": "Hybrid Search",
+      "semanticFullText": "Full Text Only",
+      "semanticDisabled": "Semantic Off",
+      "semanticWeight": "Semantic Weight {weight}%",
+      "semanticThreshold": "Semantic Threshold {threshold}%",
+      "queryRewrite": "Query Rewrite",
+      "queryRewriteApplied": "Light rewrite applied",
+      "queryRewriteDisabled": "Rewrite disabled",
+      "semanticCandidates": "Candidates {count}",
+      "semanticFiltered": "Filtered {count}",
       "stats": {
         "foundDocs": "Found {count} related documents, {total} related paragraphs",
         "documents": "SQLite Docs / Chunks",
         "paragraphs": "Tantivy Docs",
         "trim": "Snippet Trim",
         "hitCount": "Hit Count",
-        "normalizedQueryLabel": "Normalized Query"
+        "normalizedQueryLabel": "Normalized Query",
+        "semanticBreakdown": "Full / Semantic"
       },
       "section": {
         "recentSearch": "Recent Searches",
@@ -254,6 +265,15 @@
     "settings": {
       "title": "Settings",
       "subtitle": "Configure index exclusion rules, max file size, and manage local index data.",
+      "semantic": {
+        "title": "Semantic Search",
+        "desc": "When enabled, search will use both full-text and semantic recall.",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "weight": "Semantic Weight",
+        "threshold": "Semantic Threshold",
+        "thresholdDesc": "Only candidates whose semantic score reaches this threshold will enter final ranking."
+      },
       "btn": {
         "reset": "Reset to Defaults",
         "save": "Save",

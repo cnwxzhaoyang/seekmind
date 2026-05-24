@@ -56,4 +56,7 @@ pub struct IndexSettings {
     pub exclude_dirs: Vec<String>,
     pub exclude_exts: Vec<String>,
     pub max_file_size_mb: u64,
+    pub semantic_search_enabled: bool,
+    pub semantic_weight: f32,
+    pub semantic_threshold: f32,
 }
