@@ -140,6 +140,20 @@ src-tauri/target/release/bundle/macos/
 - 如果是 Apple Silicon 机器，macOS 对未签名应用的安装限制会更明显，ad-hoc 仍可能需要在“隐私与安全性”里手动放行
 - 后续如果接入正式 Apple 开发者证书，再把这个环境变量替换成真实 signing identity 即可
 
+如果你要打包“完整 app”，也就是把 Python 解析器一起冻结成 sidecar 再打包，可以用：
+
+```bash
+npm run tauri:build:macos:sidecar
+```
+
+这条命令会先：
+
+- 用 PyInstaller 把 `parser/docmind_parser/__main__.py` 冻结成独立可执行文件
+- 放进 `src-tauri/app-resources/`
+- 再执行 Tauri macOS 构建
+
+因此产物里的 app 会优先使用冻结后的 parser sidecar；如果没有侧边可执行文件，运行时仍会回落到开发态的 Python 脚本链路。
+
 ### 6. 如果要清空并重新启动开发环境
 
 ```bash

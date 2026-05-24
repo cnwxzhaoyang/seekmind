@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use crate::docmind::sidecar::resolve_bundled_sidecar;
+
 use super::types::{
     ParsedDocument, ParserError, ParserOptions, ParserRequest, ParserResponse, ParserStreamEvent,
 };
@@ -16,6 +18,7 @@ use super::types::{
 pub struct PythonParserClient {
     python_bin: String,
     script_path: PathBuf,
+    bundled_sidecar: Option<PathBuf>,
     timeout: Duration,
 }
 
@@ -50,6 +53,18 @@ impl PythonParserClient {
         let script_path = std::env::var("DOCMIND_PARSER_SCRIPT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("parser/docmind_parser/__main__.py"));
+        let bundled_sidecar = std::env::var("DOCMIND_PARSER_BIN")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .and_then(|value| {
+                let candidate = PathBuf::from(value);
+                if candidate.exists() {
+                    Some(candidate)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| resolve_bundled_sidecar("docmind-parser").filter(|path| path.exists()));
         let timeout_ms = std::env::var("DOCMIND_PARSER_TIMEOUT_MS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
@@ -58,20 +73,19 @@ impl PythonParserClient {
         Self {
             python_bin,
             script_path,
+            bundled_sidecar,
             timeout: Duration::from_millis(timeout_ms),
         }
     }
 
     pub fn is_configured(&self) -> bool {
-        self.resolve_script_path().exists()
+        self.bundled_sidecar.is_some() || self.resolve_script_path().exists()
     }
 
     pub fn parse_document(&self, path: &Path) -> Result<ParsedDocument, ParserClientError> {
         if !self.is_configured() {
             return Err(ParserClientError::NotConfigured);
         }
-
-        let script_path = self.resolve_script_path();
 
         let request = ParserRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -83,8 +97,7 @@ impl PythonParserClient {
         let payload = serde_json::to_vec(&request)
             .map_err(|error| ParserClientError::Io(error.to_string()))?;
 
-        let mut child = Command::new(&self.python_bin)
-            .arg(&script_path)
+        let mut child = self.spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -167,8 +180,6 @@ impl PythonParserClient {
             return Err(ParserClientError::NotConfigured);
         }
 
-        let script_path = self.resolve_script_path();
-
         let request = ParserRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             command: "parse_document_stream".to_string(),
@@ -179,8 +190,7 @@ impl PythonParserClient {
         let payload = serde_json::to_vec(&request)
             .map_err(|error| ParserClientError::Io(error.to_string()))?;
 
-        let mut child = Command::new(&self.python_bin)
-            .arg(&script_path)
+        let mut child = self.spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -334,10 +344,31 @@ impl PythonParserClient {
 
         self.script_path.clone()
     }
+
+    fn spawn_command(&self) -> Result<Command, ParserClientError> {
+        if let Some(path) = &self.bundled_sidecar {
+            return Ok(Command::new(path));
+        }
+
+        let script_path = self.resolve_script_path();
+        if !script_path.exists() {
+            return Err(ParserClientError::NotConfigured);
+        }
+
+        let mut command = Command::new(&self.python_bin);
+        command.arg(script_path);
+        Ok(command)
+    }
 }
 
 pub fn python_parser_enabled() -> bool {
-    matches!(std::env::var("DOCMIND_USE_PY_PARSER"), Ok(value) if value != "0")
+    match std::env::var("DOCMIND_USE_PY_PARSER") {
+        Ok(value) => {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized != "0" && normalized != "false"
+        }
+        Err(_) => PythonParserClient::from_env().is_configured(),
+    }
 }
 
 #[allow(dead_code)]

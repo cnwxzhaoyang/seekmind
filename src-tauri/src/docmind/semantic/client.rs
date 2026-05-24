@@ -9,11 +9,13 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::docmind::parser::types::ParserStreamEvent;
+use crate::docmind::sidecar::resolve_bundled_sidecar;
 
 #[derive(Debug, Clone)]
 pub struct PythonSemanticClient {
     python_bin: String,
     script_path: PathBuf,
+    bundled_sidecar: Option<PathBuf>,
     timeout: Duration,
 }
 
@@ -92,6 +94,18 @@ impl PythonSemanticClient {
         let script_path = std::env::var("DOCMIND_PARSER_SCRIPT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("parser/docmind_parser/__main__.py"));
+        let bundled_sidecar = std::env::var("DOCMIND_PARSER_BIN")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .and_then(|value| {
+                let candidate = PathBuf::from(value);
+                if candidate.exists() {
+                    Some(candidate)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| resolve_bundled_sidecar("docmind-parser").filter(|path| path.exists()));
         let timeout_ms = std::env::var("DOCMIND_SEMANTIC_TIMEOUT_MS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
@@ -105,12 +119,13 @@ impl PythonSemanticClient {
         Self {
             python_bin,
             script_path,
+            bundled_sidecar,
             timeout: Duration::from_millis(timeout_ms),
         }
     }
 
     pub fn is_configured(&self) -> bool {
-        self.resolve_script_path().exists()
+        self.bundled_sidecar.is_some() || self.resolve_script_path().exists()
     }
 
     pub fn embedding_status(&self, model_name: Option<&str>) -> Result<SemanticStatus, SemanticClientError> {
@@ -153,7 +168,6 @@ impl PythonSemanticClient {
             return Err(SemanticClientError::NotConfigured);
         }
 
-        let script_path = self.resolve_script_path();
         let request = SemanticRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             command: "embed_texts_stream".to_string(),
@@ -168,8 +182,7 @@ impl PythonSemanticClient {
         };
 
         let payload = serde_json::to_vec(&request).map_err(|error| SemanticClientError::Io(error.to_string()))?;
-        let mut child = Command::new(&self.python_bin)
-            .arg(&script_path)
+        let mut child = self.spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -309,7 +322,6 @@ impl PythonSemanticClient {
             return Err(SemanticClientError::NotConfigured);
         }
 
-        let script_path = self.resolve_script_path();
         let request = SemanticRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             command: command.to_string(),
@@ -324,8 +336,7 @@ impl PythonSemanticClient {
         };
 
         let payload = serde_json::to_vec(&request).map_err(|error| SemanticClientError::Io(error.to_string()))?;
-        let mut child = Command::new(&self.python_bin)
-            .arg(&script_path)
+        let mut child = self.spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -402,5 +413,20 @@ impl PythonSemanticClient {
         }
 
         self.script_path.clone()
+    }
+
+    fn spawn_command(&self) -> Result<Command, SemanticClientError> {
+        if let Some(path) = &self.bundled_sidecar {
+            return Ok(Command::new(path));
+        }
+
+        let script_path = self.resolve_script_path();
+        if !script_path.exists() {
+            return Err(SemanticClientError::NotConfigured);
+        }
+
+        let mut command = Command::new(&self.python_bin);
+        command.arg(script_path);
+        Ok(command)
     }
 }
