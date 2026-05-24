@@ -2,6 +2,7 @@ mod docmind;
 
 use std::fs;
 
+use tauri::Manager;
 use tauri_plugin_dialog::init as dialog_init;
 use tauri_plugin_opener::init as opener_init;
 
@@ -28,6 +29,16 @@ pub fn run() {
         .manage(database)
         .plugin(dialog_init())
         .plugin(opener_init())
+        .setup(|app| {
+            #[cfg(debug_assertions)]
+            if std::env::var("DOCMIND_OPEN_DEVTOOLS").ok().as_deref() == Some("1") {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                }
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             crate::docmind::commands::list_index_dirs,
             crate::docmind::commands::search_documents,
@@ -46,6 +57,7 @@ pub fn run() {
             crate::docmind::commands::refresh_index,
             crate::docmind::commands::refresh_index_dir,
             crate::docmind::commands::add_index_dir,
+            crate::docmind::commands::import_paths,
             crate::docmind::commands::remove_index_dir,
             crate::docmind::commands::set_index_dir_enabled,
             crate::docmind::commands::save_index_settings,

@@ -79,6 +79,10 @@ pub fn snapshot_supported_file(
     })
 }
 
+pub fn is_supported_document_path(path: &Path, settings: &IndexSettings) -> bool {
+    path.is_file() && is_supported_file(path, settings)
+}
+
 #[allow(dead_code)]
 pub fn extract_document(file: &DiscoveredFile) -> Result<ExtractedDocument, String> {
     extract_document_at(&file.dir_path, &file.path)

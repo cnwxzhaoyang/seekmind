@@ -10,6 +10,22 @@ pub struct IndexDirView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ImportedPathView {
+    pub path: String,
+    pub dir_path: String,
+    pub is_virtual: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportPathsView {
+    pub added_dirs: Vec<String>,
+    pub imported_files: Vec<ImportedPathView>,
+    pub virtual_dir: String,
+    pub skipped: Vec<String>,
+    pub unsupported: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct HighlightSpan {
     pub start: usize,
     pub end: usize,

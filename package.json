@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:browser": "vite --host 127.0.0.1 --port 5173 --open",
     "tauri:dev": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" tauri dev",
+    "tauri:dev:debug": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" DOCMIND_OPEN_DEVTOOLS=1 tauri dev",
     "tauri:dev:trace": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" DOCMIND_TRACE_INDEXER=1 tauri dev",
     "tauri:dev:fresh": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" tauri dev -- --reset-local-storage",
     "tauri:dev:fresh:trace": "DOCMIND_USE_PY_PARSER=1 DOCMIND_FASTEMBED_CACHE_DIR=\"$PWD/.docmind-cache/fastembed\" DOCMIND_TRACE_INDEXER=1 tauri dev -- --reset-local-storage",

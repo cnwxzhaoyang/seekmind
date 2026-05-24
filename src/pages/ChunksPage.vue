@@ -6,7 +6,9 @@ import { Cpu, FileText, FolderOpen, RefreshCw } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
+import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { useIndexDirTree } from "../composables/useIndexDirTree";
 import type {
   ChunkView,
   DocumentRefreshProgressView,
@@ -43,6 +45,12 @@ const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
 const refreshJobPaths = new Map<string, string>();
 const version = "v1.0.2";
 let unlistenRefreshProgress: null | (() => void) = null;
+
+const {
+  visibleRows: visibleDirRows,
+  expandAncestors: expandDirAncestors,
+  setExpanded: setDirExpanded,
+} = useIndexDirTree(dirs);
 
 const currentDocument = computed(
   () => documents.value.find((item) => item.path === selectedDocPath.value) ?? null,
@@ -358,6 +366,8 @@ const syncSelection = async () => {
     selectedDirPath.value =
       routePath || dirs.value.find((dir) => dir.enabled)?.path || dirs.value[0]?.path || "";
 
+    expandDirAncestors(selectedDirPath.value);
+
     await loadDocuments();
 
     const targetPath = typeof route.query.path === "string" ? route.query.path : "";
@@ -375,12 +385,19 @@ const syncSelection = async () => {
 
 const selectDir = async (path: string) => {
   selectedDirPath.value = path;
+  expandDirAncestors(path);
   selectedDocPath.value = "";
   chunks.value = [];
   docFilter.value = "";
   await loadDocuments();
   selectedDocPath.value = documents.value[0]?.path ?? "";
   await loadChunks();
+  if (selectedDocPath.value) {
+    void router.replace({ query: { ...route.query, path: selectedDocPath.value } });
+  } else {
+    const { path: _path, ...nextQuery } = route.query;
+    void router.replace({ query: nextQuery });
+  }
 };
 
 const selectDoc = async (path: string) => {
@@ -500,8 +517,8 @@ watch(
     </div>
 
     <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(320px,0.95fr)_minmax(380px,1.05fr)] gap-0">
-      <section class="min-h-0 overflow-y-auto border-r border-slate-200 bg-white px-3 py-3">
-        <div class="mb-3 flex items-center justify-between">
+      <section class="min-h-0 flex flex-col overflow-hidden border-r border-slate-200 bg-white px-3 py-3">
+        <div class="shrink-0 mb-3 flex items-center justify-between">
           <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.indexDirs") }}</div>
           <DocMindBadge tone="default">
             <FolderOpen class="mr-1" :size="13" />
@@ -509,22 +526,38 @@ watch(
           </DocMindBadge>
         </div>
 
-        <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">{{ t("page.chunks.empty.dirs") }}</div>
+        <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">{{ t("page.chunks.empty.dirs") }}</div>
 
-        <div v-else class="space-y-1">
-          <button
-            v-for="dir in dirs"
-            :key="dir.path"
-            class="w-full rounded-md border px-2.5 py-2 text-left transition"
-            :class="selectedDirPath === dir.path ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
-            @click="selectDir(dir.path)"
+          <div v-else-if="visibleDirRows.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+            {{ t("page.chunks.empty.dirs") }}
+          </div>
+
+          <DocMindIndexTree
+            v-else
+            :rows="visibleDirRows"
+            :selected-path="selectedDirPath"
+            :empty-text="t('page.chunks.empty.dirs')"
+            :path-tooltip="true"
+            :virtual-label="t('common.virtualDir')"
+            :expand-title="t('sidebar.expand')"
+            :collapse-title="t('sidebar.collapse')"
+            density="normal"
+            @node-select="selectDir"
+            @toggle="setDirExpanded"
           >
-            <div class="truncate text-sm font-medium text-slate-950">{{ dir.path }}</div>
-            <div class="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-              <span>{{ t("page.chunks.docStats", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</span>
-              <span>{{ dir.enabled ? t("page.chunks.status.enabled") : t("page.chunks.status.disabled") }}</span>
-            </div>
-          </button>
+            <template #meta="{ row }">
+              {{ t("page.chunks.docStats", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
+            </template>
+            <template #status="{ row }">
+              <span
+                class="rounded-full px-1.5 py-0.5 text-[10px]"
+                :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+              >
+                {{ row.dir.enabled ? t("page.chunks.status.enabled") : t("page.chunks.status.disabled") }}
+              </span>
+            </template>
+          </DocMindIndexTree>
         </div>
       </section>
 

@@ -4,7 +4,9 @@ import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Loader2, RefreshCw, FolderOpen, Database, Cpu } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
+import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import type {
   FailedFileView,
@@ -29,6 +31,8 @@ let pollTimer: number | null = null;
 const indexRefreshJobResolvers = new Map<string, (payload: IndexRefreshProgressView) => void>();
 const indexRefreshJobBufferedEvents = new Map<string, IndexRefreshProgressView>();
 let unlistenIndexRefreshProgress: null | (() => void) = null;
+
+const { visibleRows: visibleDirRows } = useIndexDirTree(dirs);
 
 const failedGroups = computed(() => {
   const groups = new Map<string, FailedFileView[]>();
@@ -430,21 +434,28 @@ onBeforeUnmount(() => {
         <div v-if="dirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
           {{ t("page.status.emptyDirs") }}
         </div>
-        <div v-else class="space-y-2">
-          <div
-            v-for="dir in dirs"
-            :key="dir.path"
-            class="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
-          >
-            <div class="min-w-0">
-              <div class="truncate text-sm font-medium text-slate-950">{{ dir.path }}</div>
-              <div class="mt-1 text-[11px] text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
-            </div>
-            <DocMindBadge :tone="dir.enabled ? 'success' : 'default'">
-              {{ dir.enabled ? t("common.enabled") : t("common.disabled") }}
+        <DocMindIndexTree
+          v-else
+          :rows="visibleDirRows"
+          :selected-path="''"
+          :path-tooltip="true"
+          :selectable="false"
+          :virtual-label="t('common.virtualDir')"
+          :expand-title="t('sidebar.expand')"
+          :collapse-title="t('sidebar.collapse')"
+          density="compact"
+        >
+          <template #meta="{ row }">
+            <span class="truncate">
+              {{ t("page.chunks.dirDocs", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
+            </span>
+          </template>
+          <template #status="{ row }">
+            <DocMindBadge :tone="row.dir.enabled ? 'success' : 'default'">
+              {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
             </DocMindBadge>
-          </div>
-        </div>
+          </template>
+        </DocMindIndexTree>
       </div>
 
       <div v-if="errorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-xs text-red-700">

@@ -8,6 +8,8 @@
     "confirm": "确认",
     "clear": "清空",
     "refresh": "刷新",
+    "expand": "展开",
+    "collapse": "收起",
     "pause": "暂停",
     "resume": "恢复",
     "rebuild": "重建",
@@ -24,6 +26,7 @@
     "unknown": "未知",
     "available": "可用",
     "unavailable": "不可用",
+    "virtualDir": "虚拟目录",
     "of": "·"
   },
 
@@ -53,6 +56,8 @@
     "library": "文档目录",
     "status": "索引状态",
     "settings": "设置",
+    "expand": "展开侧栏",
+    "collapse": "收起侧栏",
     "localFirst": "本地优先",
     "localFirstDesc": "文档只在当前 Mac 上解析和索引，不上传云端。"
   },
@@ -173,6 +178,10 @@
       "btn": {
         "addDir": "添加目录"
       },
+      "virtualDir": "虚拟目录",
+      "dropHint": "拖入目录或支持的文档到这里，系统会自动归类并开始导入。",
+      "dropActive": "松开即可导入目录或文档",
+      "importing": "正在导入",
       "dialogTitle": "选择要索引的目录",
       "taskTitle": "当前索引任务",
       "taskSyncing": "正在同步索引状态",
@@ -186,13 +195,20 @@
         "reindexed": "已重新索引: {path}",
         "disabled": "已禁用: {path}",
         "enabled": "已启用: {path}",
-        "deleted": "已删除目录: {path}"
+        "deleted": "已删除目录: {path}",
+        "importing": "正在接收拖入内容，共 {count} 项",
+        "importedDirs": "目录 {count}",
+        "importedFiles": "文档 {count}",
+        "virtualDir": "虚拟目录 {path}",
+        "unsupported": "不支持 {count} 项",
+        "skipped": "跳过 {count} 项"
       },
       "error": {
         "addDir": "添加目录失败",
         "rebuild": "目录重建失败",
         "deleteDir": "删除目录失败",
-        "toggleDir": "目录状态更新失败"
+        "toggleDir": "目录状态更新失败",
+        "importPaths": "导入拖入内容失败"
       },
       "status": {
         "indexing": "索引中",

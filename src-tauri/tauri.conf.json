@@ -24,7 +24,7 @@
         "alwaysOnTop": false,
         "center": true,
         "visible": true,
-        "devtools": false,
+        "devtools": true,
         "skipTaskbar": false
       }
     ],

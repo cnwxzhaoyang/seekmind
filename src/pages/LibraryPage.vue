@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight } from "lucide-vue-next";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight, UploadCloud } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
+import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
-import type { IndexDirView, IndexRefreshProgressView, IndexStatusView } from "../types/docmind";
+import type {
+  DocumentRefreshProgressView,
+  IndexDirView,
+  IndexRefreshProgressView,
+  IndexStatusView,
+  ImportedPathView,
+  ImportPathsView,
+} from "../types/docmind";
 
 const { t } = useI18n();
 
@@ -15,12 +24,22 @@ const dirs = ref<IndexDirView[]>([]);
 const status = ref<IndexStatusView | null>(null);
 const loading = ref(false);
 const refreshing = ref(false);
+const importing = ref(false);
+const dragActive = ref(false);
 const busyPath = ref<string | null>(null);
 const errorMessage = ref("");
 const infoMessage = ref("");
 const refreshJobResolvers = new Map<string, (payload: IndexRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, IndexRefreshProgressView>();
+const documentRefreshResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
+const documentRefreshBufferedEvents = new Map<string, DocumentRefreshProgressView>();
 let unlistenIndexRefreshProgress: null | (() => void) = null;
+let unlistenDocumentRefreshProgress: null | (() => void) = null;
+let unlistenFileDrop: null | (() => void) = null;
+
+const {
+  visibleRows: visibleDirRows,
+} = useIndexDirTree(dirs);
 
 const taskDisplayState = computed(() => {
   const task = status.value?.current_task;
@@ -72,6 +91,18 @@ const waitForIndexRefreshJob = (jobId: string) => {
   });
 };
 
+const waitForDocumentRefreshJob = (jobId: string) => {
+  const buffered = documentRefreshBufferedEvents.get(jobId);
+  if (buffered) {
+    documentRefreshBufferedEvents.delete(jobId);
+    return Promise.resolve(buffered);
+  }
+
+  return new Promise<DocumentRefreshProgressView>((resolve) => {
+    documentRefreshResolvers.set(jobId, resolve);
+  });
+};
+
 const installIndexRefreshListener = async () => {
   if (unlistenIndexRefreshProgress) {
     return;
@@ -90,11 +121,77 @@ const installIndexRefreshListener = async () => {
       } else if (payload.state !== "running") {
         refreshJobBufferedEvents.set(payload.job_id, payload);
       }
+
+      if (payload.state !== "running") {
+        void loadDirs();
+        void loadStatus();
+      }
     },
   );
 };
 
+const installDocumentRefreshListener = async () => {
+  if (unlistenDocumentRefreshProgress) {
+    return;
+  }
+
+  unlistenDocumentRefreshProgress = await listen<DocumentRefreshProgressView>(
+    "docmind:document-refresh-progress",
+    (event) => {
+      const payload = event.payload;
+      if (payload.state === "running") {
+        return;
+      }
+
+      const resolver = documentRefreshResolvers.get(payload.job_id);
+      if (resolver) {
+        documentRefreshResolvers.delete(payload.job_id);
+        resolver(payload);
+      } else {
+        documentRefreshBufferedEvents.set(payload.job_id, payload);
+      }
+    },
+  );
+};
+
+const installFileDropListener = async () => {
+  if (unlistenFileDrop) {
+    return;
+  }
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const webview = getCurrentWebview();
+  const unlisten = await webview.onDragDropEvent((event) => {
+    const payload = event.payload;
+
+    if (payload.type === "enter") {
+      dragActive.value = payload.paths.length > 0;
+      return;
+    }
+
+    if (payload.type === "over") {
+      dragActive.value = true;
+      return;
+    }
+
+    if (payload.type === "leave") {
+      dragActive.value = false;
+      return;
+    }
+
+    dragActive.value = false;
+    void importDroppedPaths(payload.paths);
+  });
+
+  unlistenFileDrop = unlisten;
+};
+
 void installIndexRefreshListener();
+void installDocumentRefreshListener();
+void installFileDropListener();
 
 const chooseAndAddDir = async () => {
   errorMessage.value = "";
@@ -207,11 +304,95 @@ const removeDir = async (path: string) => {
   }
 };
 
+const processImportedFiles = async (importedFiles: ImportedPathView[]) => {
+  const queued = importedFiles.filter((item) => item.dir_path !== "");
+  for (const file of queued) {
+    busyPath.value = file.dir_path;
+    try {
+      const started = await docmindApi.refreshDocument(file.path, file.dir_path);
+      const finished = await waitForDocumentRefreshJob(started.job_id);
+      if (finished.state === "failed") {
+        throw new Error(finished.message || t("page.library.error.rebuild"));
+      }
+    } finally {
+      busyPath.value = null;
+    }
+  }
+};
+
+const processImportedDirs = async (dirsToRefresh: string[]) => {
+  for (const path of dirsToRefresh) {
+    busyPath.value = path;
+    try {
+      const started = await docmindApi.refreshIndexDir(path);
+      const finished = await waitForIndexRefreshJob(started.job_id);
+      if (finished.state === "failed") {
+        throw new Error(finished.message || t("page.library.error.rebuild"));
+      }
+    } finally {
+      busyPath.value = null;
+    }
+  }
+};
+
+const importDroppedPaths = async (paths: string[]) => {
+  const normalized = paths.map((path) => path.trim()).filter((path) => path.length > 0);
+  if (normalized.length === 0) {
+    return;
+  }
+
+  importing.value = true;
+  errorMessage.value = "";
+  infoMessage.value = "";
+
+  try {
+    const result: ImportPathsView = await docmindApi.importPaths(normalized);
+    const dirsToRefresh = result.added_dirs.filter((path) => path !== result.virtual_dir);
+    if (dirsToRefresh.length > 0) {
+      infoMessage.value = t("page.library.info.importing", { count: normalized.length });
+      await processImportedDirs(dirsToRefresh);
+    }
+
+    const filesToRefresh = result.imported_files.filter(
+      (file) => file.is_virtual || !dirsToRefresh.includes(file.dir_path),
+    );
+    if (filesToRefresh.length > 0) {
+      await processImportedFiles(filesToRefresh);
+    }
+
+    const summaryParts = [
+      t("page.library.info.importedDirs", { count: result.added_dirs.length }),
+      t("page.library.info.importedFiles", { count: result.imported_files.length }),
+    ];
+    if (result.virtual_dir) {
+      summaryParts.push(t("page.library.info.virtualDir", { path: result.virtual_dir }));
+    }
+    if (result.unsupported.length > 0) {
+      summaryParts.push(t("page.library.info.unsupported", { count: result.unsupported.length }));
+    }
+    if (result.skipped.length > 0) {
+      summaryParts.push(t("page.library.info.skipped", { count: result.skipped.length }));
+    }
+    infoMessage.value = summaryParts.join(" · ");
+    await loadDirs();
+    await loadStatus();
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, t("page.library.error.importPaths"));
+    console.error("[DocMind] importPaths failed", error);
+  } finally {
+    importing.value = false;
+    dragActive.value = false;
+    busyPath.value = null;
+  }
+};
+
 onMounted(loadDirs);
 onMounted(loadStatus);
 
 onMounted(() => {
   void installIndexRefreshListener();
+  void installDocumentRefreshListener();
+  void installFileDropListener();
 });
 
 onBeforeUnmount(() => {
@@ -219,8 +400,18 @@ onBeforeUnmount(() => {
     unlistenIndexRefreshProgress();
     unlistenIndexRefreshProgress = null;
   }
+  if (unlistenDocumentRefreshProgress) {
+    unlistenDocumentRefreshProgress();
+    unlistenDocumentRefreshProgress = null;
+  }
+  if (unlistenFileDrop) {
+    unlistenFileDrop();
+    unlistenFileDrop = null;
+  }
   refreshJobResolvers.clear();
   refreshJobBufferedEvents.clear();
+  documentRefreshResolvers.clear();
+  documentRefreshBufferedEvents.clear();
 });
 </script>
 
@@ -233,7 +424,7 @@ onBeforeUnmount(() => {
       </div>
       <button
         class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-        :disabled="refreshing"
+        :disabled="refreshing || importing"
         @click="chooseAndAddDir"
       >
         <FolderPlus :size="16" />
@@ -241,7 +432,25 @@ onBeforeUnmount(() => {
       </button>
     </header>
 
-    <main class="min-h-0 flex-1 overflow-y-auto p-4">
+    <main class="relative min-h-0 flex-1 overflow-y-auto p-4">
+      <div
+        class="mb-4 rounded-md border border-dashed px-4 py-3 text-xs transition"
+        :class="dragActive
+          ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+          : 'border-slate-200 bg-white text-slate-400'"
+      >
+        <div class="flex items-center gap-2">
+          <UploadCloud :size="14" />
+          <span class="font-medium">
+            {{ dragActive ? t("page.library.dropActive") : t("page.library.dropHint") }}
+          </span>
+          <span v-if="importing" class="ml-auto inline-flex items-center gap-1 text-slate-500">
+            <Loader2 :size="12" class="animate-spin" />
+            {{ t("page.library.importing") }}
+          </span>
+        </div>
+      </div>
+
       <DocMindTaskCard
         :task="status?.current_task ?? null"
         :title="t('page.library.taskTitle')"
@@ -277,52 +486,59 @@ onBeforeUnmount(() => {
         <div class="mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
       </div>
 
-      <div v-else class="space-y-2">
-        <div
-          v-for="dir in dirs"
-          :key="dir.path"
-          class="rounded-md border border-slate-200 bg-white px-3 py-3"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-sm font-medium text-slate-950">{{ dir.path }}</div>
-              <div class="mt-1 text-[11px] text-slate-500">{{ t("page.chunks.dirDocs", { docs: dir.docs, chunks: dir.chunks.toLocaleString() }) }}</div>
-              <div class="mt-2 inline-flex items-center gap-2 text-[11px] text-slate-500">
-                <span>{{ dir.enabled ? t("common.enabled") : t("common.disabled") }}</span>
-                <span>·</span>
-                <span>{{ dir.status }}</span>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-1.5">
-              <button
-                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="busyPath === dir.path"
-                :title="t('page.library.status.indexing')"
-                @click="refreshSingleDir(dir.path)"
-              >
-                <RefreshCw :size="14" />
-              </button>
-              <button
-                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="busyPath === dir.path"
-                :title="dir.enabled ? t('common.disabled') : t('common.enabled')"
-                @click="toggleDir(dir)"
-              >
-                <component :is="dir.enabled ? ToggleRight : ToggleLeft" :size="14" />
-              </button>
-              <button
-                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="busyPath === dir.path"
-                title="删除"
-                @click="removeDir(dir.path)"
-              >
-                <X :size="14" />
-              </button>
-            </div>
+      <DocMindIndexTree
+        v-else
+        :rows="visibleDirRows"
+        :selected-path="''"
+        :path-tooltip="true"
+        :selectable="false"
+        :virtual-label="t('common.virtualDir')"
+        :expand-title="t('sidebar.expand')"
+        :collapse-title="t('sidebar.collapse')"
+        density="compact"
+      >
+        <template #meta="{ row }">
+          <span class="truncate">{{ t("page.chunks.dirDocs", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}</span>
+        </template>
+        <template #status="{ row }">
+          <div class="flex items-center gap-1.5">
+            <span
+              class="rounded-full px-1.5 py-0.5 text-[10px]"
+              :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+            >
+              {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
+            </span>
           </div>
-        </div>
-      </div>
+        </template>
+        <template #actions="{ row }">
+          <div class="flex items-center gap-1.5">
+            <button
+              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="busyPath === row.dir.path"
+              :title="t('page.library.status.indexing')"
+              @click.stop="refreshSingleDir(row.dir.path)"
+            >
+              <RefreshCw :size="14" />
+            </button>
+            <button
+              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="busyPath === row.dir.path"
+              :title="row.dir.enabled ? t('common.disabled') : t('common.enabled')"
+              @click.stop="toggleDir(row.dir)"
+            >
+              <component :is="row.dir.enabled ? ToggleRight : ToggleLeft" :size="14" />
+            </button>
+            <button
+              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="busyPath === row.dir.path"
+              :title="t('common.clear')"
+              @click.stop="removeDir(row.dir.path)"
+            >
+              <X :size="14" />
+            </button>
+          </div>
+        </template>
+      </DocMindIndexTree>
     </main>
   </div>
 </template>

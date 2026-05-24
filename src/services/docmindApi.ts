@@ -17,6 +17,7 @@ import type {
   SemanticDebugView,
   SemanticModelStatusView,
   IndexRefreshStartView,
+  ImportPathsView,
 } from "../types/docmind";
 
 export const formatDocmindError = (error: unknown, fallback: string) => {
@@ -74,6 +75,8 @@ export const docmindApi = {
   refreshIndex: () => invoke<IndexRefreshStartView>("refresh_index"),
   refreshIndexDir: (path: string) =>
     invoke<IndexRefreshStartView>("refresh_index_dir", { path }),
+  importPaths: (paths: string[]) =>
+    invoke<ImportPathsView>("import_paths", { paths }),
   addIndexDir: (path: string) => invoke<void>("add_index_dir", { path }),
   removeIndexDir: (path: string) => invoke<void>("remove_index_dir", { path }),
   setIndexDirEnabled: (path: string, enabled: boolean) =>

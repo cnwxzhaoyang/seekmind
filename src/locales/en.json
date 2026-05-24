@@ -8,6 +8,8 @@
     "confirm": "Confirm",
     "clear": "Clear",
     "refresh": "Refresh",
+    "expand": "Expand",
+    "collapse": "Collapse",
     "pause": "Pause",
     "resume": "Resume",
     "rebuild": "Rebuild",
@@ -24,6 +26,7 @@
     "unknown": "Unknown",
     "available": "Available",
     "unavailable": "Unavailable",
+    "virtualDir": "Virtual Directory",
     "of": "·"
   },
 
@@ -53,6 +56,8 @@
     "library": "Index Dirs",
     "status": "Index Status",
     "settings": "Settings",
+    "expand": "Expand Sidebar",
+    "collapse": "Collapse Sidebar",
     "localFirst": "Local First",
     "localFirstDesc": "Documents are parsed and indexed locally on your Mac. Nothing is uploaded to the cloud."
   },
@@ -177,6 +182,10 @@
       "btn": {
         "addDir": "Add Directory"
       },
+      "virtualDir": "Virtual Directory",
+      "dropHint": "Drop directories or supported documents here. docMind will classify and import them automatically.",
+      "dropActive": "Release to import directories or documents",
+      "importing": "Importing",
       "dialogTitle": "Select a directory to index",
       "taskTitle": "Current Index Task",
       "taskSyncing": "Syncing index status",
@@ -190,13 +199,20 @@
         "reindexed": "Re-indexed: {path}",
         "disabled": "Disabled: {path}",
         "enabled": "Enabled: {path}",
-        "deleted": "Deleted: {path}"
+        "deleted": "Deleted: {path}",
+        "importing": "Receiving dropped items: {count}",
+        "importedDirs": "Directories {count}",
+        "importedFiles": "Documents {count}",
+        "virtualDir": "Virtual directory {path}",
+        "unsupported": "Unsupported {count} items",
+        "skipped": "Skipped {count} items"
       },
       "error": {
         "addDir": "Failed to add directory",
         "rebuild": "Failed to rebuild directory",
         "deleteDir": "Failed to delete directory",
-        "toggleDir": "Failed to update directory state"
+        "toggleDir": "Failed to update directory state",
+        "importPaths": "Failed to import dropped items"
       },
       "status": {
         "indexing": "Indexing",

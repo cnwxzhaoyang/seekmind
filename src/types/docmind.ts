@@ -6,6 +6,20 @@ export interface IndexDirView {
   status: string;
 }
 
+export interface ImportedPathView {
+  path: string;
+  dir_path: string;
+  is_virtual: boolean;
+}
+
+export interface ImportPathsView {
+  added_dirs: string[];
+  imported_files: ImportedPathView[];
+  virtual_dir: string;
+  skipped: string[];
+  unsupported: string[];
+}
+
 export interface SearchResultView {
   id: string;
   file_name: string;

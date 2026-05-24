@@ -1,14 +1,17 @@
 #![allow(dead_code)]
 
-use super::models::{IndexStatusView, SearchDebugView};
+use super::models::{IndexStatusView, ImportPathsView, ImportedPathView, SearchDebugView};
 use crate::docmind::semantic::store as semantic_store;
 use super::search::{normalize_query, normalize_search_text};
 use super::storage::{indexer, scanner, Database};
 use super::parser::python_parser_config_json;
 use super::storage::types::IndexSettings;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::Emitter;
+
+const VIRTUAL_IMPORT_DIR: &str = "virtual://临时导入";
 
 fn classify_failure(reason: &str, path: &str) -> (String, String) {
     let lower_reason = reason.to_lowercase();
@@ -57,6 +60,17 @@ fn classify_failure(reason: &str, path: &str) -> (String, String) {
     }
 
     ("解析失败".to_string(), "parse_error".to_string())
+}
+
+fn normalize_import_path(path: &str) -> String {
+    path.trim().trim_end_matches('/').to_string()
+}
+
+fn parent_dir_path(path: &Path) -> String {
+    path.parent()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 struct IndexJobGuard {
@@ -717,6 +731,97 @@ pub async fn add_index_dir(path: String, state: tauri::State<'_, Database>) -> R
         .add_index_dir(normalized)
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn import_paths(
+    paths: Vec<String>,
+    state: tauri::State<'_, Database>,
+) -> Result<ImportPathsView, String> {
+    let settings = state
+        .get_index_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let existing_dirs = state
+        .list_index_dirs()
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut known_dirs = existing_dirs
+        .into_iter()
+        .map(|dir| dir.path)
+        .collect::<HashSet<_>>();
+
+    let mut added_dirs = Vec::new();
+    let mut imported_files = Vec::new();
+    let mut skipped = Vec::new();
+    let mut unsupported = Vec::new();
+    let mut virtual_dir_used = false;
+
+    for raw_path in paths {
+        let normalized = normalize_import_path(&raw_path);
+        if normalized.is_empty() {
+            continue;
+        }
+
+        let path = Path::new(&normalized);
+        if path.is_dir() {
+            if !path.exists() {
+                skipped.push(normalized);
+                continue;
+            }
+            state
+                .add_index_dir(&normalized)
+                .await
+                .map_err(|error| error.to_string())?;
+            known_dirs.insert(normalized.clone());
+            added_dirs.push(normalized);
+            continue;
+        }
+
+        if path.is_file() {
+            if !scanner::is_supported_document_path(path, &settings) {
+                unsupported.push(normalized);
+                continue;
+            }
+
+            let parent_dir = parent_dir_path(path);
+            let (target_dir, is_virtual) = if !parent_dir.is_empty() && known_dirs.contains(&parent_dir) {
+                (parent_dir, false)
+            } else {
+                if !virtual_dir_used {
+                    state
+                        .add_index_dir(VIRTUAL_IMPORT_DIR)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    known_dirs.insert(VIRTUAL_IMPORT_DIR.to_string());
+                    virtual_dir_used = true;
+                }
+                (VIRTUAL_IMPORT_DIR.to_string(), true)
+            };
+
+            imported_files.push(ImportedPathView {
+                path: normalized,
+                dir_path: target_dir,
+                is_virtual,
+            });
+            continue;
+        }
+
+        skipped.push(normalized);
+    }
+
+    Ok(ImportPathsView {
+        added_dirs,
+        imported_files,
+        virtual_dir: if virtual_dir_used {
+            VIRTUAL_IMPORT_DIR.to_string()
+        } else {
+            String::new()
+        },
+        skipped,
+        unsupported,
+    })
 }
 
 #[tauri::command]
