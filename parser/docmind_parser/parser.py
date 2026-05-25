@@ -608,7 +608,7 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
 
 def parse_doc(path: Path) -> Tuple[Optional[str], List[Block]]:
     text = extract_doc_text_with_textutil(path)
-    blocks = split_text_into_blocks(text)
+    blocks = [Block(kind="paragraph", text=paragraph) for paragraph in split_paragraphs(text)]
     return None, blocks
 
 
