@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ChevronDown, ChevronRight, Folder } from "lucide-vue-next";
+import { Folder, FolderOpen, FileText } from "lucide-vue-next";
 import type { VisibleIndexDirRow } from "../../composables/useIndexDirTree";
 
 const props = withDefaults(defineProps<{
@@ -26,10 +26,10 @@ const emit = defineEmits<{
   contextmenu: [row: VisibleIndexDirRow, event: MouseEvent];
 }>();
 
-const rowHeight = computed(() => {
-  if (props.density === "compact") return "h-7 text-[13px]";
-  if (props.density === "relaxed") return "h-10 text-sm";
-  return "h-8.5 text-sm";
+const rowPadding = computed(() => {
+  if (props.density === "compact") return "py-0.5";
+  if (props.density === "relaxed") return "py-1.5";
+  return "py-1";
 });
 
 const handleSelect = (path: string) => {
@@ -63,8 +63,8 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
       :key="row.dir.path"
       class="flex items-center gap-1.5 transition-colors"
       :class="[
-        rowHeight,
-        selectedPath === row.dir.path ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-100 text-slate-700',
+        rowPadding,
+        selectedPath === row.dir.path ? 'bg-indigo-50' : 'hover:bg-slate-100',
         selectable === false ? 'cursor-default' : 'cursor-pointer select-none',
       ]"
       :style="{ paddingLeft: `${(nodePaddingBase ?? 8) + row.depth * (nodePaddingStep ?? 14)}px`, paddingRight: '12px' }"
@@ -77,34 +77,46 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
     >
       <button
         v-if="row.hasChildren"
-        class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 hover:text-slate-600"
+        class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:text-slate-600"
         type="button"
         :title="row.expanded ? (collapseTitle || 'Collapse') : (expandTitle || 'Expand')"
         :aria-expanded="row.expanded"
         @click.stop="emit('toggle', row.dir.path, !row.expanded)"
       >
-        <ChevronDown v-if="row.expanded" :size="12" />
-        <ChevronRight v-else :size="12" />
+        <FolderOpen v-if="row.expanded" :size="15" />
+        <Folder v-else :size="15" />
       </button>
-      <span v-else class="inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-400">
-        <Folder :size="14" />
+      <span v-else class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-slate-400">
+        <Folder :size="15" />
       </span>
 
-      <div class="min-w-0 flex-1 truncate leading-none">
+      <div class="min-w-0 flex-1 truncate text-sm  leading-none">
         <slot name="label" :row="row">
           {{ row.displayName }}
         </slot>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
-        <span
-          v-if="row.isVirtual"
-          class="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-600"
-        >
+      <div class="flex shrink-0 items-center gap-2 text-[10px] text-slate-400">
+        <span v-if="row.isVirtual" class="rounded bg-violet-50 px-1 py-[1px] text-[10px] text-violet-600">
           {{ virtualLabel || "Virtual" }}
         </span>
-        <slot name="meta" :row="row" />
-        <slot name="status" :row="row" />
+        <slot name="meta" :row="row">
+          <span class="inline-flex items-center gap-0.5" title="Documents">
+            <FileText :size="10" />
+            {{ row.dir.docs }}
+          </span>
+          <span class="inline-flex items-center gap-0.5" title="Chunks">
+            <FileText :size="10" class="opacity-50" />
+            {{ row.dir.chunks }}
+          </span>
+        </slot>
+        <slot name="status" :row="row">
+          <span
+            class="inline-block h-1.5 w-1.5 rounded-full"
+            :class="row.dir.enabled ? 'bg-emerald-500' : 'bg-slate-300'"
+            :title="row.dir.enabled ? 'Enabled' : 'Disabled'"
+          />
+        </slot>
       </div>
     </div>
   </div>

@@ -113,6 +113,12 @@ struct SemanticDebugJoinRow {
     vector_json: String,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct SemanticSearchRow {
+    chunk_id: String,
+    vector_json: String,
+}
+
 pub async fn get_embedding_model_status(
     database: &Database,
 ) -> Result<SemanticModelStatusView, String> {
@@ -870,9 +876,64 @@ pub async fn semantic_search_hits(
     query: &str,
     limit: usize,
 ) -> Result<Vec<SemanticDebugHitView>, String> {
-    semantic_debug_report(database, query, limit)
-        .await
-        .map(|report| report.hits)
+    let model = load_default_model(database).await?;
+    if !model.enabled || !model.available || query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rewritten_query = rewrite_search_text(query);
+    if rewritten_query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let client = PythonSemanticClient::from_env();
+    let query_vectors = client
+        .embed_texts(&[rewritten_query], Some(&model.name))
+        .map_err(|error| error.to_string())?;
+    let Some(query_vector) = query_vectors.first() else {
+        return Ok(Vec::new());
+    };
+    if query_vector.is_empty() || vector_norm(query_vector) <= 0.0 {
+        return Ok(Vec::new());
+    }
+
+    let rows = sqlx::query_as::<_, SemanticSearchRow>(
+        r#"
+        SELECT chunk_id, vector_json
+        FROM chunk_embeddings
+        WHERE model_id = ?
+        "#,
+    )
+    .bind(&model.id)
+    .fetch_all(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut hits = Vec::new();
+    for row in rows {
+        let vector = parse_vector_json(&row.vector_json)?;
+        let score = cosine_similarity(query_vector, &vector);
+        hits.push(SemanticDebugHitView {
+            chunk_id: row.chunk_id,
+            document_path: String::new(),
+            file_name: String::new(),
+            heading: String::new(),
+            title_path: String::new(),
+            snippet: String::new(),
+            paragraph: None,
+            page: None,
+            score,
+        });
+    }
+
+    hits.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    hits.truncate(limit.max(1));
+    Ok(hits)
 }
 
 async fn load_default_model(database: &Database) -> Result<EmbeddingModelView, String> {

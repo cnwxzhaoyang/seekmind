@@ -61,6 +61,7 @@ let unlistenSearchDebugReport: null | (() => void) = null;
 
 const {
   visibleRows: visibleQuickDirRows,
+  setExpanded: setQuickDirExpanded,
 } = useIndexDirTree(quickDirs);
 
 interface SearchResultGroup {
@@ -788,21 +789,8 @@ watch(showDebugPanel, async (visible) => {
                   :node-padding-step="12"
                   density="compact"
                   @contextmenu="handleTreeContextMenu"
-                >
-                  <template #meta="{ row }">
-                    <span class="text-[10px] text-slate-400">
-                      {{ t("page.appSearch.section.dirStats", { docs: row.dir.docs, chunks: row.dir.chunks }) }}
-                    </span>
-                  </template>
-                  <template #status="{ row }">
-                    <span
-                      class="rounded px-1 py-[1px] text-[10px]"
-                      :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'"
-                    >
-                      {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
-                    </span>
-                  </template>
-                </DocMindIndexTree>
+                  @toggle="setQuickDirExpanded"
+                />
                 <DocMindContextMenu
                   v-if="contextMenuVisible"
                   :items="contextMenuItems"

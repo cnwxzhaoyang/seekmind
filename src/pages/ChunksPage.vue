@@ -656,33 +656,19 @@ watch(
                 {{ t("page.chunks.empty.dirs") }}
               </div>
 
-              <DocMindIndexTree
-                v-else
-                :rows="visibleDirRows"
-                :selected-path="selectedDirPath"
-                :empty-text="t('page.chunks.empty.dirs')"
-                :path-tooltip="true"
-                :virtual-label="t('common.virtualDir')"
-                :expand-title="t('sidebar.expand')"
-                :collapse-title="t('sidebar.collapse')"
-                density="normal"
-                @node-select="selectDir"
-                @toggle="setDirExpanded"
-              >
-                <template #meta="{ row }">
-                  <span class="text-[10px] text-slate-400">
-                    {{ t("page.chunks.docStats", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
-                  </span>
-                </template>
-                <template #status="{ row }">
-                  <span
-                    class="rounded-full px-1.5 py-0.5 text-[10px]"
-                    :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
-                  >
-                    {{ row.dir.enabled ? t("page.chunks.status.enabled") : t("page.chunks.status.disabled") }}
-                  </span>
-                </template>
-              </DocMindIndexTree>
+          <DocMindIndexTree
+            v-else
+            :rows="visibleDirRows"
+            :selected-path="selectedDirPath"
+            :empty-text="t('page.chunks.empty.dirs')"
+            :path-tooltip="true"
+            :virtual-label="t('common.virtualDir')"
+            :expand-title="t('sidebar.expand')"
+            :collapse-title="t('sidebar.collapse')"
+            density="normal"
+            @node-select="selectDir"
+            @toggle="setDirExpanded"
+          />
             </div>
           </section>
         </template>
