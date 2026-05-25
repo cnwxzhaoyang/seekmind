@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
+import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
@@ -60,6 +61,12 @@ const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_e
 const currentDocument = computed(
   () => documents.value.find((item) => item.path === selectedDocPath.value) ?? null,
 );
+
+const splitPanels = computed(() => [
+  { key: "left", initialSize: 240, minSize: 160 },
+  { key: "center", minSize: 320, flex: true },
+  { key: "right", minSize: 380, flex: true },
+]);
 
 const queuedDocPaths = computed(() => new Set(refreshQueue.value.map((doc) => doc.path)));
 
@@ -630,283 +637,291 @@ watch(
       {{ errorMessage }}
     </div>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(320px,0.95fr)_minmax(380px,1.05fr)] gap-0">
-      <section class="min-h-0 flex flex-col overflow-hidden border-r border-slate-200 bg-white px-3 py-3">
-        <div class="shrink-0 mb-3 flex items-center justify-between">
-          <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.indexDirs") }}</div>
-          <DocMindBadge tone="default">
-            <FolderOpen class="mr-1" :size="13" />
-            {{ explicitIndexDirCount }}
-          </DocMindBadge>
-        </div>
+    <main class="flex min-h-0 flex-1 overflow-hidden">
+      <SplitPane :panels="splitPanels">
+        <template #left>
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-3 py-3">
+            <div class="shrink-0 mb-3 flex items-center justify-between">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.indexDirs") }}</div>
+              <DocMindBadge tone="default">
+                <FolderOpen class="mr-1" :size="13" />
+                {{ explicitIndexDirCount }}
+              </DocMindBadge>
+            </div>
 
-        <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">{{ t("page.chunks.empty.dirs") }}</div>
+            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+              <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">{{ t("page.chunks.empty.dirs") }}</div>
 
-          <div v-else-if="visibleDirRows.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            {{ t("page.chunks.empty.dirs") }}
-          </div>
+              <div v-else-if="visibleDirRows.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                {{ t("page.chunks.empty.dirs") }}
+              </div>
 
-          <DocMindIndexTree
-            v-else
-            :rows="visibleDirRows"
-            :selected-path="selectedDirPath"
-            :empty-text="t('page.chunks.empty.dirs')"
-            :path-tooltip="true"
-            :virtual-label="t('common.virtualDir')"
-            :expand-title="t('sidebar.expand')"
-            :collapse-title="t('sidebar.collapse')"
-            density="normal"
-            @node-select="selectDir"
-            @toggle="setDirExpanded"
-          >
-            <template #meta="{ row }">
-              <span class="text-[10px] text-slate-400">
-                {{ t("page.chunks.docStats", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
-              </span>
-            </template>
-            <template #status="{ row }">
-              <span
-                class="rounded-full px-1.5 py-0.5 text-[10px]"
-                :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+              <DocMindIndexTree
+                v-else
+                :rows="visibleDirRows"
+                :selected-path="selectedDirPath"
+                :empty-text="t('page.chunks.empty.dirs')"
+                :path-tooltip="true"
+                :virtual-label="t('common.virtualDir')"
+                :expand-title="t('sidebar.expand')"
+                :collapse-title="t('sidebar.collapse')"
+                density="normal"
+                @node-select="selectDir"
+                @toggle="setDirExpanded"
               >
-                {{ row.dir.enabled ? t("page.chunks.status.enabled") : t("page.chunks.status.disabled") }}
-              </span>
-            </template>
-          </DocMindIndexTree>
-        </div>
-      </section>
-
-      <section class="min-h-0 flex flex-col overflow-hidden border-r border-slate-200 bg-slate-50/60 px-3 py-3">
-        <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
-          <div>
-            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.docList") }}</div>
-            <div class="mt-1 text-xs text-slate-500">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
-          </div>
-          <div class="flex items-center gap-2">
-            <DocMindBadge tone="default">
-              <FileText class="mr-1" :size="13" />
-              {{ filteredDocuments.length }}
-            </DocMindBadge>
-            <DocMindBadge v-if="refreshTaskCount > 0" tone="warning">
-              <RefreshCw class="mr-1" :size="13" />
-              {{ t("page.chunks.btn.queue", { count: refreshTaskCount }) }}
-            </DocMindBadge>
-          </div>
-        </div>
-
-        <div class="shrink-0 mb-3">
-          <input
-            v-model="docFilter"
-            class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300"
-            :placeholder="t('page.chunks.filterPlaceholder')"
-          />
-        </div>
-
-        <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div v-if="loadingDocs" class="text-sm text-slate-500">{{ t("page.chunks.readingDocs") }}</div>
-          <div v-else-if="filteredDocuments.length === 0" class="rounded-md bg-white px-4 py-6 text-sm text-slate-500">
-            {{ t("page.chunks.empty.docs") }}
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="doc in filteredDocuments"
-              :key="doc.id"
-              class="w-full rounded-md border px-2.5 py-2 text-left transition"
-              :class="selectedDocPath === doc.path ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
-              role="button"
-              tabindex="0"
-              @click="selectDoc(doc.path)"
-            >
-              <div class="flex items-start gap-3">
-                <DocMindFileIcon :ext="doc.ext" />
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-sm font-medium text-slate-950">{{ doc.file_name }}</div>
-                  <div class="mt-1 truncate text-[11px] text-slate-500">{{ doc.path }}</div>
-                  <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-                    <span>{{ t("page.chunks.chunkStats", { count: doc.chunks }) }}</span>
-                    <span>·</span>
-                    <span>{{ doc.modified }}</span>
-                  </div>
-                  <div
-                    v-if="refreshWarnings[doc.path]"
-                    class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
-                    :class="refreshOutcomes[doc.path] === 'python'
-                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                      : 'border-amber-100 bg-amber-50 text-amber-700'"
+                <template #meta="{ row }">
+                  <span class="text-[10px] text-slate-400">
+                    {{ t("page.chunks.docStats", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
+                  </span>
+                </template>
+                <template #status="{ row }">
+                  <span
+                    class="rounded-full px-1.5 py-0.5 text-[10px]"
+                    :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
                   >
-                    {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
-                  </div>
-                  <div
-                    v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
-                    class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px]"
-                    :class="refreshOutcomes[doc.path] === 'python'
-                      ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
-                      : 'border border-amber-100 bg-amber-50 text-amber-700'"
-                  >
-                    {{ refreshOutcomeLabel(doc.path) }}
-                  </div>
-                </div>
-                <button
-                  class="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  :disabled="loadingDocs || isDocRefreshBusy(doc.path)"
-                  @click.stop="void refreshDocument(doc)"
-                >
-                  <RefreshCw :size="13" :class="isDocRefreshing(doc.path) ? 'animate-spin' : ''" />
-                  {{ refreshStateLabel(doc.path) }}
-                </button>
+                    {{ row.dir.enabled ? t("page.chunks.status.enabled") : t("page.chunks.status.disabled") }}
+                  </span>
+                </template>
+              </DocMindIndexTree>
+            </div>
+          </section>
+        </template>
+
+        <template #center>
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/60 px-3 py-3">
+            <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
+              <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.docList") }}</div>
+                <div class="mt-1 text-xs text-slate-500">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
+              </div>
+              <div class="flex items-center gap-2">
+                <DocMindBadge tone="default">
+                  <FileText class="mr-1" :size="13" />
+                  {{ filteredDocuments.length }}
+                </DocMindBadge>
+                <DocMindBadge v-if="refreshTaskCount > 0" tone="warning">
+                  <RefreshCw class="mr-1" :size="13" />
+                  {{ t("page.chunks.btn.queue", { count: refreshTaskCount }) }}
+                </DocMindBadge>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <section class="min-h-0 flex flex-col overflow-hidden bg-white px-3 py-3">
-        <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
-          <div>
-            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.chunkDetail") }}</div>
-            <div class="mt-1 text-xs text-slate-500">
-              {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
+            <div class="shrink-0 mb-3">
+              <input
+                v-model="docFilter"
+                class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300"
+                :placeholder="t('page.chunks.filterPlaceholder')"
+              />
             </div>
-            <div
-              v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
-              class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-              :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                : refreshOutcomeTone(currentDocument.path) === 'warning'
-                  ? 'border-amber-100 bg-amber-50 text-amber-700'
-                  : refreshOutcomeTone(currentDocument.path) === 'danger'
-                    ? 'border-rose-100 bg-rose-50 text-rose-700'
-                    : 'border-slate-200 bg-slate-50 text-slate-600'"
-            >
-              <Cpu :size="11" />
-              {{ refreshOutcomeLabel(currentDocument.path) }}
-            </div>
-            <div
-              v-if="currentDocumentRefreshWarning"
-              class="mt-2 text-[11px] leading-5 text-amber-700"
-            >
-              {{ currentDocumentRefreshWarning }}
-            </div>
-          </div>
-          <button
-            class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
-            :disabled="loading || !selectedDirPath"
-            @click="void syncSelection()"
-          >
-            <RefreshCw :size="14" />
-            {{ t("page.chunks.btn.refresh") }}
-          </button>
-        </div>
 
-        <div class="shrink-0 mb-3">
-          <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-            <div class="text-sm font-medium text-slate-950">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
-            <div class="mt-1 break-all text-[11px] text-slate-500">
-              {{ currentDocument?.path || t("page.chunks.selectDoc") }}
-            </div>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <DocMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</DocMindBadge>
-              <DocMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</DocMindBadge>
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                :disabled="!currentDocument"
-                @click="quickLookCurrentDocument"
-              >
-                <Eye :size="14" />
-                {{ t("page.chunks.action.quickLook") }}
-              </button>
-              <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                :disabled="!currentDocument"
-                @click="openCurrentDocument"
-              >
-                <ExternalLink :size="14" />
-                {{ t("common.openFile") }}
-              </button>
-              <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                :disabled="!currentDocument"
-                @click="copyCurrentDocumentPath"
-              >
-                <Copy :size="14" />
-                {{ t("page.chunks.action.copyPath") }}
-              </button>
-              <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                :disabled="!currentDocument"
-                @click="copyText(currentDocumentCitation, t('page.chunks.action.copiedCitation'))"
-              >
-                <FileText :size="14" />
-                {{ t("page.chunks.action.copyCitation") }}
-              </button>
-            </div>
-            <div
-              v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
-              class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-              :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                : refreshOutcomeTone(currentDocument.path) === 'warning'
-                  ? 'border-amber-100 bg-amber-50 text-amber-700'
-                  : refreshOutcomeTone(currentDocument.path) === 'danger'
-                    ? 'border-rose-100 bg-rose-50 text-rose-700'
-                    : 'border-slate-200 bg-slate-50 text-slate-600'"
-            >
-              <Cpu :size="11" />
-              {{ refreshOutcomeLabel(currentDocument.path) }}
-            </div>
-            <div
-              v-if="currentDocumentRefreshWarning"
-              class="mt-2 text-[11px] leading-5 text-amber-700"
-            >
-              {{ currentDocumentRefreshWarning }}
-            </div>
-            <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-              {{ actionMessage }}
-            </div>
-            <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {{ actionErrorMessage }}
-            </div>
-          </div>
-        </div>
-
-        <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div v-if="loadingChunks" class="text-sm text-slate-500">{{ t("page.chunks.readingChunks") }}</div>
-          <div v-else-if="!currentDocument" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            {{ t("page.chunks.empty.selectDocToView") }}
-          </div>
-          <div v-else-if="chunks.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            {{ t("page.chunks.empty.chunks") }}
-          </div>
-          <div v-else class="space-y-3">
-            <div v-for="chunk in chunks" :key="chunk.id" class="rounded-md border border-slate-200 bg-white p-3">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="min-w-0 flex-1">
-                  <div class="text-sm font-medium text-slate-950">{{ chunk.title_path || chunk.heading }}</div>
-                  <div class="mt-1 text-[11px] text-slate-500">
-                    {{ t("page.chunks.titlePath") }}：{{ chunk.title_path || chunk.heading }}
+            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+              <div v-if="loadingDocs" class="text-sm text-slate-500">{{ t("page.chunks.readingDocs") }}</div>
+              <div v-else-if="filteredDocuments.length === 0" class="rounded-md bg-white px-4 py-6 text-sm text-slate-500">
+                {{ t("page.chunks.empty.docs") }}
+              </div>
+              <div v-else class="space-y-2">
+                <div
+                  v-for="doc in filteredDocuments"
+                  :key="doc.id"
+                  class="w-full rounded-md border px-2.5 py-2 text-left transition"
+                  :class="selectedDocPath === doc.path ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
+                  role="button"
+                  tabindex="0"
+                  @click="selectDoc(doc.path)"
+                >
+                  <div class="flex items-start gap-3">
+                    <DocMindFileIcon :ext="doc.ext" />
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-sm font-medium text-slate-950">{{ doc.file_name }}</div>
+                      <div class="mt-1 truncate text-[11px] text-slate-500">{{ doc.path }}</div>
+                      <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+                        <span>{{ t("page.chunks.chunkStats", { count: doc.chunks }) }}</span>
+                        <span>·</span>
+                        <span>{{ doc.modified }}</span>
+                      </div>
+                      <div
+                        v-if="refreshWarnings[doc.path]"
+                        class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
+                        :class="refreshOutcomes[doc.path] === 'python'
+                          ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-100 bg-amber-50 text-amber-700'"
+                      >
+                        {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
+                      </div>
+                      <div
+                        v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
+                        class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px]"
+                        :class="refreshOutcomes[doc.path] === 'python'
+                          ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
+                          : 'border border-amber-100 bg-amber-50 text-amber-700'"
+                      >
+                        {{ refreshOutcomeLabel(doc.path) }}
+                      </div>
+                    </div>
+                    <button
+                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      :disabled="loadingDocs || isDocRefreshBusy(doc.path)"
+                      @click.stop="void refreshDocument(doc)"
+                    >
+                      <RefreshCw :size="13" :class="isDocRefreshing(doc.path) ? 'animate-spin' : ''" />
+                      {{ refreshStateLabel(doc.path) }}
+                    </button>
                   </div>
                 </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <DocMindBadge tone="default">
-                    {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
-                  </DocMindBadge>
+              </div>
+            </div>
+          </section>
+        </template>
+
+        <template #right>
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-3 py-3">
+            <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.chunkDetail") }}</div>
+                <div class="mt-1 text-xs text-slate-500">
+                  {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
+                </div>
+                <div
+                  v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
+                  class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  :class="refreshOutcomeTone(currentDocument.path) === 'success'
+                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : refreshOutcomeTone(currentDocument.path) === 'warning'
+                      ? 'border-amber-100 bg-amber-50 text-amber-700'
+                      : refreshOutcomeTone(currentDocument.path) === 'danger'
+                        ? 'border-rose-100 bg-rose-50 text-rose-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-600'"
+                >
+                  <Cpu :size="11" />
+                  {{ refreshOutcomeLabel(currentDocument.path) }}
+                </div>
+                <div
+                  v-if="currentDocumentRefreshWarning"
+                  class="mt-2 text-[11px] leading-5 text-amber-700"
+                >
+                  {{ currentDocumentRefreshWarning }}
+                </div>
+              </div>
+              <button
+                class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+                :disabled="loading || !selectedDirPath"
+                @click="void syncSelection()"
+              >
+                <RefreshCw :size="14" />
+                {{ t("page.chunks.btn.refresh") }}
+              </button>
+            </div>
+
+            <div class="shrink-0 mb-3">
+              <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                <div class="text-sm font-medium text-slate-950">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
+                <div class="mt-1 break-all text-[11px] text-slate-500">
+                  {{ currentDocument?.path || t("page.chunks.selectDoc") }}
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <DocMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</DocMindBadge>
+                  <DocMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</DocMindBadge>
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-2">
                   <button
-                    class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
-                    @click="copyChunkCitation(chunk)"
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    :disabled="!currentDocument"
+                    @click="quickLookCurrentDocument"
                   >
+                    <Eye :size="14" />
+                    {{ t("page.chunks.action.quickLook") }}
+                  </button>
+                  <button
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    :disabled="!currentDocument"
+                    @click="openCurrentDocument"
+                  >
+                    <ExternalLink :size="14" />
+                    {{ t("common.openFile") }}
+                  </button>
+                  <button
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    :disabled="!currentDocument"
+                    @click="copyCurrentDocumentPath"
+                  >
+                    <Copy :size="14" />
+                    {{ t("page.chunks.action.copyPath") }}
+                  </button>
+                  <button
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    :disabled="!currentDocument"
+                    @click="copyText(currentDocumentCitation, t('page.chunks.action.copiedCitation'))"
+                  >
+                    <FileText :size="14" />
                     {{ t("page.chunks.action.copyCitation") }}
                   </button>
                 </div>
+                <div
+                  v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
+                  class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  :class="refreshOutcomeTone(currentDocument.path) === 'success'
+                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : refreshOutcomeTone(currentDocument.path) === 'warning'
+                      ? 'border-amber-100 bg-amber-50 text-amber-700'
+                      : refreshOutcomeTone(currentDocument.path) === 'danger'
+                        ? 'border-rose-100 bg-rose-50 text-rose-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-600'"
+                >
+                  <Cpu :size="11" />
+                  {{ refreshOutcomeLabel(currentDocument.path) }}
+                </div>
+                <div
+                  v-if="currentDocumentRefreshWarning"
+                  class="mt-2 text-[11px] leading-5 text-amber-700"
+                >
+                  {{ currentDocumentRefreshWarning }}
+                </div>
+                <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                  {{ actionMessage }}
+                </div>
+                <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {{ actionErrorMessage }}
+                </div>
               </div>
-              <p class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>
             </div>
-          </div>
-        </div>
-      </section>
-    </div>
+
+            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+              <div v-if="loadingChunks" class="text-sm text-slate-500">{{ t("page.chunks.readingChunks") }}</div>
+              <div v-else-if="!currentDocument" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                {{ t("page.chunks.empty.selectDocToView") }}
+              </div>
+              <div v-else-if="chunks.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                {{ t("page.chunks.empty.chunks") }}
+              </div>
+              <div v-else class="space-y-3">
+                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-md border border-slate-200 bg-white p-3">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="text-sm font-medium text-slate-950">{{ chunk.title_path || chunk.heading }}</div>
+                      <div class="mt-1 text-[11px] text-slate-500">
+                        {{ t("page.chunks.titlePath") }}：{{ chunk.title_path || chunk.heading }}
+                      </div>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <DocMindBadge tone="default">
+                        {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
+                      </DocMindBadge>
+                      <button
+                        class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+                        @click="copyChunkCitation(chunk)"
+                      >
+                        {{ t("page.chunks.action.copyCitation") }}
+                      </button>
+                    </div>
+                  </div>
+                  <p class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </template>
+      </SplitPane>
+    </main>
 
     <footer class="flex h-6 items-center justify-between border-t border-slate-200 bg-slate-100 px-4 text-[11px] text-slate-500">
       <div class="flex items-center gap-3">
