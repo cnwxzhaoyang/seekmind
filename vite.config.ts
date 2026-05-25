@@ -10,7 +10,7 @@ export default defineConfig(async () => ({
     strictPort: true,
     host: "0.0.0.0",
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: ["**/src-tauri/**", "**/.docmind-dev/**", "**/.docmind-dev/**/*"],
     },
   },
 }));

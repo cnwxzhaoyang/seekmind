@@ -59,6 +59,8 @@ export const docmindApi = {
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>
     invoke<SearchDebugView>("get_search_debug_report", { query, limit }),
+  requestSearchDebugReport: (requestId: string, query: string, limit = 20) =>
+    invoke<void>("request_search_debug_report", { request_id: requestId, query, limit }),
   getIndexStatus: () => invoke<IndexStatusView>("get_index_status"),
   getIndexSettings: () => invoke<IndexSettingsView>("get_index_settings"),
   saveIndexSettings: (settings: IndexSettingsView) =>

@@ -7,14 +7,16 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
-use crate::docmind::parser::{ParserClientError, ParsedDocument, PythonParserClient};
 use crate::docmind::parser::types::ParserStreamEvent;
+use crate::docmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
 
-use super::types::{ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings, ParseOutcome, ParserSource};
+use super::types::{
+    ChunkRecord, DiscoveredFile, ExtractedDocument, IndexSettings, ParseOutcome, ParserSource,
+};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "txt", "md", "markdown", "html", "htm", "doc", "docx", "pdf", "log", "toml", "json", "yaml", "yml", "xml",
-    "csv", "rs", "js", "ts", "tsx", "jsx", "py",
+    "txt", "md", "markdown", "html", "htm", "doc", "docx", "pdf", "log", "toml", "json", "yaml",
+    "yml", "xml", "csv", "rs", "js", "ts", "tsx", "jsx", "py",
 ];
 
 const SKIPPED_DIRECTORIES: &[&str] = &[
@@ -171,8 +173,8 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
         .unwrap_or_else(|_| "未知".to_string());
 
     let content = match ext.as_str() {
-        "txt" | "md" | "markdown" | "log" | "toml" | "json" | "yaml" | "yml" | "xml"
-        | "csv" | "rs" | "js" | "ts" | "tsx" | "jsx" | "py" => read_text_file(path)?,
+        "txt" | "md" | "markdown" | "log" | "toml" | "json" | "yaml" | "yml" | "xml" | "csv"
+        | "rs" | "js" | "ts" | "tsx" | "jsx" | "py" => read_text_file(path)?,
         "html" | "htm" => strip_html_tags(&read_text_file(path)?),
         "doc" => extract_doc_text_with_textutil(path)?,
         "docx" => extract_docx_text(path)?,
@@ -280,7 +282,9 @@ fn should_skip_directory(name: &str, settings: &IndexSettings) -> bool {
 
 fn is_supported_file(path: &Path, settings: &IndexSettings) -> bool {
     let ext = extension(path);
-    SUPPORTED_EXTENSIONS.iter().any(|candidate| *candidate == ext)
+    SUPPORTED_EXTENSIONS
+        .iter()
+        .any(|candidate| *candidate == ext)
         && !settings
             .exclude_exts
             .iter()
@@ -404,7 +408,10 @@ fn looks_like_docx_xml_noise(text: &str) -> bool {
     if lowered.contains("<w:") || lowered.contains("</w:") || lowered.contains("xmlns:") {
         return true;
     }
-    if lowered.starts_with('<') && lowered.contains('>') && (lowered.contains("w:") || lowered.contains("xml")) {
+    if lowered.starts_with('<')
+        && lowered.contains('>')
+        && (lowered.contains("w:") || lowered.contains("xml"))
+    {
         return true;
     }
     false
@@ -511,7 +518,10 @@ fn truncate_snippet(input: &str, limit: usize) -> String {
     snippet
 }
 
-pub(crate) fn convert_python_document(file: &DiscoveredFile, parsed: ParsedDocument) -> (ExtractedDocument, Vec<ChunkRecord>) {
+pub(crate) fn convert_python_document(
+    file: &DiscoveredFile,
+    parsed: ParsedDocument,
+) -> (ExtractedDocument, Vec<ChunkRecord>) {
     let content = normalize_whitespace(&parsed.content);
     let file_name = file
         .path

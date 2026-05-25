@@ -78,9 +78,14 @@ impl Display for SemanticClientError {
         match self {
             Self::NotConfigured => write!(f, "python semantic sidecar is not configured"),
             Self::Timeout => write!(f, "python semantic sidecar timed out"),
-            Self::SpawnFailed(error) => write!(f, "failed to spawn python semantic sidecar: {error}"),
+            Self::SpawnFailed(error) => {
+                write!(f, "failed to spawn python semantic sidecar: {error}")
+            }
             Self::Io(error) => write!(f, "python semantic sidecar io error: {error}"),
-            Self::InvalidResponse(error) => write!(f, "python semantic sidecar returned invalid response: {error}"),
+            Self::InvalidResponse(error) => write!(
+                f,
+                "python semantic sidecar returned invalid response: {error}"
+            ),
             Self::SidecarFailed(error) => write!(f, "python semantic sidecar failed: {error}"),
         }
     }
@@ -90,7 +95,8 @@ impl std::error::Error for SemanticClientError {}
 
 impl PythonSemanticClient {
     pub fn from_env() -> Self {
-        let python_bin = std::env::var("DOCMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
+        let python_bin =
+            std::env::var("DOCMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
         let script_path = std::env::var("DOCMIND_PARSER_SCRIPT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("parser/docmind_parser/__main__.py"));
@@ -128,11 +134,14 @@ impl PythonSemanticClient {
         self.bundled_sidecar.is_some() || self.resolve_script_path().exists()
     }
 
-    pub fn embedding_status(&self, model_name: Option<&str>) -> Result<SemanticStatus, SemanticClientError> {
+    pub fn embedding_status(
+        &self,
+        model_name: Option<&str>,
+    ) -> Result<SemanticStatus, SemanticClientError> {
         let response = self.execute("embedding_status", "", &[], model_name)?;
-        response
-            .embedding_status
-            .ok_or_else(|| SemanticClientError::InvalidResponse("missing embedding_status".to_string()))
+        response.embedding_status.ok_or_else(|| {
+            SemanticClientError::InvalidResponse("missing embedding_status".to_string())
+        })
     }
 
     pub fn embed_texts(
@@ -169,8 +178,10 @@ impl PythonSemanticClient {
             model_name: model_name.map(|value| value.to_string()),
         };
 
-        let payload = serde_json::to_vec(&request).map_err(|error| SemanticClientError::Io(error.to_string()))?;
-        let mut child = self.spawn_command()?
+        let payload = serde_json::to_vec(&request)
+            .map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        let mut child = self
+            .spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -241,7 +252,9 @@ impl PythonSemanticClient {
 
                     let event_value: Result<ParserStreamEvent, _> = serde_json::from_str(trimmed);
                     if let Ok(event) = event_value {
-                        if event.kind == "event" && (event.request_id.is_empty() || event.request_id == request_id) {
+                        if event.kind == "event"
+                            && (event.request_id.is_empty() || event.request_id == request_id)
+                        {
                             on_event(event);
                             continue;
                         }
@@ -251,7 +264,9 @@ impl PythonSemanticClient {
                     match parsed {
                         Ok(parsed) => {
                             if parsed.request_id != request.request_id {
-                                return Err(SemanticClientError::InvalidResponse("request_id mismatch".to_string()));
+                                return Err(SemanticClientError::InvalidResponse(
+                                    "request_id mismatch".to_string(),
+                                ));
                             }
                             response = Some(parsed);
                         }
@@ -262,7 +277,10 @@ impl PythonSemanticClient {
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if response.is_some() {
-                        if let Some(status) = child.try_wait().map_err(|error| SemanticClientError::Io(error.to_string()))? {
+                        if let Some(status) = child
+                            .try_wait()
+                            .map_err(|error| SemanticClientError::Io(error.to_string()))?
+                        {
                             if status.success() {
                                 break;
                             }
@@ -283,7 +301,8 @@ impl PythonSemanticClient {
             }
         }
 
-        let response = response.ok_or_else(|| SemanticClientError::InvalidResponse("missing response".to_string()))?;
+        let response = response
+            .ok_or_else(|| SemanticClientError::InvalidResponse("missing response".to_string()))?;
 
         if response.ok {
             response
@@ -323,8 +342,10 @@ impl PythonSemanticClient {
             model_name: model_name.map(|value| value.to_string()),
         };
 
-        let payload = serde_json::to_vec(&request).map_err(|error| SemanticClientError::Io(error.to_string()))?;
-        let mut child = self.spawn_command()?
+        let payload = serde_json::to_vec(&request)
+            .map_err(|error| SemanticClientError::Io(error.to_string()))?;
+        let mut child = self
+            .spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -339,7 +360,10 @@ impl PythonSemanticClient {
 
         let deadline = Instant::now() + self.timeout;
         loop {
-            match child.try_wait().map_err(|error| SemanticClientError::Io(error.to_string()))? {
+            match child
+                .try_wait()
+                .map_err(|error| SemanticClientError::Io(error.to_string()))?
+            {
                 Some(_) => break,
                 None => {
                     if Instant::now() >= deadline {
@@ -360,7 +384,9 @@ impl PythonSemanticClient {
         match response {
             Ok(response) => {
                 if response.request_id != request.request_id {
-                    return Err(SemanticClientError::InvalidResponse("request_id mismatch".to_string()));
+                    return Err(SemanticClientError::InvalidResponse(
+                        "request_id mismatch".to_string(),
+                    ));
                 }
                 Ok(response)
             }
@@ -384,14 +410,20 @@ impl PythonSemanticClient {
         }
 
         let candidates = [
-            std::env::current_dir().ok().map(|cwd| cwd.join(&self.script_path)),
+            std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.join(&self.script_path)),
             std::env::current_dir()
                 .ok()
                 .map(|cwd| cwd.join("src-tauri").join(&self.script_path)),
             std::env::current_exe()
                 .ok()
                 .and_then(|exe| exe.parent().map(|parent| parent.join(&self.script_path))),
-            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(&self.script_path)),
+            Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join(&self.script_path),
+            ),
         ];
 
         for candidate in candidates.into_iter().flatten() {

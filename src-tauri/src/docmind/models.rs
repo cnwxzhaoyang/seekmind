@@ -223,6 +223,16 @@ pub struct SearchDebugView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SearchDebugReportEventView {
+    pub request_id: String,
+    pub state: String,
+    pub query: String,
+    pub report: Option<SearchDebugView>,
+    pub error: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchHistoryView {
     pub query: String,
     pub normalized_query: String,
@@ -297,6 +307,7 @@ pub struct SemanticRebuildProgressView {
     pub job_id: String,
     pub state: String,
     pub message: String,
+    pub source: String,
     pub model: EmbeddingModelView,
     pub total_chunks: usize,
     pub processed_chunks: usize,

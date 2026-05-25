@@ -3,8 +3,8 @@
 use crate::docmind::models::{IndexRefreshProgressView, IndexStatusView};
 use crate::docmind::parser::types::ParserStreamEvent;
 use crate::docmind::storage::scanner;
-use crate::docmind::storage::Database;
 use crate::docmind::storage::types::DocumentState;
+use crate::docmind::storage::Database;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{mpsc, Arc};
@@ -16,8 +16,7 @@ pub async fn rebuild_all(
     database: &Database,
     job_id: &str,
     on_progress: IndexProgressEmitter,
-) -> Result<IndexStatusView, sqlx::Error>
-{
+) -> Result<IndexStatusView, sqlx::Error> {
     database.clear_pause_request().await?;
     database.clear_index_checkpoint().await?;
     let dir_paths = database.enabled_index_dir_paths().await?;
@@ -31,8 +30,7 @@ pub async fn rebuild_dir(
     dir_path: &str,
     job_id: &str,
     on_progress: IndexProgressEmitter,
-) -> Result<IndexStatusView, sqlx::Error>
-{
+) -> Result<IndexStatusView, sqlx::Error> {
     database.clear_pause_request().await?;
     database.clear_index_checkpoint().await?;
     let dir_paths = vec![dir_path.to_string()];
@@ -55,9 +53,11 @@ pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
     let dir_paths: Vec<String> =
         serde_json::from_str(&checkpoint.dir_paths).map_err(|error| error.to_string())?;
     let pending_delete_paths: VecDeque<String> =
-        serde_json::from_str(&checkpoint.pending_delete_paths).map_err(|error| error.to_string())?;
+        serde_json::from_str(&checkpoint.pending_delete_paths)
+            .map_err(|error| error.to_string())?;
     let pending_update_paths: VecDeque<String> =
-        serde_json::from_str(&checkpoint.pending_update_paths).map_err(|error| error.to_string())?;
+        serde_json::from_str(&checkpoint.pending_update_paths)
+            .map_err(|error| error.to_string())?;
 
     let settings = database
         .get_index_settings()
@@ -96,8 +96,8 @@ pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
         "resume",
         Arc::new(|_: IndexRefreshProgressView| {}),
     )
-        .await
-        .map_err(|error| error.to_string())
+    .await
+    .map_err(|error| error.to_string())
 }
 
 pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexStatusView, String> {
@@ -171,8 +171,7 @@ async fn rebuild_paths(
     job_id: &str,
     scope: &str,
     on_progress: IndexProgressEmitter,
-) -> Result<IndexStatusView, sqlx::Error>
-{
+) -> Result<IndexStatusView, sqlx::Error> {
     if dir_paths.is_empty() {
         return database.get_index_status().await;
     }
@@ -233,7 +232,16 @@ async fn rebuild_paths(
         deleted: 0,
     };
 
-    process_index_plan(database, plan, &settings, &existing_by_path, job_id, scope, on_progress).await
+    process_index_plan(
+        database,
+        plan,
+        &settings,
+        &existing_by_path,
+        job_id,
+        scope,
+        on_progress,
+    )
+    .await
 }
 
 struct IndexPlan {
@@ -257,8 +265,7 @@ async fn process_index_plan(
     job_id: &str,
     scope: &str,
     on_progress: IndexProgressEmitter,
-) -> Result<IndexStatusView, sqlx::Error>
-{
+) -> Result<IndexStatusView, sqlx::Error> {
     trace_indexer(&format!(
         "process_index_plan dirs={:?} delete={} update={} total={} processed={}",
         plan.dir_paths,
@@ -285,7 +292,9 @@ async fn process_index_plan(
                 .set_index_dir_status(
                     dir_path,
                     existing_count_for_dir(existing_by_path, dir_path),
-                    existing_chunks_for_dir(database, dir_path).await.unwrap_or(0),
+                    existing_chunks_for_dir(database, dir_path)
+                        .await
+                        .unwrap_or(0),
                     "indexed",
                 )
                 .await?;
@@ -311,8 +320,8 @@ async fn process_index_plan(
             plan.skipped,
             plan.deleted,
             false,
-    )
-    .await?;
+        )
+        .await?;
     emit_index_progress(
         database,
         job_id,
@@ -329,7 +338,9 @@ async fn process_index_plan(
             .set_index_dir_status(
                 dir_path,
                 existing_count_for_dir(existing_by_path, dir_path),
-                existing_chunks_for_dir(database, dir_path).await.unwrap_or(0),
+                existing_chunks_for_dir(database, dir_path)
+                    .await
+                    .unwrap_or(0),
                 "indexing",
             )
             .await?;
@@ -574,8 +585,16 @@ async fn save_checkpoint(
     database
         .save_index_checkpoint(
             &plan.dir_paths,
-            &plan.pending_delete_paths.iter().cloned().collect::<Vec<_>>(),
-            &plan.pending_update_paths.iter().cloned().collect::<Vec<_>>(),
+            &plan
+                .pending_delete_paths
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+            &plan
+                .pending_update_paths
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
             phase,
             current_dir,
             current_file,
@@ -607,8 +626,7 @@ async fn pause_current_task(
     job_id: &str,
     scope: &str,
     on_progress: &IndexProgressEmitter,
-) -> Result<IndexStatusView, sqlx::Error>
-{
+) -> Result<IndexStatusView, sqlx::Error> {
     database
         .set_current_task(
             label,
@@ -657,14 +675,20 @@ fn resolve_dir_for_path(dir_paths: &[String], path: &str) -> String {
         .unwrap_or_default()
 }
 
-fn existing_count_for_dir(existing: &std::collections::HashMap<String, DocumentState>, dir_path: &str) -> usize {
+fn existing_count_for_dir(
+    existing: &std::collections::HashMap<String, DocumentState>,
+    dir_path: &str,
+) -> usize {
     existing
         .values()
         .filter(|state| state.path.starts_with(dir_path))
         .count()
 }
 
-async fn existing_chunks_for_dir(database: &Database, dir_path: &str) -> Result<usize, sqlx::Error> {
+async fn existing_chunks_for_dir(
+    database: &Database,
+    dir_path: &str,
+) -> Result<usize, sqlx::Error> {
     Ok(database
         .list_documents_in_dir(dir_path)
         .await?
@@ -681,8 +705,7 @@ async fn emit_index_progress(
     state: &str,
     message: &str,
     on_progress: &IndexProgressEmitter,
-) -> Result<(), sqlx::Error>
-{
+) -> Result<(), sqlx::Error> {
     let status = database.get_index_status().await?;
     on_progress(IndexRefreshProgressView {
         job_id: job_id.to_string(),
@@ -770,7 +793,9 @@ fn progress_with_stream(processed_before_current: usize, total: usize, event_per
     }
 
     let completed = processed_before_current as f32 + (event_percent as f32 / 100.0);
-    ((completed / total as f32) * 100.0).round().clamp(0.0, 100.0) as u8
+    ((completed / total as f32) * 100.0)
+        .round()
+        .clamp(0.0, 100.0) as u8
 }
 
 fn parser_event_message(event: &ParserStreamEvent, fallback: &str) -> String {
@@ -810,10 +835,16 @@ fn classify_failure(reason: &str, path: &str) -> (String, String) {
     if reason.contains("文件过大") {
         return ("文件过大".to_string(), "file_too_large".to_string());
     }
-    if reason.contains("暂不支持 PDF") || reason.contains("不支持的文件类型") || lower_reason.contains("unsupported file type") {
+    if reason.contains("暂不支持 PDF")
+        || reason.contains("不支持的文件类型")
+        || lower_reason.contains("unsupported file type")
+    {
         return ("不支持的格式".to_string(), "unsupported_format".to_string());
     }
-    if lower_reason.contains("permission denied") || reason.contains("权限") || lower_reason.contains("access denied") {
+    if lower_reason.contains("permission denied")
+        || reason.contains("权限")
+        || lower_reason.contains("access denied")
+    {
         return ("权限不足".to_string(), "permission_denied".to_string());
     }
     if lower_reason.contains("no such file")
@@ -869,10 +900,7 @@ mod tests {
 
         let result = tauri::async_runtime::block_on(async {
             let database = Database::open_or_init().await.expect("open temp database");
-            database
-                .add_index_dir(dir_path)
-                .await
-                .expect("add dir");
+            database.add_index_dir(dir_path).await.expect("add dir");
             rebuild_dir(&database, dir_path, "test", Arc::new(|_| {}))
                 .await
                 .expect("rebuild dir")

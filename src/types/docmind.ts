@@ -202,6 +202,15 @@ export interface SearchDebugView {
   hits: SearchResultView[];
 }
 
+export interface SearchDebugReportEventView {
+  request_id: string;
+  state: 'running' | 'completed' | 'failed';
+  query: string;
+  report: SearchDebugView | null;
+  error: string | null;
+  updated_at: string;
+}
+
 export interface SearchHistoryView {
   query: string;
   normalized_query: string;
@@ -275,6 +284,7 @@ export interface SemanticRebuildProgressView {
   job_id: string;
   state: string;
   message: string;
+  source: 'rebuild' | 'document';
   model: EmbeddingModelView;
   total_chunks: number;
   processed_chunks: number;

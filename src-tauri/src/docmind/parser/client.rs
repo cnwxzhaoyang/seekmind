@@ -39,8 +39,14 @@ impl Display for ParserClientError {
             Self::Timeout => write!(f, "python parser timed out"),
             Self::SpawnFailed(error) => write!(f, "failed to spawn python parser: {error}"),
             Self::Io(error) => write!(f, "python parser io error: {error}"),
-            Self::InvalidResponse(error) => write!(f, "python parser returned invalid response: {error}"),
-            Self::ParserFailed(error) => write!(f, "python parser failed: {} ({})", error.message, error.code),
+            Self::InvalidResponse(error) => {
+                write!(f, "python parser returned invalid response: {error}")
+            }
+            Self::ParserFailed(error) => write!(
+                f,
+                "python parser failed: {} ({})",
+                error.message, error.code
+            ),
         }
     }
 }
@@ -49,7 +55,8 @@ impl std::error::Error for ParserClientError {}
 
 impl PythonParserClient {
     pub fn from_env() -> Self {
-        let python_bin = std::env::var("DOCMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
+        let python_bin =
+            std::env::var("DOCMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
         let script_path = std::env::var("DOCMIND_PARSER_SCRIPT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("parser/docmind_parser/__main__.py"));
@@ -108,7 +115,8 @@ impl PythonParserClient {
         let payload = serde_json::to_vec(&request)
             .map_err(|error| ParserClientError::Io(error.to_string()))?;
 
-        let mut child = self.spawn_command()?
+        let mut child = self
+            .spawn_command()?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -193,7 +201,9 @@ impl PythonParserClient {
                     match parsed {
                         Ok(parsed) => {
                             if parsed.request_id != request_id {
-                                return Err(ParserClientError::InvalidResponse("request_id mismatch".to_string()));
+                                return Err(ParserClientError::InvalidResponse(
+                                    "request_id mismatch".to_string(),
+                                ));
                             }
                             response = Some(parsed);
                         }
@@ -204,7 +214,10 @@ impl PythonParserClient {
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if response.is_some() {
-                        if let Some(status) = child.try_wait().map_err(|error| ParserClientError::Io(error.to_string()))? {
+                        if let Some(status) = child
+                            .try_wait()
+                            .map_err(|error| ParserClientError::Io(error.to_string()))?
+                        {
                             if status.success() {
                                 break;
                             }
@@ -218,23 +231,28 @@ impl PythonParserClient {
                     if response.is_some() {
                         break;
                     }
-                    return Err(ParserClientError::InvalidResponse("python parser stream closed unexpectedly".to_string()));
+                    return Err(ParserClientError::InvalidResponse(
+                        "python parser stream closed unexpectedly".to_string(),
+                    ));
                 }
             }
         }
 
-        let response = response.ok_or_else(|| ParserClientError::InvalidResponse("missing response".to_string()))?;
+        let response = response
+            .ok_or_else(|| ParserClientError::InvalidResponse("missing response".to_string()))?;
 
         if response.ok {
             response
                 .document
                 .ok_or_else(|| ParserClientError::InvalidResponse("missing document".to_string()))
         } else {
-            Err(ParserClientError::ParserFailed(response.error.unwrap_or(ParserError {
-                code: "parser_unknown".to_string(),
-                message: "parser returned error without details".to_string(),
-                details: None,
-            })))
+            Err(ParserClientError::ParserFailed(response.error.unwrap_or(
+                ParserError {
+                    code: "parser_unknown".to_string(),
+                    message: "parser returned error without details".to_string(),
+                    details: None,
+                },
+            )))
         }
     }
 
@@ -244,14 +262,20 @@ impl PythonParserClient {
         }
 
         let candidates = [
-            std::env::current_dir().ok().map(|cwd| cwd.join(&self.script_path)),
+            std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.join(&self.script_path)),
             std::env::current_dir()
                 .ok()
                 .map(|cwd| cwd.join("src-tauri").join(&self.script_path)),
             std::env::current_exe()
                 .ok()
                 .and_then(|exe| exe.parent().map(|parent| parent.join(&self.script_path))),
-            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(&self.script_path)),
+            Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join(&self.script_path),
+            ),
         ];
 
         for candidate in candidates.into_iter().flatten() {

@@ -14,14 +14,16 @@ use uuid::Uuid;
 
 use crate::docmind::file_ops;
 use crate::docmind::models::{
-    ChunkView, CurrentTaskView, DocumentView, FavoriteView, FailedFileView, HighlightSpan,
+    ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
     IndexDirView, IndexStatusView, RecentDocumentView, SearchHistoryView, SearchResultView,
 };
-use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
+use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::indexer;
-use crate::docmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocument, IndexSettings};
+use crate::docmind::storage::types::{
+    ChunkRecord, DocumentState, ExtractedDocument, IndexSettings,
+};
 
 #[derive(Clone)]
 pub struct Database {
@@ -60,6 +62,29 @@ struct DocumentPathRow {
     path: String,
     dir_path: String,
     chunks: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct FulltextDocumentRow {
+    id: String,
+    dir_path: String,
+    path: String,
+    file_name: String,
+    ext: String,
+    file_size: i64,
+    modified_at: i64,
+    content_hash: String,
+    modified: String,
+    content: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct FulltextChunkRow {
+    heading: String,
+    snippet: String,
+    paragraph: Option<i64>,
+    page: Option<i64>,
+    score: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +247,7 @@ struct CurrentTaskRow {
 impl Database {
     pub async fn open_or_init() -> Result<Self, String> {
         let path = database_path();
+        eprintln!("[DocMind] SQLite database path: {}", path.display());
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -233,7 +259,7 @@ impl Database {
             .foreign_keys(true);
 
         let pool = SqlitePoolOptions::new()
-            .max_connections(4)
+            .max_connections(8)
             .connect_with(options)
             .await
             .map_err(|error| error.to_string())?;
@@ -298,19 +324,110 @@ impl Database {
 
         let skip_bootstrap_index = std::env::var("DOCMIND_SKIP_BOOTSTRAP_INDEX").is_ok();
         if !skip_bootstrap_index {
-            let indexed_docs = database
-                .count_documents()
+            database
+                .repair_fulltext_index_if_needed()
                 .await
                 .map_err(|error| error.to_string())?;
-
-            if indexed_docs == 0 {
-                let _ = indexer::rebuild_all(&database, "bootstrap", Arc::new(|_| {})).await;
-            } else if database.search_index.doc_count() == 0 {
-                let _ = indexer::rebuild_all(&database, "bootstrap", Arc::new(|_| {})).await;
-            }
         }
 
         Ok(database)
+    }
+
+    async fn repair_fulltext_index_if_needed(&self) -> Result<(), sqlx::Error> {
+        let indexed_docs = self.count_documents().await?;
+        let sqlite_chunks = self.count_chunks().await?;
+        let tantivy_chunks = self.search_index.doc_count() as i64;
+
+        if indexed_docs == 0 {
+            if tantivy_chunks != 0 {
+                eprintln!(
+                    "[DocMind] fulltext repair clearing stale Tantivy index sqlite_chunks=0 tantivy_docs={tantivy_chunks}"
+                );
+                self.search_index
+                    .clear_all()
+                    .map_err(sqlx::Error::Protocol)?;
+            }
+            let _ = indexer::rebuild_all(self, "bootstrap", Arc::new(|_| {})).await;
+            return Ok(());
+        }
+
+        if sqlite_chunks == tantivy_chunks {
+            return Ok(());
+        }
+
+        eprintln!(
+            "[DocMind] fulltext repair rebuilding Tantivy from SQLite sqlite_chunks={sqlite_chunks} tantivy_docs={tantivy_chunks}"
+        );
+        self.rebuild_fulltext_index_from_sqlite().await
+    }
+
+    async fn rebuild_fulltext_index_from_sqlite(&self) -> Result<(), sqlx::Error> {
+        self.search_index
+            .clear_all()
+            .map_err(sqlx::Error::Protocol)?;
+
+        let documents = sqlx::query_as::<_, FulltextDocumentRow>(
+            r#"
+            SELECT id, dir_path, path, file_name, ext, file_size, modified_at, content_hash, modified, content
+            FROM documents
+            ORDER BY path ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in documents {
+            let chunks = self.fulltext_chunks_for_document(&row.id).await?;
+            if chunks.is_empty() {
+                continue;
+            }
+
+            let document = ExtractedDocument {
+                dir_path: row.dir_path,
+                path: row.path,
+                file_name: row.file_name,
+                ext: row.ext,
+                file_size: row.file_size,
+                modified_at: row.modified_at,
+                content_hash: row.content_hash,
+                modified: row.modified,
+                content: row.content,
+            };
+
+            self.search_index
+                .index_document(&row.id, &document, &chunks)
+                .map_err(sqlx::Error::Protocol)?;
+        }
+
+        Ok(())
+    }
+
+    async fn fulltext_chunks_for_document(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<ChunkRecord>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, FulltextChunkRow>(
+            r#"
+            SELECT heading, snippet, paragraph, page, score
+            FROM chunks
+            WHERE document_id = ?
+            ORDER BY CAST(substr(id, instr(id, ':') + 1) AS INTEGER) ASC
+            "#,
+        )
+        .bind(document_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ChunkRecord {
+                heading: row.heading,
+                snippet: row.snippet,
+                paragraph: row.paragraph,
+                page: row.page,
+                score: row.score,
+            })
+            .collect())
     }
 
     pub async fn get_index_settings(&self) -> Result<IndexSettings, sqlx::Error> {
@@ -461,7 +578,8 @@ impl Database {
         }
 
         let mut sorted_explicit_paths = explicit_paths.clone();
-        sorted_explicit_paths.sort_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)));
+        sorted_explicit_paths
+            .sort_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)));
 
         for doc in document_rows {
             let doc_path = normalize_directory_path(&doc.path);
@@ -499,14 +617,17 @@ impl Database {
             for root in matching_roots {
                 if is_virtual_directory(&root) {
                     if doc.dir_path == root {
-                        let entry = nodes.entry(root.clone()).or_insert_with(|| DirectoryAggregate {
-                            path: root.clone(),
-                            enabled: true,
-                            docs: 0,
-                            chunks: 0,
-                            status: "indexed".to_string(),
-                            is_explicit: true,
-                        });
+                        let entry =
+                            nodes
+                                .entry(root.clone())
+                                .or_insert_with(|| DirectoryAggregate {
+                                    path: root.clone(),
+                                    enabled: true,
+                                    docs: 0,
+                                    chunks: 0,
+                                    status: "indexed".to_string(),
+                                    is_explicit: true,
+                                });
                         entry.docs += 1;
                         entry.chunks += doc.chunks as usize;
                     }
@@ -519,14 +640,17 @@ impl Database {
                         break;
                     }
 
-                    let entry = nodes.entry(current.clone()).or_insert_with(|| DirectoryAggregate {
-                        path: current.clone(),
-                        enabled: false,
-                        docs: 0,
-                        chunks: 0,
-                        status: "empty".to_string(),
-                        is_explicit: false,
-                    });
+                    let entry =
+                        nodes
+                            .entry(current.clone())
+                            .or_insert_with(|| DirectoryAggregate {
+                                path: current.clone(),
+                                enabled: false,
+                                docs: 0,
+                                chunks: 0,
+                                status: "empty".to_string(),
+                                is_explicit: false,
+                            });
                     entry.docs += 1;
                     entry.chunks += doc.chunks as usize;
 
@@ -593,7 +717,12 @@ impl Database {
                 is_explicit: node.is_explicit,
             })
             .collect::<Vec<_>>();
-        rows.sort_by(|left, right| left.path.len().cmp(&right.path.len()).then(left.path.cmp(&right.path)));
+        rows.sort_by(|left, right| {
+            left.path
+                .len()
+                .cmp(&right.path.len())
+                .then(left.path.cmp(&right.path))
+        });
         Ok(rows)
     }
 
@@ -605,7 +734,11 @@ impl Database {
         Ok(self.build_search_results(query, limit).await?.hits)
     }
 
-    pub async fn record_search_history(&self, query: &str, hit_count: usize) -> Result<(), sqlx::Error> {
+    pub async fn record_search_history(
+        &self,
+        query: &str,
+        hit_count: usize,
+    ) -> Result<(), sqlx::Error> {
         let normalized_query = normalize_query(query).join(" ");
         if normalized_query.trim().is_empty() {
             return Ok(());
@@ -633,7 +766,10 @@ impl Database {
         Ok(())
     }
 
-    pub async fn list_search_history(&self, limit: i64) -> Result<Vec<SearchHistoryView>, sqlx::Error> {
+    pub async fn list_search_history(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<SearchHistoryView>, sqlx::Error> {
         let rows = sqlx::query_as::<_, SearchHistoryRow>(
             r#"
             SELECT query, normalized_query, hit_count, last_hit_at
@@ -658,7 +794,10 @@ impl Database {
             .collect())
     }
 
-    async fn derive_history_terms(&self, current_terms: &[String]) -> Result<Vec<String>, sqlx::Error> {
+    async fn derive_history_terms(
+        &self,
+        current_terms: &[String],
+    ) -> Result<Vec<String>, sqlx::Error> {
         let history = self.list_search_history(30).await?;
         let current_set = current_terms
             .iter()
@@ -671,7 +810,10 @@ impl Database {
             let weight = item.hit_count.max(1);
             for term in item.normalized_query.split_whitespace() {
                 let normalized = term.trim().to_lowercase();
-                if normalized.is_empty() || current_set.contains(&normalized) || normalized.len() < 2 {
+                if normalized.is_empty()
+                    || current_set.contains(&normalized)
+                    || normalized.len() < 2
+                {
                     continue;
                 }
                 *term_counts.entry(normalized).or_insert(0) += weight;
@@ -682,12 +824,7 @@ impl Database {
             .into_iter()
             .filter(|(_, count)| *count >= 2)
             .collect::<Vec<_>>();
-        terms.sort_by(|left, right| {
-            right
-                .1
-                .cmp(&left.1)
-                .then_with(|| left.0.cmp(&right.0))
-        });
+        terms.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
         Ok(terms.into_iter().take(4).map(|(term, _)| term).collect())
     }
 
@@ -722,7 +859,10 @@ impl Database {
         Ok(())
     }
 
-    pub async fn list_recent_documents(&self, limit: i64) -> Result<Vec<RecentDocumentView>, sqlx::Error> {
+    pub async fn list_recent_documents(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<RecentDocumentView>, sqlx::Error> {
         let rows = sqlx::query_as::<_, RecentDocumentRow>(
             r#"
             SELECT path, title, file_name, ext, last_opened_at, open_count
@@ -826,7 +966,11 @@ impl Database {
             "#,
         )
         .bind(&target)
-        .bind(if heading.trim().is_empty() { file_name } else { heading })
+        .bind(if heading.trim().is_empty() {
+            file_name
+        } else {
+            heading
+        })
         .bind(path)
         .bind(now)
         .bind(now)
@@ -1076,10 +1220,11 @@ impl Database {
         } else {
             Ok(Vec::new())
         };
-        let (semantic_candidates, semantic_fallback, semantic_fallback_reason) = match semantic_result {
-            Ok(hits) => (hits, false, String::new()),
-            Err(error) => (Vec::new(), true, error),
-        };
+        let (semantic_candidates, semantic_fallback, semantic_fallback_reason) =
+            match semantic_result {
+                Ok(hits) => (hits, false, String::new()),
+                Err(error) => (Vec::new(), true, error),
+            };
         let semantic_fallback_reason_text = if semantic_fallback_reason.is_empty() {
             if !semantic_enabled {
                 "语义检索已关闭".to_string()
@@ -1181,13 +1326,15 @@ impl Database {
                     row.page.map(|value| value as u32),
                 ));
                 let recent_open_count = recent_document_map.get(&row.path).copied().unwrap_or(0);
-                let preference_score = rerank_bonus(
-                    is_favorite,
-                    recent_open_count,
-                    history_rewrite_applied,
-                );
-                let (snippet, highlight_spans, snippet_window_start, snippet_window_end, snippet_source_len) =
-                    build_search_snippet(&row.snippet, &normalized_terms, 220);
+                let preference_score =
+                    rerank_bonus(is_favorite, recent_open_count, history_rewrite_applied);
+                let (
+                    snippet,
+                    highlight_spans,
+                    snippet_window_start,
+                    snippet_window_end,
+                    snippet_source_len,
+                ) = build_search_snippet(&row.snippet, &normalized_terms, 220);
                 let (matched_field, match_origin) = if keyword_score > 0.0 {
                     matched_field_and_origin(&row, &normalized_terms)
                 } else if semantic_score > 0.0 {
@@ -1226,7 +1373,10 @@ impl Database {
                 let weighted_title_score = title_score * settings.title_weight;
                 let weighted_filename_score = filename_score * settings.filename_weight;
                 let weighted_preference_score = preference_score * settings.preference_weight;
-                let final_score = raw_score + weighted_preference_score + weighted_title_score + weighted_filename_score;
+                let final_score = raw_score
+                    + weighted_preference_score
+                    + weighted_title_score
+                    + weighted_filename_score;
                 let mut rank_reason = rank_reason;
                 rank_reason.base_score = base_score;
                 rank_reason.raw_score = raw_score;
@@ -1248,8 +1398,8 @@ impl Database {
                         snippet_window_start,
                         snippet_window_end,
                         snippet_source_len,
-                    paragraph: row.paragraph.map(|value| value as u32),
-                    page: row.page.map(|value| value as u32),
+                        paragraph: row.paragraph.map(|value| value as u32),
+                        page: row.page.map(|value| value as u32),
                         modified: row.modified,
                         score: final_score,
                         rank_reason,
@@ -1468,7 +1618,10 @@ impl Database {
             .collect())
     }
 
-    pub(crate) async fn clear_directory_documents(&self, dir_path: &str) -> Result<(), sqlx::Error> {
+    pub(crate) async fn clear_directory_documents(
+        &self,
+        dir_path: &str,
+    ) -> Result<(), sqlx::Error> {
         self.search_index
             .delete_directory(dir_path)
             .map_err(sqlx::Error::Protocol)?;
@@ -1556,7 +1709,10 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) async fn document_id_by_path(&self, path: &str) -> Result<Option<String>, sqlx::Error> {
+    pub(crate) async fn document_id_by_path(
+        &self,
+        path: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
         sqlx::query_scalar::<_, String>(
             r#"
             SELECT id
@@ -1718,7 +1874,9 @@ impl Database {
         Ok(())
     }
 
-    async fn last_index_run_summary(&self) -> Result<Option<crate::docmind::models::IndexRunSummaryView>, sqlx::Error> {
+    async fn last_index_run_summary(
+        &self,
+    ) -> Result<Option<crate::docmind::models::IndexRunSummaryView>, sqlx::Error> {
         let row = sqlx::query_as::<_, IndexRunSummaryRow>(
             r#"
             SELECT updated, skipped, deleted, scanned, total, succeeded, failed, completed_at
@@ -1782,7 +1940,9 @@ impl Database {
         Ok(())
     }
 
-    pub(crate) async fn load_index_checkpoint(&self) -> Result<Option<IndexCheckpointRow>, sqlx::Error> {
+    pub(crate) async fn load_index_checkpoint(
+        &self,
+    ) -> Result<Option<IndexCheckpointRow>, sqlx::Error> {
         sqlx::query_as::<_, IndexCheckpointRow>(
             r#"
             SELECT dir_paths, pending_delete_paths, pending_update_paths, phase, current_dir, current_file, total, processed, succeeded, failed, updated, skipped, deleted
@@ -2235,7 +2395,8 @@ impl Database {
     }
 
     async fn ensure_embedding_models_row(&self) -> Result<(), sqlx::Error> {
-        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM embedding_models").await?;
+        let count =
+            scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM embedding_models").await?;
         if count == 0 {
             let now = current_unix_ts();
             sqlx::query(
@@ -2269,7 +2430,8 @@ impl Database {
     }
 
     async fn ensure_vector_index_meta_row(&self) -> Result<(), sqlx::Error> {
-        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM vector_index_meta").await?;
+        let count =
+            scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM vector_index_meta").await?;
         if count == 0 {
             sqlx::query(
                 r#"
@@ -2296,42 +2458,36 @@ impl Database {
 
         let mut alter_statements = Vec::new();
         if !columns.contains("current_dir") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN current_dir TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN current_dir TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("current_file") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN current_file TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN current_file TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("succeeded") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN succeeded INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN succeeded INTEGER NOT NULL DEFAULT 0");
         }
         if !columns.contains("failed") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN failed INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN failed INTEGER NOT NULL DEFAULT 0");
         }
         if !columns.contains("updated") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN updated INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN updated INTEGER NOT NULL DEFAULT 0");
         }
         if !columns.contains("skipped") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0");
         }
         if !columns.contains("deleted") {
-            alter_statements.push(
-                "ALTER TABLE current_task ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
         }
         if !columns.contains("state") {
-            alter_statements.push("ALTER TABLE current_task ADD COLUMN state TEXT NOT NULL DEFAULT 'idle'");
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN state TEXT NOT NULL DEFAULT 'idle'");
         }
         if !columns.contains("pause_requested") {
             alter_statements.push(
@@ -2364,14 +2520,12 @@ impl Database {
             );
         }
         if !columns.contains("code") {
-            alter_statements.push(
-                "ALTER TABLE failed_files ADD COLUMN code TEXT NOT NULL DEFAULT 'unknown'",
-            );
+            alter_statements
+                .push("ALTER TABLE failed_files ADD COLUMN code TEXT NOT NULL DEFAULT 'unknown'");
         }
         if !columns.contains("retry_count") {
-            alter_statements.push(
-                "ALTER TABLE failed_files ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE failed_files ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0");
         }
         if !columns.contains("first_failed_at") {
             alter_statements.push(
@@ -2392,7 +2546,8 @@ impl Database {
     }
 
     async fn ensure_index_run_summary_row(&self) -> Result<(), sqlx::Error> {
-        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM index_run_summary").await?;
+        let count =
+            scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM index_run_summary").await?;
         if count == 0 {
             self.save_index_run_summary(0, 0, 0, 0, 0, 0, 0).await?;
         }
@@ -2427,9 +2582,8 @@ impl Database {
             );
         }
         if !columns.contains("title_weight") {
-            alter_statements.push(
-                "ALTER TABLE index_settings ADD COLUMN title_weight REAL NOT NULL DEFAULT 1",
-            );
+            alter_statements
+                .push("ALTER TABLE index_settings ADD COLUMN title_weight REAL NOT NULL DEFAULT 1");
         }
         if !columns.contains("filename_weight") {
             alter_statements.push(
@@ -2552,33 +2706,28 @@ impl Database {
         let mut altered = false;
         let mut alter_statements = Vec::new();
         if !columns.contains("dir_path") {
-            alter_statements.push(
-                "ALTER TABLE documents ADD COLUMN dir_path TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE documents ADD COLUMN dir_path TEXT NOT NULL DEFAULT ''");
             altered = true;
         }
         if !columns.contains("file_size") {
-            alter_statements.push(
-                "ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0");
             altered = true;
         }
         if !columns.contains("modified_at") {
-            alter_statements.push(
-                "ALTER TABLE documents ADD COLUMN modified_at INTEGER NOT NULL DEFAULT 0",
-            );
+            alter_statements
+                .push("ALTER TABLE documents ADD COLUMN modified_at INTEGER NOT NULL DEFAULT 0");
             altered = true;
         }
         if !columns.contains("content_hash") {
-            alter_statements.push(
-                "ALTER TABLE documents ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE documents ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''");
             altered = true;
         }
         if !columns.contains("content") {
-            alter_statements.push(
-                "ALTER TABLE documents ADD COLUMN content TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE documents ADD COLUMN content TEXT NOT NULL DEFAULT ''");
             altered = true;
         }
 
@@ -2642,7 +2791,10 @@ impl Database {
         }))
     }
 
-    async fn fetch_chunks_by_ids(&self, chunk_ids: &[String]) -> Result<Vec<SearchRow>, sqlx::Error> {
+    async fn fetch_chunks_by_ids(
+        &self,
+        chunk_ids: &[String],
+    ) -> Result<Vec<SearchRow>, sqlx::Error> {
         if chunk_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -2827,7 +2979,13 @@ fn build_search_snippet(
         });
     }
 
-    (snippet, adjusted_spans, snippet_start, snippet_end, total_chars)
+    (
+        snippet,
+        adjusted_spans,
+        snippet_start,
+        snippet_end,
+        total_chars,
+    )
 }
 
 fn boosted_search_score(base_score: f32, match_origin: &str, modified_at: i64, now: i64) -> f32 {
@@ -2849,11 +3007,7 @@ fn boosted_search_score(base_score: f32, match_origin: &str, modified_at: i64, n
     base_score + field_boost + recency_boost
 }
 
-fn rerank_bonus(
-    is_favorite: bool,
-    recent_open_count: usize,
-    history_expanded: bool,
-) -> f32 {
+fn rerank_bonus(is_favorite: bool, recent_open_count: usize, history_expanded: bool) -> f32 {
     let mut bonus = 0.0;
 
     if is_favorite {
@@ -3001,7 +3155,10 @@ fn truncate_by_chars(text: &str, limit: usize) -> String {
 }
 
 fn slice_chars(text: &str, start: usize, end: usize) -> String {
-    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+    text.chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }
 
 fn favorite_result_target(
@@ -3021,7 +3178,15 @@ fn favorite_result_target(
 
 fn database_path() -> PathBuf {
     let base = data_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("DocMind").join("docmind.sqlite")
+    #[cfg(debug_assertions)]
+    {
+        return base.join("DocMindDev").join("docmind.sqlite");
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        base.join("DocMind").join("docmind.sqlite")
+    }
 }
 
 pub fn sqlite_database_path() -> PathBuf {

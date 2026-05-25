@@ -43,14 +43,14 @@ mod macos_quicklook {
     use std::ptr::NonNull;
 
     use objc2::__framework_prelude::*;
-    use objc2::{define_class, msg_send, MainThreadOnly};
     use objc2::rc::{Allocated, Retained};
-    use objc2::AnyThread;
     use objc2::runtime::AnyObject;
+    use objc2::AnyThread;
     use objc2::MainThreadMarker;
+    use objc2::{define_class, msg_send, MainThreadOnly};
     use objc2_app_kit::{
-        NSEvent, NSApplication, NSBackingStoreType, NSPanel, NSResponder, NSView,
-        NSWindowCollectionBehavior, NSWindowStyleMask, NSFloatingWindowLevel,
+        NSApplication, NSBackingStoreType, NSEvent, NSFloatingWindowLevel, NSPanel, NSResponder,
+        NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
     };
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURL};
 
@@ -143,9 +143,8 @@ mod macos_quicklook {
 
     unsafe fn create_panel_state(mtm: MainThreadMarker) -> QuickLookPanelState {
         let frame = make_preview_frame();
-        let style = NSWindowStyleMask::Titled
-            | NSWindowStyleMask::Closable
-            | NSWindowStyleMask::Resizable;
+        let style =
+            NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Resizable;
 
         let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
             NSPanel::alloc(mtm),
@@ -210,7 +209,8 @@ mod macos_quicklook {
                 }
 
                 if let Some(state) = state.as_mut() {
-                    if state.current_path.as_deref() == Some(path.as_str()) && state.panel.isVisible()
+                    if state.current_path.as_deref() == Some(path.as_str())
+                        && state.panel.isVisible()
                     {
                         state.panel.makeKeyAndOrderFront(None);
                         state.panel.orderFrontRegardless();
@@ -221,9 +221,8 @@ mod macos_quicklook {
                     let ns_path = unsafe {
                         NSString::initWithUTF8String(
                             NSString::alloc(),
-                            NonNull::new(c_path.as_ptr() as *mut c_char).ok_or_else(|| {
-                                "Quick Look 路径转换失败".to_string()
-                            })?,
+                            NonNull::new(c_path.as_ptr() as *mut c_char)
+                                .ok_or_else(|| "Quick Look 路径转换失败".to_string())?,
                         )
                         .ok_or_else(|| "Quick Look 路径转换失败".to_string())?
                     };

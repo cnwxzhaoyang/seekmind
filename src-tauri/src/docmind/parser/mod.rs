@@ -7,4 +7,6 @@ pub use client::{
     python_parser_enabled, ParserClientError, PythonParserClient,
 };
 #[allow(unused_imports)]
-pub use types::{ParsedChunk, ParsedDocument, ParserError, ParserOptions, ParserRequest, ParserResponse};
+pub use types::{
+    ParsedChunk, ParsedDocument, ParserError, ParserOptions, ParserRequest, ParserResponse,
+};

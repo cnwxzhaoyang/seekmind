@@ -69,6 +69,7 @@ const rebuildSemanticEmbeddings = async () => {
       job_id: started.job_id,
       state: "running",
       message: t("semantic.info.rebuildStarted"),
+      source: "rebuild",
       model: started.status.model,
       total_chunks: started.status.sqlite_chunks,
       processed_chunks: 0,
@@ -150,6 +151,9 @@ const installSemanticProgressListener = async () => {
     "docmind:semantic:rebuild-progress",
     (event) => {
       const payload = event.payload;
+      if (payload.source !== "rebuild") {
+        return;
+      }
       if (semanticRebuildJobId.value && payload.job_id !== semanticRebuildJobId.value) {
         return;
       }

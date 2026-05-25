@@ -14,7 +14,10 @@ use crate::docmind::storage::Database;
 use super::client::PythonSemanticClient;
 use super::embedding::{cosine_similarity, normalize_embedding_text, text_hash, vector_norm};
 
-type SemanticProgressEmitter = Arc<dyn Fn(crate::docmind::models::SemanticRebuildProgressView) + Send + Sync>;
+type SemanticProgressEmitter =
+    Arc<dyn Fn(crate::docmind::models::SemanticRebuildProgressView) + Send + Sync>;
+
+const SEMANTIC_SOURCE_REBUILD: &str = "rebuild";
 
 fn emit_semantic_progress(
     emitter: Option<&SemanticProgressEmitter>,
@@ -28,6 +31,7 @@ fn emit_semantic_progress(
 fn emit_semantic_embedding_progress(
     progress: Option<&SemanticProgressEmitter>,
     job_id: &str,
+    source: &str,
     model: &EmbeddingModelView,
     total_chunks: usize,
     base_processed: usize,
@@ -43,13 +47,17 @@ fn emit_semantic_embedding_progress(
             job_id: job_id.to_string(),
             state: "running".to_string(),
             message,
+            source: source.to_string(),
             model: model.clone(),
             total_chunks,
             processed_chunks: base_processed.saturating_add(processed_in_doc),
             embedded_chunks: base_embedded.saturating_add(processed_in_doc),
             current_document: document_path.to_string(),
             current_chunk,
-            percent: progress_percent(base_processed.saturating_add(processed_in_doc), total_chunks),
+            percent: progress_percent(
+                base_processed.saturating_add(processed_in_doc),
+                total_chunks,
+            ),
             last_error: String::new(),
             updated_at: format_unix_ts(now_unix_ts()),
         },
@@ -137,9 +145,7 @@ pub async fn get_embedding_model_status(
     })
 }
 
-pub async fn list_embedding_models(
-    database: &Database,
-) -> Result<Vec<EmbeddingModelView>, String> {
+pub async fn list_embedding_models(database: &Database) -> Result<Vec<EmbeddingModelView>, String> {
     let rows = sqlx::query_as::<_, EmbeddingModelRow>(
         r#"
         SELECT id, name, provider, model_path, dimension, enabled, available, is_default, status, created_at, updated_at
@@ -260,6 +266,7 @@ pub async fn rebuild_all_embeddings(
             job_id: job_id.clone(),
             state: "running".to_string(),
             message: "正在准备语义模型".to_string(),
+            source: SEMANTIC_SOURCE_REBUILD.to_string(),
             model: model.clone(),
             total_chunks,
             processed_chunks,
@@ -279,9 +286,15 @@ pub async fn rebuild_all_embeddings(
     clear_all_embeddings(database).await?;
 
     for row in rows {
-        let document_id: String = row.try_get("document_id").map_err(|error| error.to_string())?;
-        let document_path: String = row.try_get("document_path").map_err(|error| error.to_string())?;
-        let file_name_value: String = row.try_get("file_name").map_err(|error| error.to_string())?;
+        let document_id: String = row
+            .try_get("document_id")
+            .map_err(|error| error.to_string())?;
+        let document_path: String = row
+            .try_get("document_path")
+            .map_err(|error| error.to_string())?;
+        let file_name_value: String = row
+            .try_get("file_name")
+            .map_err(|error| error.to_string())?;
         let chunk_id: String = row.try_get("chunk_id").map_err(|error| error.to_string())?;
         let heading: String = row.try_get("heading").unwrap_or_default();
         let snippet: String = row.try_get("snippet").unwrap_or_default();
@@ -302,6 +315,7 @@ pub async fn rebuild_all_embeddings(
                 &model,
                 &client,
                 &job_id,
+                SEMANTIC_SOURCE_REBUILD,
                 progress.as_ref(),
                 total_chunks,
                 &mut processed_chunks,
@@ -327,6 +341,7 @@ pub async fn rebuild_all_embeddings(
             &model,
             &client,
             &job_id,
+            SEMANTIC_SOURCE_REBUILD,
             progress.as_ref(),
             total_chunks,
             &mut processed_chunks,
@@ -342,6 +357,7 @@ pub async fn rebuild_all_embeddings(
             job_id,
             state: "completed".to_string(),
             message: "语义向量重建完成".to_string(),
+            source: SEMANTIC_SOURCE_REBUILD.to_string(),
             model: load_default_model(database).await?,
             total_chunks,
             processed_chunks,
@@ -365,6 +381,7 @@ async fn upsert_document_embeddings_from_rows(
     model: &EmbeddingModelView,
     client: &PythonSemanticClient,
     job_id: &str,
+    source: &str,
     progress: Option<&SemanticProgressEmitter>,
     total_chunks: usize,
     processed_chunks: &mut usize,
@@ -389,6 +406,7 @@ async fn upsert_document_embeddings_from_rows(
             job_id: job_id.to_string(),
             state: "running".to_string(),
             message: format!("正在处理 {file_name}"),
+            source: source.to_string(),
             model: model.clone(),
             total_chunks,
             processed_chunks: *processed_chunks,
@@ -406,6 +424,7 @@ async fn upsert_document_embeddings_from_rows(
     emit_semantic_embedding_progress(
         progress,
         job_id,
+        SEMANTIC_SOURCE_REBUILD,
         model,
         total_chunks,
         base_processed,
@@ -436,6 +455,7 @@ async fn upsert_document_embeddings_from_rows(
             emit_semantic_embedding_progress(
                 progress,
                 job_id,
+                source,
                 model,
                 total_chunks,
                 base_processed,
@@ -459,6 +479,7 @@ async fn upsert_document_embeddings_from_rows(
     emit_semantic_embedding_progress(
         progress,
         job_id,
+        SEMANTIC_SOURCE_REBUILD,
         model,
         total_chunks,
         base_processed,
@@ -472,7 +493,8 @@ async fn upsert_document_embeddings_from_rows(
     for (index, _chunk) in chunks.iter().enumerate() {
         let chunk_id = format!("{document_id}:{index}");
         let semantic_text = &semantic_texts[index];
-        let vector_json = serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
+        let vector_json =
+            serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
         let now = now_unix_ts();
 
         sqlx::query(
@@ -517,6 +539,7 @@ pub async fn upsert_document_embeddings(
     document: &ExtractedDocument,
     chunks: &[ChunkRecord],
     job_id: &str,
+    source: &str,
     progress: Option<&SemanticProgressEmitter>,
 ) -> Result<(), String> {
     let model = load_default_model(database).await?;
@@ -524,7 +547,13 @@ pub async fn upsert_document_embeddings(
     let runtime_status = client
         .embedding_status(Some(&model.name))
         .map_err(|error| error.to_string())?;
-    sync_model_runtime(database, &model.id, runtime_status.available, &runtime_status.message).await?;
+    sync_model_runtime(
+        database,
+        &model.id,
+        runtime_status.available,
+        &runtime_status.message,
+    )
+    .await?;
     let model = load_default_model(database).await?;
     if !model.enabled || !model.available {
         return Err(format!("embedding 模型不可用: {}", runtime_status.message));
@@ -549,6 +578,7 @@ pub async fn upsert_document_embeddings(
     emit_semantic_embedding_progress(
         progress,
         job_id,
+        source,
         &model,
         semantic_texts.len(),
         0,
@@ -579,6 +609,7 @@ pub async fn upsert_document_embeddings(
             emit_semantic_embedding_progress(
                 progress,
                 job_id,
+                source,
                 &model,
                 semantic_texts.len(),
                 0,
@@ -602,6 +633,7 @@ pub async fn upsert_document_embeddings(
     emit_semantic_embedding_progress(
         progress,
         job_id,
+        source,
         &model,
         semantic_texts.len(),
         0,
@@ -661,7 +693,10 @@ pub async fn delete_document_embeddings(database: &Database, path: &str) -> Resu
     Ok(())
 }
 
-pub async fn delete_directory_embeddings(database: &Database, dir_path: &str) -> Result<(), String> {
+pub async fn delete_directory_embeddings(
+    database: &Database,
+    dir_path: &str,
+) -> Result<(), String> {
     sqlx::query(
         r#"
         DELETE FROM chunk_embeddings
@@ -733,7 +768,13 @@ pub async fn semantic_debug_report(
                 })
         }
     };
-    sync_model_runtime(database, &model.id, query_status.available, &query_status.message).await?;
+    sync_model_runtime(
+        database,
+        &model.id,
+        query_status.available,
+        &query_status.message,
+    )
+    .await?;
     let model = load_default_model(database).await?;
 
     let query_vectors = if rewritten_query.trim().is_empty() || !model.available {
@@ -793,7 +834,12 @@ pub async fn semantic_debug_report(
             });
         }
 
-        hits.sort_by(|left, right| right.score.partial_cmp(&left.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits.truncate(limit.max(1));
     }
 

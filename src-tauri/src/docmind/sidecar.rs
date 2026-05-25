@@ -57,13 +57,25 @@ fn candidate_paths(base_name: &str) -> Vec<PathBuf> {
 
     if let Some(exe) = current_exe.as_ref() {
         if let Some(parent) = exe.parent() {
-            paths.extend(candidate_paths_for_base_dir(parent.to_path_buf(), base_name));
+            paths.extend(candidate_paths_for_base_dir(
+                parent.to_path_buf(),
+                base_name,
+            ));
 
             if let Some(bundle_root) = parent.parent() {
                 let resources_dir = bundle_root.join("Resources");
-                paths.extend(candidate_paths_for_base_dir(resources_dir.clone(), base_name));
-                paths.extend(candidate_paths_for_base_dir(resources_dir.join("resources"), base_name));
-                paths.extend(candidate_paths_for_base_dir(resources_dir.join("app-resources"), base_name));
+                paths.extend(candidate_paths_for_base_dir(
+                    resources_dir.clone(),
+                    base_name,
+                ));
+                paths.extend(candidate_paths_for_base_dir(
+                    resources_dir.join("resources"),
+                    base_name,
+                ));
+                paths.extend(candidate_paths_for_base_dir(
+                    resources_dir.join("app-resources"),
+                    base_name,
+                ));
             }
         }
     }

@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use dirs::{cache_dir, data_dir};
-use tantivy::schema::{Field, Schema, STORED, STRING, TEXT};
 use tantivy::query::QueryParser;
-use tantivy::schema::Value;
 use tantivy::schema::document::TantivyDocument;
+use tantivy::schema::Value;
+use tantivy::schema::{Field, Schema, STORED, STRING, TEXT};
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, Term};
 
 use crate::docmind::search::{normalize_query, normalize_search_text};
@@ -38,12 +38,14 @@ impl SearchIndex {
                 if index.schema().get_field("content_text").is_err() {
                     std::fs::remove_dir_all(&index_dir).map_err(|error| error.to_string())?;
                     std::fs::create_dir_all(&index_dir).map_err(|error| error.to_string())?;
-                    Index::create_in_dir(&index_dir, schema.clone()).map_err(|error| error.to_string())?
+                    Index::create_in_dir(&index_dir, schema.clone())
+                        .map_err(|error| error.to_string())?
                 } else {
                     index
                 }
             }
-            Err(_) => Index::create_in_dir(&index_dir, schema.clone()).map_err(|error| error.to_string())?,
+            Err(_) => Index::create_in_dir(&index_dir, schema.clone())
+                .map_err(|error| error.to_string())?,
         };
 
         let reader = index
@@ -178,14 +180,20 @@ impl SearchIndex {
             parser.set_conjunction_by_default();
         }
 
-        let query = parser.parse_query(query_text).map_err(|error| error.to_string())?;
+        let query = parser
+            .parse_query(query_text)
+            .map_err(|error| error.to_string())?;
         let top_docs = searcher
-            .search(&query, &tantivy::collector::TopDocs::with_limit(limit.max(1)))
+            .search(
+                &query,
+                &tantivy::collector::TopDocs::with_limit(limit.max(1)),
+            )
             .map_err(|error| error.to_string())?;
 
         let mut hits = Vec::new();
         for (score, address) in top_docs {
-            let document: TantivyDocument = searcher.doc(address).map_err(|error| error.to_string())?;
+            let document: TantivyDocument =
+                searcher.doc(address).map_err(|error| error.to_string())?;
             let chunk_id = document
                 .get_first(self.fields.chunk_id)
                 .and_then(|value| value.as_str())
@@ -218,16 +226,30 @@ struct SearchFields {
 impl SearchFields {
     fn from_schema(schema: &Schema) -> Self {
         Self {
-            chunk_id: schema.get_field("chunk_id").expect("missing chunk_id field"),
-            document_id: schema.get_field("document_id").expect("missing document_id field"),
-            dir_path: schema.get_field("dir_path").expect("missing dir_path field"),
-            path_exact: schema.get_field("path_exact").expect("missing path_exact field"),
-            file_name: schema.get_field("file_name").expect("missing file_name field"),
-            path_text: schema.get_field("path_text").expect("missing path_text field"),
+            chunk_id: schema
+                .get_field("chunk_id")
+                .expect("missing chunk_id field"),
+            document_id: schema
+                .get_field("document_id")
+                .expect("missing document_id field"),
+            dir_path: schema
+                .get_field("dir_path")
+                .expect("missing dir_path field"),
+            path_exact: schema
+                .get_field("path_exact")
+                .expect("missing path_exact field"),
+            file_name: schema
+                .get_field("file_name")
+                .expect("missing file_name field"),
+            path_text: schema
+                .get_field("path_text")
+                .expect("missing path_text field"),
             ext: schema.get_field("ext").expect("missing ext field"),
             heading: schema.get_field("heading").expect("missing heading field"),
             snippet: schema.get_field("snippet").expect("missing snippet field"),
-            content_text: schema.get_field("content_text").expect("missing content_text field"),
+            content_text: schema
+                .get_field("content_text")
+                .expect("missing content_text field"),
         }
     }
 }
@@ -248,6 +270,26 @@ fn build_schema() -> Schema {
 }
 
 pub fn fulltext_index_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("DOCMIND_TANTIVY_DIR") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    default_fulltext_index_dir()
+}
+
+#[cfg(debug_assertions)]
+fn default_fulltext_index_dir() -> PathBuf {
+    let base = cache_dir()
+        .or_else(data_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("com.zhaoyang.docmind.dev").join("tantivy")
+}
+
+#[cfg(not(debug_assertions))]
+fn default_fulltext_index_dir() -> PathBuf {
     let base = cache_dir()
         .or_else(data_dir)
         .unwrap_or_else(|| PathBuf::from("."));

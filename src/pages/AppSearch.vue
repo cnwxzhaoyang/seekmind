@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { Clock, Copy, Eye, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
@@ -24,6 +25,7 @@ import type {
   IndexStatusView,
   ParserRuntimeView,
   RecentDocumentView,
+  SearchDebugReportEventView,
   SearchDebugView,
   SearchHistoryView,
   SearchResultView,
@@ -35,6 +37,10 @@ const searchInputRef = ref<HTMLInputElement | null>(null);
 const selectedId = ref<string>("");
 const results = ref<SearchResultView[]>([]);
 const debugReport = ref<SearchDebugView | null>(null);
+const showDebugPanel = ref(false);
+const debugReportLoading = ref(false);
+const debugReportError = ref("");
+const activeDebugRequestId = ref("");
 const status = ref<IndexStatusView | null>(null);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
 const indexSettings = ref<IndexSettingsView | null>(null);
@@ -51,6 +57,7 @@ const loading = ref(false);
 const errorMessage = ref("");
 const expandedGroups = ref<Record<string, boolean>>({});
 let selectedContextRequestId = 0;
+let unlistenSearchDebugReport: null | (() => void) = null;
 
 const {
   visibleRows: visibleQuickDirRows,
@@ -286,6 +293,77 @@ const loadQuickPanels = async () => {
   favorites.value = favoriteList;
 };
 
+const createSearchDebugRequestId = () => {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `search-debug-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const clearSearchDebugReport = () => {
+  activeDebugRequestId.value = "";
+  debugReport.value = null;
+  debugReportError.value = "";
+  debugReportLoading.value = false;
+};
+
+const installSearchDebugReportListener = async () => {
+  if (unlistenSearchDebugReport) {
+    return;
+  }
+
+  unlistenSearchDebugReport = await listen<SearchDebugReportEventView>(
+    "docmind:search-debug-report",
+    (event) => {
+      const payload = event.payload;
+      if (payload.request_id !== activeDebugRequestId.value) {
+        return;
+      }
+
+      if (payload.state === "running") {
+        debugReportLoading.value = true;
+        debugReportError.value = "";
+        return;
+      }
+
+      debugReportLoading.value = false;
+      if (payload.state === "completed") {
+        debugReport.value = payload.report;
+        debugReportError.value = "";
+        return;
+      }
+
+      debugReport.value = null;
+      debugReportError.value = payload.error || t("page.appSearch.searchFailed");
+    },
+  );
+};
+
+const requestSearchDebugReport = async () => {
+  if (!showDebugPanel.value || !query.value.trim()) {
+    clearSearchDebugReport();
+    return;
+  }
+
+  const requestId = createSearchDebugRequestId();
+  activeDebugRequestId.value = requestId;
+  debugReportLoading.value = true;
+  debugReportError.value = "";
+
+  try {
+    await docmindApi.requestSearchDebugReport(requestId, query.value, 20);
+  } catch (error) {
+    if (activeDebugRequestId.value !== requestId) {
+      return;
+    }
+
+    debugReportLoading.value = false;
+    debugReport.value = null;
+    debugReportError.value = error instanceof Error ? error.message : t("page.appSearch.searchFailed");
+  }
+};
+
 const normalizeMatchText = (value: string) => value.replace(/\s+/g, "").trim().toLowerCase();
 
 const resolveSelectedChunkIndex = (chunks: ChunkView[], current: SearchResultView) => {
@@ -390,10 +468,14 @@ const runSearch = async () => {
     results.value = [];
     selectedId.value = "";
     expandedGroups.value = {};
-    debugReport.value = null;
+    clearSearchDebugReport();
     selectedChunkCount.value = null;
     selectedDocumentChunks.value = [];
     selectedChunkIndex.value = -1;
+    return;
+  }
+
+  if (loading.value) {
     return;
   }
 
@@ -401,11 +483,14 @@ const runSearch = async () => {
   errorMessage.value = "";
 
   try {
-    const items = await docmindApi.searchDocuments(query.value, 20);
-    results.value = items;
+    results.value = await docmindApi.searchDocuments(query.value, 20);
     selectedId.value = "";
     expandedGroups.value = {};
-    debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20);
+    if (showDebugPanel.value) {
+      await requestSearchDebugReport();
+    } else {
+      clearSearchDebugReport();
+    }
     await loadQuickPanels();
     await loadIndexSettings();
   } catch (error) {
@@ -413,7 +498,11 @@ const runSearch = async () => {
     selectedId.value = "";
     expandedGroups.value = {};
     errorMessage.value = error instanceof Error ? error.message : t("page.appSearch.searchFailed");
-    debugReport.value = await docmindApi.getSearchDebugReport(query.value, 20).catch(() => null);
+    if (showDebugPanel.value) {
+      await requestSearchDebugReport();
+    } else {
+      clearSearchDebugReport();
+    }
     await loadQuickPanels();
     await loadIndexSettings();
   } finally {
@@ -523,6 +612,7 @@ const handleTreeContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
 
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
+  await installSearchDebugReportListener();
   await Promise.all([loadStatus(), loadParserRuntime(), loadIndexSettings(), loadQuickPanels()]);
   if (query.value.trim()) {
     await runSearch();
@@ -530,12 +620,14 @@ onMounted(async () => {
     results.value = [];
     selectedId.value = "";
     expandedGroups.value = {};
-    debugReport.value = null;
+    clearSearchDebugReport();
   }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalShortcut);
+  unlistenSearchDebugReport?.();
+  unlistenSearchDebugReport = null;
 });
 
 watch(query, () => {
@@ -543,7 +635,7 @@ watch(query, () => {
     results.value = [];
     selectedId.value = "";
     expandedGroups.value = {};
-    debugReport.value = null;
+    clearSearchDebugReport();
     selectedChunkCount.value = null;
     selectedDocumentChunks.value = [];
     selectedChunkIndex.value = -1;
@@ -565,6 +657,17 @@ watch(
   },
   { immediate: true },
 );
+
+watch(showDebugPanel, async (visible) => {
+  if (!visible) {
+    clearSearchDebugReport();
+    return;
+  }
+
+  if (query.value.trim()) {
+    await requestSearchDebugReport();
+  }
+});
 </script>
 
 <template>
@@ -587,10 +690,10 @@ watch(
       </div>
       <div class="hidden shrink-0 items-center gap-2 text-xs lg:flex">
         <DocMindBadge tone="success">
-          SQLite: {{ debugReport?.sqlite_documents ?? status?.indexed_docs ?? 0 }}/{{ debugReport?.sqlite_chunks ?? 0 }}
+          SQLite: {{ status?.indexed_docs ?? 0 }}/{{ status?.scanned_docs ?? 0 }}
         </DocMindBadge>
         <DocMindBadge tone="default">
-          Tantivy: {{ debugReport?.tantivy_documents ?? 0 }}
+          Tantivy: {{ status?.indexed_chunks ?? 0 }}
         </DocMindBadge>
         <DocMindBadge tone="default">
           {{ t("page.appSearch.semanticWeight", { weight: Math.round((indexSettings?.semantic_weight ?? 0.25) * 100) }) }}
@@ -722,6 +825,49 @@ watch(
                 <Filter :size="14" />
                 {{ t("page.appSearch.filter") }}
               </button>
+            </div>
+
+            <div v-if="showDebugPanel" class="border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.title") }}</div>
+                  <div class="mt-1 text-xs text-slate-500">{{ t("page.appSearch.debug.desc") }}</div>
+                </div>
+                <button class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100" @click="requestSearchDebugReport">
+                  {{ t("common.refresh") }}
+                </button>
+              </div>
+              <div v-if="debugReportLoading" class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-slate-400">
+                {{ t("page.appSearch.debug.loading") }}
+              </div>
+              <div v-else-if="debugReportError" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-3 text-red-700">
+                {{ debugReportError }}
+              </div>
+              <div v-else-if="debugReport" class="mt-3 space-y-3">
+                <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.hits") }}</div>
+                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.hit_count }}</div>
+                  </div>
+                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.keywordHits") }}</div>
+                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.keyword_hit_count }}</div>
+                  </div>
+                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.semanticHits") }}</div>
+                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.semantic_hit_count }}</div>
+                  </div>
+                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.mode") }}</div>
+                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.search_mode }}</div>
+                  </div>
+                </div>
+                <div class="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  <div>{{ t("page.appSearch.debug.normalized", { query: debugReport.normalized_search_text || t("common.none") }) }}</div>
+                  <div class="mt-1 break-all">{{ t("page.appSearch.debug.rewritten", { query: debugReport.rewritten_query || t("common.none") }) }}</div>
+                  <div class="mt-1 break-all">{{ t("page.appSearch.debug.expanded", { query: debugReport.expanded_query || t("common.none") }) }}</div>
+                </div>
+              </div>
             </div>
 
             <div v-if="errorMessage" class="m-4 rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">

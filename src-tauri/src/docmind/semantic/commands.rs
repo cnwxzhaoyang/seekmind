@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::docmind::models::{
-    SemanticDebugView, SemanticModelStatusView, SemanticRebuildProgressView, SemanticRebuildStartView,
+    SemanticDebugView, SemanticModelStatusView, SemanticRebuildProgressView,
+    SemanticRebuildStartView,
 };
 use crate::docmind::semantic::store;
 use crate::docmind::storage::Database;
@@ -51,6 +52,7 @@ pub async fn rebuild_semantic_embeddings(
         job_id: job_id.clone(),
         state: "running".to_string(),
         message: "正在准备语义模型".to_string(),
+        source: "rebuild".to_string(),
         model: start_status.model.clone(),
         total_chunks: start_status.sqlite_chunks,
         processed_chunks: 0,
@@ -64,7 +66,9 @@ pub async fn rebuild_semantic_embeddings(
     let _ = app.emit("docmind:semantic:rebuild-progress", initial_payload);
 
     tauri::async_runtime::spawn(async move {
-        let result = store::rebuild_all_embeddings(&database, task_job_id.clone(), Some(progress_emitter)).await;
+        let result =
+            store::rebuild_all_embeddings(&database, task_job_id.clone(), Some(progress_emitter))
+                .await;
         match result {
             Ok(status) => {
                 eprintln!(
@@ -80,6 +84,7 @@ pub async fn rebuild_semantic_embeddings(
                         job_id: task_job_id,
                         state: "failed".to_string(),
                         message: "语义向量重建失败".to_string(),
+                        source: "rebuild".to_string(),
                         model: failure_model,
                         total_chunks: 0,
                         processed_chunks: 0,
@@ -95,7 +100,10 @@ pub async fn rebuild_semantic_embeddings(
         }
     });
 
-    Ok(SemanticRebuildStartView { job_id, status: start_status })
+    Ok(SemanticRebuildStartView {
+        job_id,
+        status: start_status,
+    })
 }
 
 #[tauri::command]

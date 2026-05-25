@@ -9,3 +9,4 @@ __pycache__/
 /.docmind-build/
 /src-tauri/app-resources/
 /src-tauri/resources/
+/.docmind-dev/

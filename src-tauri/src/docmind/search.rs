@@ -13,13 +13,21 @@ pub fn rewrite_query_terms(input: &str) -> Vec<String> {
     let lower = input.to_lowercase();
     let mut expanded = Vec::new();
 
-    if lower.contains("离线仓库") || lower.contains("offline") || lower.contains("repo") || lower.contains("repository") {
+    if lower.contains("离线仓库")
+        || lower.contains("offline")
+        || lower.contains("repo")
+        || lower.contains("repository")
+    {
         expanded.push("offline".to_string());
         expanded.push("repo".to_string());
         expanded.push("repository".to_string());
         expanded.push("local repository".to_string());
     }
-    if lower.contains("语义搜索") || lower.contains("semantic") || lower.contains("embedding") || lower.contains("向量") {
+    if lower.contains("语义搜索")
+        || lower.contains("semantic")
+        || lower.contains("embedding")
+        || lower.contains("向量")
+    {
         expanded.push("semantic search".to_string());
         expanded.push("embedding".to_string());
         expanded.push("vector".to_string());
@@ -29,7 +37,12 @@ pub fn rewrite_query_terms(input: &str) -> Vec<String> {
         expanded.push("paragraph".to_string());
         expanded.push("snippet".to_string());
     }
-    if lower.contains("markdown") || lower == "md" || lower.contains(" md ") || lower.starts_with("md ") || lower.ends_with(" md") {
+    if lower.contains("markdown")
+        || lower == "md"
+        || lower.contains(" md ")
+        || lower.starts_with("md ")
+        || lower.ends_with(" md")
+    {
         expanded.push("markdown".to_string());
         expanded.push("md".to_string());
     }

@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
-use super::models::{IndexStatusView, ImportPathsView, ImportedPathView, SearchDebugView};
-use crate::docmind::semantic::store as semantic_store;
-use super::search::{normalize_query, normalize_search_text};
-use super::storage::{indexer, scanner, Database};
+use super::models::{
+    ImportPathsView, ImportedPathView, IndexStatusView, SearchDebugReportEventView, SearchDebugView,
+};
 use super::parser::python_parser_config_json;
+use super::search::{normalize_query, normalize_search_text};
 use super::storage::types::IndexSettings;
+use super::storage::{indexer, scanner, Database};
+use crate::docmind::semantic::store as semantic_store;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -20,10 +22,16 @@ fn classify_failure(reason: &str, path: &str) -> (String, String) {
     if reason.contains("文件过大") {
         return ("文件过大".to_string(), "file_too_large".to_string());
     }
-    if reason.contains("暂不支持 PDF") || reason.contains("不支持的文件类型") || lower_reason.contains("unsupported file type") {
+    if reason.contains("暂不支持 PDF")
+        || reason.contains("不支持的文件类型")
+        || lower_reason.contains("unsupported file type")
+    {
         return ("不支持的格式".to_string(), "unsupported_format".to_string());
     }
-    if lower_reason.contains("permission denied") || reason.contains("权限") || lower_reason.contains("access denied") {
+    if lower_reason.contains("permission denied")
+        || reason.contains("权限")
+        || lower_reason.contains("access denied")
+    {
         return ("权限不足".to_string(), "permission_denied".to_string());
     }
     if lower_reason.contains("no such file")
@@ -90,8 +98,13 @@ impl Drop for IndexJobGuard {
 }
 
 #[tauri::command]
-pub async fn list_index_dirs(state: tauri::State<'_, Database>) -> Result<Vec<super::models::IndexDirView>, String> {
-    state.list_index_dirs().await.map_err(|error| error.to_string())
+pub async fn list_index_dirs(
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<super::models::IndexDirView>, String> {
+    state
+        .list_index_dirs()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -106,30 +119,30 @@ pub async fn search_documents(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub async fn get_search_debug_report(
-    query: String,
+async fn build_search_debug_report(
+    database: &Database,
+    query: &str,
     limit: usize,
-    state: tauri::State<'_, Database>,
 ) -> Result<SearchDebugView, String> {
-    let search_debug = state
-        .search_documents_debug(&query, limit)
+    let search_debug = database
+        .search_documents_debug(query, limit)
         .await
         .map_err(|error| error.to_string())?;
-    let (sqlite_documents, sqlite_chunks) = state
+    let (sqlite_documents, sqlite_chunks) = database
         .debug_counts()
         .await
         .map_err(|error| error.to_string())?;
-    state
-        .record_search_history(&query, search_debug.hits.len())
+    database
+        .record_search_history(query, search_debug.hits.len())
         .await
         .map_err(|error| error.to_string())?;
-    let query_rewrite_applied = !query.trim().is_empty() && !search_debug.rewritten_query.trim().is_empty();
+    let query_rewrite_applied =
+        !query.trim().is_empty() && !search_debug.rewritten_query.trim().is_empty();
 
     Ok(SearchDebugView {
-        query: query.clone(),
-        normalized_terms: normalize_query(&query),
-        normalized_search_text: normalize_search_text(&query),
+        query: query.to_string(),
+        normalized_terms: normalize_query(query),
+        normalized_search_text: normalize_search_text(query),
         rewritten_query: search_debug.rewritten_query,
         rewritten_terms: search_debug.rewritten_terms,
         query_rewrite_applied,
@@ -138,7 +151,7 @@ pub async fn get_search_debug_report(
         expanded_query: search_debug.expanded_query,
         sqlite_documents,
         sqlite_chunks,
-        tantivy_documents: state.tantivy_document_count(),
+        tantivy_documents: database.tantivy_document_count(),
         semantic_enabled: search_debug.semantic_enabled,
         semantic_weight: search_debug.semantic_weight,
         semantic_threshold: search_debug.semantic_threshold,
@@ -152,6 +165,78 @@ pub async fn get_search_debug_report(
         hit_count: search_debug.hits.len(),
         hits: search_debug.hits,
     })
+}
+
+#[tauri::command]
+pub async fn get_search_debug_report(
+    query: String,
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<SearchDebugView, String> {
+    build_search_debug_report(state.inner(), &query, limit).await
+}
+
+#[tauri::command]
+pub async fn request_search_debug_report(
+    app: tauri::AppHandle,
+    request_id: String,
+    query: String,
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    let normalized_query = query.trim().to_string();
+    if normalized_query.is_empty() {
+        return Err("查询不能为空".to_string());
+    }
+
+    let database = state.inner().clone();
+    let emit_app = app.clone();
+    let started_at = chrono::Utc::now().to_rfc3339();
+    let _ = app.emit(
+        "docmind:search-debug-report",
+        SearchDebugReportEventView {
+            request_id: request_id.clone(),
+            state: "running".to_string(),
+            query: normalized_query.clone(),
+            report: None,
+            error: None,
+            updated_at: started_at,
+        },
+    );
+
+    tauri::async_runtime::spawn(async move {
+        let result = build_search_debug_report(&database, &normalized_query, limit).await;
+        match result {
+            Ok(report) => {
+                let _ = emit_app.emit(
+                    "docmind:search-debug-report",
+                    SearchDebugReportEventView {
+                        request_id,
+                        state: "completed".to_string(),
+                        query: normalized_query,
+                        report: Some(report),
+                        error: None,
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = emit_app.emit(
+                    "docmind:search-debug-report",
+                    SearchDebugReportEventView {
+                        request_id,
+                        state: "failed".to_string(),
+                        query: normalized_query,
+                        report: None,
+                        error: Some(error),
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                );
+            }
+        }
+    });
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -216,10 +301,13 @@ pub async fn refresh_document(
     let database = state.inner().clone();
     let emit_app = app.clone();
     let semantic_emit_app = app.clone();
-    let semantic_progress_emitter: Arc<dyn Fn(crate::docmind::models::SemanticRebuildProgressView) + Send + Sync> =
-        Arc::new(move |payload: crate::docmind::models::SemanticRebuildProgressView| {
+    let semantic_progress_emitter: Arc<
+        dyn Fn(crate::docmind::models::SemanticRebuildProgressView) + Send + Sync,
+    > = Arc::new(
+        move |payload: crate::docmind::models::SemanticRebuildProgressView| {
             let _ = semantic_emit_app.emit("docmind:semantic:rebuild-progress", payload);
-        });
+        },
+    );
     let path_string = normalized_path.to_string();
     let dir_string = normalized_dir.to_string();
     let file_name = file
@@ -278,7 +366,11 @@ pub async fn refresh_document(
             }) {
                 Ok(parsed) => {
                     let (document, chunks) = scanner::convert_python_document(&file, parsed);
-                    Ok((document, chunks, super::storage::types::ParserSource::Python))
+                    Ok((
+                        document,
+                        chunks,
+                        super::storage::types::ParserSource::Python,
+                    ))
                 }
                 Err(error) => {
                     parser_warning = Some(match error {
@@ -349,11 +441,14 @@ pub async fn refresh_document(
                             &document,
                             &chunks,
                             &task_job_id,
+                            "document",
                             Some(&semantic_progress_emitter),
                         )
                         .await
                         {
-                            eprintln!("[DocMind] semantic upsert failed for {path_string}: {error}");
+                            eprintln!(
+                                "[DocMind] semantic upsert failed for {path_string}: {error}"
+                            );
                             if let Ok(semantic_status) =
                                 semantic_store::get_embedding_model_status(&database).await
                             {
@@ -363,6 +458,7 @@ pub async fn refresh_document(
                                         job_id: task_job_id.clone(),
                                         state: "failed".to_string(),
                                         message: "单文档语义向量更新失败".to_string(),
+                                        source: "document".to_string(),
                                         model: semantic_status.model,
                                         total_chunks: semantic_status.sqlite_chunks,
                                         processed_chunks: 0,
@@ -450,7 +546,10 @@ pub async fn refresh_document(
 pub async fn get_index_status(
     state: tauri::State<'_, Database>,
 ) -> Result<IndexStatusView, String> {
-    state.get_index_status().await.map_err(|error| error.to_string())
+    state
+        .get_index_status()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -616,7 +715,10 @@ pub async fn refresh_index(
             }
             Err(error) => {
                 eprintln!("[DocMind] refresh_index error: {error}");
-                let status = database.get_index_status().await.unwrap_or(task_start_status.clone());
+                let status = database
+                    .get_index_status()
+                    .await
+                    .unwrap_or(task_start_status.clone());
                 let _ = emit_app.emit(
                     "docmind:index-refresh-progress",
                     super::models::IndexRefreshProgressView {
@@ -633,7 +735,10 @@ pub async fn refresh_index(
         }
     });
 
-    Ok(super::models::IndexRefreshStartView { job_id, status: start_status })
+    Ok(super::models::IndexRefreshStartView {
+        job_id,
+        status: start_status,
+    })
 }
 
 #[tauri::command]
@@ -684,7 +789,13 @@ pub async fn refresh_index_dir(
 
     tauri::async_runtime::spawn(async move {
         let _guard = IndexJobGuard::new(database.clone());
-        let result = indexer::rebuild_dir(&database, &path_for_task, &task_job_id, index_progress_emitter).await;
+        let result = indexer::rebuild_dir(
+            &database,
+            &path_for_task,
+            &task_job_id,
+            index_progress_emitter,
+        )
+        .await;
         match result {
             Ok(status) => {
                 eprintln!(
@@ -706,7 +817,10 @@ pub async fn refresh_index_dir(
             }
             Err(error) => {
                 eprintln!("[DocMind] refresh_index_dir error path={path_for_task} err={error}");
-                let status = database.get_index_status().await.unwrap_or(task_start_status.clone());
+                let status = database
+                    .get_index_status()
+                    .await
+                    .unwrap_or(task_start_status.clone());
                 let _ = emit_app.emit(
                     "docmind:index-refresh-progress",
                     super::models::IndexRefreshProgressView {
@@ -723,7 +837,10 @@ pub async fn refresh_index_dir(
         }
     });
 
-    Ok(super::models::IndexRefreshStartView { job_id, status: start_status })
+    Ok(super::models::IndexRefreshStartView {
+        job_id,
+        status: start_status,
+    })
 }
 
 #[tauri::command]
@@ -797,19 +914,20 @@ pub async fn import_paths(
             }
 
             let parent_dir = parent_dir_path(path);
-            let (target_dir, is_virtual) = if !parent_dir.is_empty() && known_dirs.contains(&parent_dir) {
-                (parent_dir, false)
-            } else {
-                if !virtual_dir_used {
-                    state
-                        .add_index_dir(VIRTUAL_IMPORT_DIR)
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    known_dirs.insert(VIRTUAL_IMPORT_DIR.to_string());
-                    virtual_dir_used = true;
-                }
-                (VIRTUAL_IMPORT_DIR.to_string(), true)
-            };
+            let (target_dir, is_virtual) =
+                if !parent_dir.is_empty() && known_dirs.contains(&parent_dir) {
+                    (parent_dir, false)
+                } else {
+                    if !virtual_dir_used {
+                        state
+                            .add_index_dir(VIRTUAL_IMPORT_DIR)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        known_dirs.insert(VIRTUAL_IMPORT_DIR.to_string());
+                        virtual_dir_used = true;
+                    }
+                    (VIRTUAL_IMPORT_DIR.to_string(), true)
+                };
 
             imported_files.push(ImportedPathView {
                 path: normalized,
@@ -875,7 +993,10 @@ pub async fn clear_all_indexes(
         .clear_all_index_data()
         .await
         .map_err(|error| error.to_string())?;
-    let status = state.get_index_status().await.map_err(|error| error.to_string())?;
+    let status = state
+        .get_index_status()
+        .await
+        .map_err(|error| error.to_string())?;
     eprintln!(
         "[DocMind] clear_all_indexes ok docs={} chunks={} failed={}",
         status.indexed_docs, status.indexed_chunks, status.failed_files
@@ -884,20 +1005,19 @@ pub async fn clear_all_indexes(
 }
 
 #[tauri::command]
-pub async fn pause_indexing(
-    state: tauri::State<'_, Database>,
-) -> Result<IndexStatusView, String> {
+pub async fn pause_indexing(state: tauri::State<'_, Database>) -> Result<IndexStatusView, String> {
     state
         .request_pause_current_task()
         .await
         .map_err(|error| error.to_string())?;
-    state.get_index_status().await.map_err(|error| error.to_string())
+    state
+        .get_index_status()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub async fn resume_indexing(
-    state: tauri::State<'_, Database>,
-) -> Result<IndexStatusView, String> {
+pub async fn resume_indexing(state: tauri::State<'_, Database>) -> Result<IndexStatusView, String> {
     state
         .clear_pause_request()
         .await
