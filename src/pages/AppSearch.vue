@@ -4,10 +4,13 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { Clock, Copy, Eye, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi } from "../services/docmindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
@@ -495,6 +498,29 @@ const openLibrary = async () => {
   await router.push({ path: "/library" });
 };
 
+const contextMenuRow = ref<VisibleIndexDirRow | null>(null);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuVisible = ref(false);
+
+const contextMenuItems = computed<ContextMenuItem[]>(() => {
+  const row = contextMenuRow.value;
+  if (!row) return [];
+  return [
+    {
+      key: "openLibrary",
+      label: t("common.open"),
+      icon: FolderOpen,
+      handler: () => openLibrary(),
+    },
+  ];
+});
+
+const handleTreeContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
+  contextMenuRow.value = row;
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY };
+  contextMenuVisible.value = true;
+};
+
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
   await Promise.all([loadStatus(), loadParserRuntime(), loadIndexSettings(), loadQuickPanels()]);
@@ -658,24 +684,29 @@ watch(
                   :node-padding-base="0"
                   :node-padding-step="12"
                   density="compact"
+                  @contextmenu="handleTreeContextMenu"
                 >
                   <template #meta="{ row }">
-                    {{ t("page.appSearch.section.dirStats", { docs: row.dir.docs, chunks: row.dir.chunks }) }}
+                    <span class="text-[10px] text-slate-400">
+                      {{ t("page.appSearch.section.dirStats", { docs: row.dir.docs, chunks: row.dir.chunks }) }}
+                    </span>
                   </template>
                   <template #status="{ row }">
-                    <DocMindBadge tone="default">
-                      {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
-                    </DocMindBadge>
-                  </template>
-                  <template #actions>
-                    <button
-                      class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50"
-                      @click="openLibrary"
+                    <span
+                      class="rounded px-1 py-[1px] text-[10px]"
+                      :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'"
                     >
-                      {{ t("common.open") }}
-                    </button>
+                      {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
+                    </span>
                   </template>
                 </DocMindIndexTree>
+                <DocMindContextMenu
+                  v-if="contextMenuVisible"
+                  :items="contextMenuItems"
+                  :x="contextMenuPosition.x"
+                  :y="contextMenuPosition.y"
+                  @close="contextMenuVisible = false"
+                />
               </section>
             </div>
           </aside>

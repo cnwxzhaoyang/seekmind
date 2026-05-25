@@ -4,11 +4,14 @@ import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Loader2, RefreshCw, FolderOpen, Database, Cpu, Eye, Copy, FileText } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { formatDirectoryCitation } from "../utils/citation";
+import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
 import type {
   FailedFileView,
   IndexDirView,
@@ -333,6 +336,44 @@ const copyDirCitation = async (row: { displayName: string; fullPath: string; dir
   );
 };
 
+const contextMenuRow = ref<VisibleIndexDirRow | null>(null);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuVisible = ref(false);
+
+const contextMenuItems = computed<ContextMenuItem[]>(() => {
+  const row = contextMenuRow.value;
+  if (!row) return [];
+  return [
+    {
+      key: "quickLook",
+      label: t("page.status.action.quickLook"),
+      icon: Eye,
+      disabled: treeActionTarget.value === row.dir.path || row.isVirtual,
+      handler: () => quickLookDir(row.dir.path),
+    },
+    {
+      key: "copyPath",
+      label: t("page.status.action.copyPath"),
+      icon: Copy,
+      disabled: treeActionTarget.value === row.dir.path,
+      handler: () => copyDirPath(row.dir.path),
+    },
+    {
+      key: "copyCitation",
+      label: t("page.status.action.copyCitation"),
+      icon: FileText,
+      disabled: treeActionTarget.value === row.dir.path,
+      handler: () => copyDirCitation(row),
+    },
+  ];
+});
+
+const handleTreeContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
+  contextMenuRow.value = row;
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY };
+  contextMenuVisible.value = true;
+};
+
 onMounted(async () => {
   await installIndexRefreshListener();
   await syncDashboardState();
@@ -506,46 +547,29 @@ onBeforeUnmount(() => {
           :expand-title="t('sidebar.expand')"
           :collapse-title="t('sidebar.collapse')"
           density="compact"
+          @contextmenu="handleTreeContextMenu"
         >
           <template #meta="{ row }">
-            <span class="truncate">
+            <span class="text-[10px] text-slate-400">
               {{ t("page.chunks.dirDocs", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
             </span>
           </template>
           <template #status="{ row }">
-            <DocMindBadge :tone="row.dir.enabled ? 'success' : 'default'">
+            <span
+              class="rounded px-1 py-[1px] text-[10px]"
+              :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'"
+            >
               {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
-            </DocMindBadge>
-          </template>
-          <template #actions="{ row }">
-            <div class="flex items-center gap-1.5">
-              <button
-                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="treeActionTarget === row.dir.path || row.isVirtual"
-                :title="t('page.status.action.quickLook')"
-                @click.stop="quickLookDir(row.dir.path)"
-              >
-                <Eye :size="14" />
-              </button>
-              <button
-                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="treeActionTarget === row.dir.path"
-                :title="t('page.status.action.copyPath')"
-                @click.stop="copyDirPath(row.dir.path)"
-              >
-                <Copy :size="14" />
-              </button>
-              <button
-                class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="treeActionTarget === row.dir.path"
-                :title="t('page.status.action.copyCitation')"
-                @click.stop="copyDirCitation(row)"
-              >
-                <FileText :size="14" />
-              </button>
-            </div>
+            </span>
           </template>
         </DocMindIndexTree>
+        <DocMindContextMenu
+          v-if="contextMenuVisible"
+          :items="contextMenuItems"
+          :x="contextMenuPosition.x"
+          :y="contextMenuPosition.y"
+          @close="contextMenuVisible = false"
+        />
       </div>
 
       <div v-if="infoMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700">

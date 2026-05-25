@@ -661,7 +661,9 @@ watch(
             @toggle="setDirExpanded"
           >
             <template #meta="{ row }">
-              {{ t("page.chunks.docStats", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
+              <span class="text-[10px] text-slate-400">
+                {{ t("page.chunks.docStats", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}
+              </span>
             </template>
             <template #status="{ row }">
               <span

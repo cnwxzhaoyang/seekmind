@@ -5,9 +5,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight, UploadCloud, Eye, Copy, FileText } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { formatDirectoryCitation } from "../utils/citation";
 import type {
@@ -364,6 +367,67 @@ const removeDir = async (path: string) => {
   }
 };
 
+const contextMenuRow = ref<VisibleIndexDirRow | null>(null);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuVisible = ref(false);
+
+const contextMenuItems = computed<ContextMenuItem[]>(() => {
+  const row = contextMenuRow.value;
+  if (!row) return [];
+  return [
+    {
+      key: "quickLook",
+      label: t("page.library.action.quickLook"),
+      icon: Eye,
+      disabled: busyPath.value === row.dir.path || row.isVirtual,
+      handler: () => quickLookDir(row.dir.path),
+    },
+    {
+      key: "copyPath",
+      label: t("page.library.action.copyPath"),
+      icon: Copy,
+      disabled: busyPath.value === row.dir.path,
+      handler: () => copyDirPath(row.dir.path),
+    },
+    {
+      key: "copyCitation",
+      label: t("page.library.action.copyCitation"),
+      icon: FileText,
+      disabled: busyPath.value === row.dir.path,
+      handler: () => copyDirCitation(row),
+    },
+    { key: "divider1", label: "", divider: true, handler: () => {} },
+    {
+      key: "refresh",
+      label: t("page.library.action.refresh"),
+      icon: RefreshCw,
+      disabled: busyPath.value === row.dir.path || !row.dir.is_explicit,
+      handler: () => refreshSingleDir(row.dir.path),
+    },
+    {
+      key: "toggle",
+      label: row.dir.enabled ? t("common.disabled") : t("common.enabled"),
+      icon: row.dir.enabled ? ToggleRight : ToggleLeft,
+      disabled: busyPath.value === row.dir.path || !row.dir.is_explicit,
+      handler: () => toggleDir(row.dir),
+    },
+    {
+      key: "remove",
+      label: t("common.clear"),
+      icon: X,
+      disabled: busyPath.value === row.dir.path || !row.dir.is_explicit,
+      danger: true,
+      handler: () => removeDir(row.dir.path),
+    },
+  ];
+});
+
+const handleTreeContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
+  contextMenuRow.value = row;
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY };
+  contextMenuVisible.value = true;
+};
+
 const processImportedFiles = async (importedFiles: ImportedPathView[]) => {
   const queued = importedFiles.filter((item) => item.dir_path !== "");
   for (const file of queued) {
@@ -556,73 +620,27 @@ onBeforeUnmount(() => {
         :expand-title="t('sidebar.expand')"
         :collapse-title="t('sidebar.collapse')"
         density="compact"
+        @contextmenu="handleTreeContextMenu"
       >
         <template #meta="{ row }">
-          <span class="truncate">{{ t("page.chunks.dirDocs", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}</span>
+          <span class="text-[10px] text-slate-400">{{ t("page.chunks.dirDocs", { docs: row.dir.docs, chunks: row.dir.chunks.toLocaleString() }) }}</span>
         </template>
         <template #status="{ row }">
-          <div class="flex items-center gap-1.5">
-            <span
-              class="rounded-full px-1.5 py-0.5 text-[10px]"
-              :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
-            >
-              {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
-            </span>
-          </div>
-        </template>
-        <template #actions="{ row }">
-          <div class="flex items-center gap-1.5">
-            <button
-              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path || row.isVirtual"
-              :title="t('page.library.action.quickLook')"
-              @click.stop="quickLookDir(row.dir.path)"
-            >
-              <Eye :size="14" />
-            </button>
-            <button
-              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path"
-              :title="t('page.library.action.copyPath')"
-              @click.stop="copyDirPath(row.dir.path)"
-            >
-              <Copy :size="14" />
-            </button>
-            <button
-              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path"
-              :title="t('page.library.action.copyCitation')"
-              @click.stop="copyDirCitation(row)"
-            >
-              <FileText :size="14" />
-            </button>
-            <button
-              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path || !row.dir.is_explicit"
-              :title="t('page.library.status.indexing')"
-              @click.stop="refreshSingleDir(row.dir.path)"
-            >
-              <RefreshCw :size="14" />
-            </button>
-            <button
-              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path || !row.dir.is_explicit"
-              :title="row.dir.enabled ? t('common.disabled') : t('common.enabled')"
-              @click.stop="toggleDir(row.dir)"
-            >
-              <component :is="row.dir.enabled ? ToggleRight : ToggleLeft" :size="14" />
-            </button>
-            <button
-              class="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-              :disabled="busyPath === row.dir.path || !row.dir.is_explicit"
-              :title="t('common.clear')"
-              @click.stop="removeDir(row.dir.path)"
-            >
-              <X :size="14" />
-            </button>
-          </div>
+          <span
+            class="rounded px-1 py-[1px] text-[10px]"
+            :class="row.dir.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'"
+          >
+            {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
+          </span>
         </template>
       </DocMindIndexTree>
+      <DocMindContextMenu
+        v-if="contextMenuVisible"
+        :items="contextMenuItems"
+        :x="contextMenuPosition.x"
+        :y="contextMenuPosition.y"
+        @close="contextMenuVisible = false"
+      />
     </main>
   </div>
 </template>
