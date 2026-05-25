@@ -8,6 +8,7 @@ import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import SplitPane from "../components/SplitPane.vue";
 import { docmindApi } from "../services/docmindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
@@ -158,6 +159,17 @@ const groupedResults = computed<SearchResultGroup[]>(() => {
       };
     })
     .sort((a, b) => b.topResult.score - a.topResult.score);
+});
+
+const splitPanels = computed(() => {
+  const items: { key: string; initialSize?: number; minSize: number; flex?: boolean }[] = [
+    { key: "left", initialSize: 240, minSize: 160 },
+    { key: "center", minSize: 300, flex: true },
+  ];
+  if (selected.value) {
+    items.push({ key: "right", initialSize: 320, minSize: 240 });
+  }
+  return items;
 });
 
 const matchedFieldLabel = computed(() => selected.value?.match_origin || "");
@@ -560,269 +572,274 @@ watch(
       </div>
     </header>
 
-    <main
-      class="grid min-h-0 flex-1"
-      :class="selected ? 'xl:grid-cols-[240px_minmax(0,1fr)_320px]' : 'xl:grid-cols-[240px_minmax(0,1fr)]'"
-    >
-      <aside class="min-h-0 overflow-y-auto border-b border-slate-200 bg-white p-4 xl:border-b-0 xl:border-r">
-        <div class="space-y-7">
-          <section>
-            <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <History :size="13" />
-              {{ t("page.appSearch.section.recentSearch") }}
-            </div>
-            <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
-              {{ t("page.appSearch.section.noHistory") }}
-            </div>
-            <div v-else class="flex flex-wrap gap-2">
-              <button
-                v-for="item in searchHistory"
-                :key="item.query"
-                class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 transition hover:bg-slate-200"
-                @click="runQueryFromHistory(item)"
-              >
-                {{ item.query }}
-              </button>
-            </div>
-          </section>
+    <main class="flex min-h-0 flex-1 overflow-hidden">
+      <SplitPane :panels="splitPanels">
+        <template #left>
+          <aside class="min-h-0 flex-1 overflow-y-auto bg-white p-4">
+            <div class="space-y-7">
+              <section>
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <History :size="13" />
+                  {{ t("page.appSearch.section.recentSearch") }}
+                </div>
+                <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                  {{ t("page.appSearch.section.noHistory") }}
+                </div>
+                <div v-else class="flex flex-wrap gap-2">
+                  <button
+                    v-for="item in searchHistory"
+                    :key="item.query"
+                    class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 transition hover:bg-slate-200"
+                    @click="runQueryFromHistory(item)"
+                  >
+                    {{ item.query }}
+                  </button>
+                </div>
+              </section>
 
-          <section>
-            <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <FileText :size="13" />
-              {{ t("page.appSearch.section.recentOpen") }}
-            </div>
-            <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
-              {{ t("page.appSearch.section.noRecent") }}
-            </div>
-            <div v-else class="space-y-2">
-              <button
-                v-for="item in recentDocuments"
-                :key="item.path"
-                class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
-                @click="openRecentDocument(item)"
-              >
-                <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
-                <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
-              </button>
-            </div>
-          </section>
+              <section>
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <FileText :size="13" />
+                  {{ t("page.appSearch.section.recentOpen") }}
+                </div>
+                <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                  {{ t("page.appSearch.section.noRecent") }}
+                </div>
+                <div v-else class="space-y-2">
+                  <button
+                    v-for="item in recentDocuments"
+                    :key="item.path"
+                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
+                    @click="openRecentDocument(item)"
+                  >
+                    <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
+                    <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+                  </button>
+                </div>
+              </section>
 
-          <section>
-            <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <Star :size="13" />
-              {{ t("page.appSearch.section.favorites") }}
-            </div>
-            <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
-              {{ t("page.appSearch.section.noFavorites") }}
-            </div>
-            <div v-else class="space-y-2">
-              <button
-                v-for="item in favoriteResults"
-                :key="item.target"
-                class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
-                @click="openFavoriteDocument(item.path)"
-              >
-                <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
-                <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
-              </button>
-            </div>
-          </section>
+              <section>
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <Star :size="13" />
+                  {{ t("page.appSearch.section.favorites") }}
+                </div>
+                <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                  {{ t("page.appSearch.section.noFavorites") }}
+                </div>
+                <div v-else class="space-y-2">
+                  <button
+                    v-for="item in favoriteResults"
+                    :key="item.target"
+                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
+                    @click="openFavoriteDocument(item.path)"
+                  >
+                    <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
+                    <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+                  </button>
+                </div>
+              </section>
 
-          <section>
-            <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              <FolderOpen :size="13" />
-              {{ t("page.appSearch.section.quickDirs") }}
-            </div>
-            <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
-              {{ t("page.appSearch.section.noDirs") }}
-            </div>
-            <DocMindIndexTree
-              v-else
-              :rows="visibleQuickDirRows"
-              :selectable="false"
-              :path-tooltip="true"
-              :virtual-label="t('common.virtualDir')"
-              :expand-title="t('sidebar.expand')"
-              :collapse-title="t('sidebar.collapse')"
-              :node-padding-base="0"
-              :node-padding-step="12"
-              density="compact"
-            >
-              <template #meta="{ row }">
-                {{ t("page.appSearch.section.dirStats", { docs: row.dir.docs, chunks: row.dir.chunks }) }}
-              </template>
-              <template #status="{ row }">
-                <DocMindBadge tone="default">
-                  {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
-                </DocMindBadge>
-              </template>
-              <template #actions>
-                <button
-                  class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50"
-                  @click="openLibrary"
+              <section>
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <FolderOpen :size="13" />
+                  {{ t("page.appSearch.section.quickDirs") }}
+                </div>
+                <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                  {{ t("page.appSearch.section.noDirs") }}
+                </div>
+                <DocMindIndexTree
+                  v-else
+                  :rows="visibleQuickDirRows"
+                  :selectable="false"
+                  :path-tooltip="true"
+                  :virtual-label="t('common.virtualDir')"
+                  :expand-title="t('sidebar.expand')"
+                  :collapse-title="t('sidebar.collapse')"
+                  :node-padding-base="0"
+                  :node-padding-step="12"
+                  density="compact"
                 >
-                  {{ t("common.open") }}
-                </button>
-              </template>
-            </DocMindIndexTree>
+                  <template #meta="{ row }">
+                    {{ t("page.appSearch.section.dirStats", { docs: row.dir.docs, chunks: row.dir.chunks }) }}
+                  </template>
+                  <template #status="{ row }">
+                    <DocMindBadge tone="default">
+                      {{ row.dir.enabled ? t("common.enabled") : t("common.disabled") }}
+                    </DocMindBadge>
+                  </template>
+                  <template #actions>
+                    <button
+                      class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50"
+                      @click="openLibrary"
+                    >
+                      {{ t("common.open") }}
+                    </button>
+                  </template>
+                </DocMindIndexTree>
+              </section>
+            </div>
+          </aside>
+        </template>
+
+        <template #center>
+          <section class="min-h-0 flex-1 overflow-y-auto bg-slate-50/70">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2">
+              <div class="text-xs font-medium text-slate-500">
+                {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
+              </div>
+              <button class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50">
+                <Filter :size="14" />
+                {{ t("page.appSearch.filter") }}
+              </button>
+            </div>
+
+            <div v-if="errorMessage" class="m-4 rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {{ errorMessage }}
+            </div>
+
+            <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+              {{ t("page.appSearch.noResults") }}
+            </div>
+
+            <div class="space-y-3 p-4">
+              <DocMindSearchResultGroupCard
+                v-for="group in groupedResults"
+                :key="group.path"
+                :group="group"
+                :query="query"
+                :selected-id="selectedId"
+                :expanded="Boolean(expandedGroups[group.path])"
+                :is-favorited="isResultFavorited"
+                @select="selectResult"
+                @toggle="toggleGroup"
+                @toggle-favorite="toggleFavoriteResult"
+              />
+            </div>
           </section>
-        </div>
-      </aside>
+        </template>
 
-      <section class="min-h-0 overflow-y-auto bg-slate-50/70">
-        <div class="mb-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2">
-          <div class="text-xs font-medium text-slate-500">
-            {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
-          </div>
-          <button class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50">
-            <Filter :size="14" />
-            {{ t("page.appSearch.filter") }}
-          </button>
-        </div>
-
-        <div v-if="errorMessage" class="m-4 rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {{ errorMessage }}
-        </div>
-
-        <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
-          {{ t("page.appSearch.noResults") }}
-        </div>
-
-        <div class="space-y-3 p-4">
-          <DocMindSearchResultGroupCard
-            v-for="group in groupedResults"
-            :key="group.path"
-            :group="group"
-            :query="query"
-            :selected-id="selectedId"
-            :expanded="Boolean(expandedGroups[group.path])"
-            :is-favorited="isResultFavorited"
-            @select="selectResult"
-            @toggle="toggleGroup"
-            @toggle-favorite="toggleFavoriteResult"
-          />
-        </div>
-      </section>
-
-      <aside v-if="selected" class="min-h-0 overflow-y-auto border-t border-slate-200 bg-white p-5 xl:border-l xl:border-t-0">
-        <div class="docmind-detail">
-          <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-lg font-semibold text-slate-950">{{ selected.fileName }}</div>
-                <div class="mt-1 break-all text-xs text-slate-400">{{ selected.path }}</div>
-              </div>
-              <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[10px] font-semibold text-slate-600">
-                {{ selected.ext.toUpperCase() }}
-              </div>
-            </div>
-            <div v-if="selectedTitlePath" class="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                {{ t("page.appSearch.detail.titlePath") }}
-              </div>
-              <div class="mt-1 text-sm leading-6 text-slate-800">
-                {{ selectedTitlePath }}
-              </div>
-            </div>
-          </div>
-
-          <div class="mb-4 flex flex-wrap gap-2">
-            <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
-            <DocMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</DocMindBadge>
-            <DocMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</DocMindBadge>
-            <DocMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</DocMindBadge>
-            <DocMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
-            <DocMindBadge tone="default">{{ selectedChunkPositionLabel }}</DocMindBadge>
-            <DocMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</DocMindBadge>
-            <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
-          </div>
-
-          <div class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
-            <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.hitParagraph") }}</div>
-            <p class="text-sm leading-7 text-slate-700">
-              <DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
-            </p>
-          </div>
-
-          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.contextPreview") }}</div>
-            <div v-if="selectedChunk" class="space-y-3">
-              <div
-                v-for="item in selectedContextChunks"
-                :key="item.key"
-                class="rounded-md border px-3 py-2"
-                :class="item.key === 'current' ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-white/70'"
-              >
-                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" :class="item.key === 'current' ? 'text-indigo-600' : 'text-slate-500'">
-                  {{ item.label }}
+        <template #right>
+          <aside class="min-h-0 flex-1 overflow-y-auto bg-white p-5">
+            <div class="docmind-detail">
+              <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-lg font-semibold text-slate-950">{{ selected.fileName }}</div>
+                    <div class="mt-1 break-all text-xs text-slate-400">{{ selected.path }}</div>
+                  </div>
+                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[10px] font-semibold text-slate-600">
+                    {{ selected.ext.toUpperCase() }}
+                  </div>
                 </div>
-                <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-slate-500">
-                  {{ t("page.appSearch.detail.titlePath") }}：{{ item.chunk?.title_path || item.chunk?.heading }}
+                <div v-if="selectedTitlePath" class="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    {{ t("page.appSearch.detail.titlePath") }}
+                  </div>
+                  <div class="mt-1 text-sm leading-6 text-slate-800">
+                    {{ selectedTitlePath }}
+                  </div>
                 </div>
-                <p class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-slate-800' : 'text-slate-600'">
-                  <DocMindHighlightedText
-                    v-if="item.key === 'current'"
-                    :text="item.chunk?.snippet ?? ''"
-                    :query="query"
-                    :spans="selected.highlight_spans"
-                  />
-                  <span v-else>{{ item.chunk?.snippet }}</span>
+              </div>
+
+              <div class="mb-4 flex flex-wrap gap-2">
+                <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
+                <DocMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</DocMindBadge>
+                <DocMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</DocMindBadge>
+                <DocMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</DocMindBadge>
+                <DocMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
+                <DocMindBadge tone="default">{{ selectedChunkPositionLabel }}</DocMindBadge>
+                <DocMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</DocMindBadge>
+                <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
+              </div>
+
+              <div class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+                <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.hitParagraph") }}</div>
+                <p class="text-sm leading-7 text-slate-700">
+                  <DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
                 </p>
-                <div class="mt-1 text-[11px] text-slate-400">
-                  {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
+              </div>
+
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.contextPreview") }}</div>
+                <div v-if="selectedChunk" class="space-y-3">
+                  <div
+                    v-for="item in selectedContextChunks"
+                    :key="item.key"
+                    class="rounded-md border px-3 py-2"
+                    :class="item.key === 'current' ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-white/70'"
+                  >
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" :class="item.key === 'current' ? 'text-indigo-600' : 'text-slate-500'">
+                      {{ item.label }}
+                    </div>
+                    <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-slate-500">
+                      {{ t("page.appSearch.detail.titlePath") }}：{{ item.chunk?.title_path || item.chunk?.heading }}
+                    </div>
+                    <p class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-slate-800' : 'text-slate-600'">
+                      <DocMindHighlightedText
+                        v-if="item.key === 'current'"
+                        :text="item.chunk?.snippet ?? ''"
+                        :query="query"
+                        :spans="selected.highlight_spans"
+                      />
+                      <span v-else>{{ item.chunk?.snippet }}</span>
+                    </p>
+                    <div class="mt-1 text-[11px] text-slate-400">
+                      {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                  {{ t("page.appSearch.detail.noContext") }}
+                </div>
+                <p class="mt-3 text-xs text-slate-400">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
+              </div>
+
+              <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("searchResultCard.rankReason") }}</div>
+                <div class="mt-1 text-sm font-medium text-slate-900">{{ selected.rank_reason.summary || t("common.none") }}</div>
+                <div v-if="selected.rank_reason.boosts.length > 0" class="mt-1 text-xs text-slate-500">
+                  {{ selected.rank_reason.boosts.join(" · ") }}
                 </div>
               </div>
-            </div>
-            <div v-else class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
-              {{ t("page.appSearch.detail.noContext") }}
-            </div>
-            <p class="mt-3 text-xs text-slate-400">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
-          </div>
 
-          <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-            <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("searchResultCard.rankReason") }}</div>
-            <div class="mt-1 text-sm font-medium text-slate-900">{{ selected.rank_reason.summary || t("common.none") }}</div>
-            <div v-if="selected.rank_reason.boosts.length > 0" class="mt-1 text-xs text-slate-500">
-              {{ selected.rank_reason.boosts.join(" · ") }}
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <button class="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white" @click="openSelectedFile">
+                  <ExternalLink :size="16" />
+                  {{ t("common.openFile") }}
+                </button>
+                <button class="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700" @click="viewChunks">
+                  <FileText :size="16" />
+                  {{ t("common.viewChunks") }}
+                </button>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="quickLookSelectedFile">
+                  <Eye :size="14" />
+                  {{ t("page.appSearch.detail.quickLook") }}
+                </button>
+                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedPath">
+                  <Copy :size="14" />
+                  {{ t("page.appSearch.detail.copyPath") }}
+                </button>
+                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedTitlePath">
+                  <Copy :size="14" />
+                  {{ t("page.appSearch.detail.copyTitlePath") }}
+                </button>
+                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedCitation">
+                  <FileText :size="14" />
+                  {{ t("page.appSearch.detail.copyCitation") }}
+                </button>
+              </div>
+              <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                {{ actionMessage }}
+              </div>
+              <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {{ actionErrorMessage }}
+              </div>
             </div>
-          </div>
-
-          <div class="mt-4 grid grid-cols-2 gap-3">
-            <button class="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white" @click="openSelectedFile">
-              <ExternalLink :size="16" />
-              {{ t("common.openFile") }}
-            </button>
-            <button class="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700" @click="viewChunks">
-              <FileText :size="16" />
-              {{ t("common.viewChunks") }}
-            </button>
-          </div>
-          <div class="mt-3 grid grid-cols-2 gap-2">
-            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="quickLookSelectedFile">
-              <Eye :size="14" />
-              {{ t("page.appSearch.detail.quickLook") }}
-            </button>
-            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedPath">
-              <Copy :size="14" />
-              {{ t("page.appSearch.detail.copyPath") }}
-            </button>
-            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedTitlePath">
-              <Copy :size="14" />
-              {{ t("page.appSearch.detail.copyTitlePath") }}
-            </button>
-            <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedCitation">
-              <FileText :size="14" />
-              {{ t("page.appSearch.detail.copyCitation") }}
-            </button>
-          </div>
-          <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-            {{ actionMessage }}
-          </div>
-          <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-            {{ actionErrorMessage }}
-          </div>
-        </div>
-      </aside>
+          </aside>
+        </template>
+      </SplitPane>
     </main>
   </div>
 </template>
