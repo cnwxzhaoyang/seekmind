@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -171,6 +171,10 @@ struct BlockRow {
     page: Option<i64>,
     markdown: String,
     html: String,
+    asset_path: String,
+    alt_text: String,
+    caption: String,
+    ocr_text: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -330,6 +334,10 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_chunks_block_indexes_column()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_document_blocks_columns()
             .await
             .map_err(|error| error.to_string())?;
 
@@ -1111,6 +1119,44 @@ impl Database {
             .collect())
     }
 
+
+fn resolve_preview_asset_path(asset_path: &str, document_path: &str) -> String {
+    let cleaned = asset_path.trim();
+    if cleaned.is_empty() {
+        return String::new();
+    }
+    if cleaned.starts_with("http://")
+        || cleaned.starts_with("https://")
+        || cleaned.starts_with("data:")
+        || cleaned.starts_with("blob:")
+        || cleaned.starts_with("file:")
+        || Path::new(cleaned).is_absolute()
+    {
+        return cleaned.to_string();
+    }
+    let base = Path::new(document_path)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(document_path));
+    base.join(cleaned).to_string_lossy().into_owned()
+}
+
+fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_asset_path: &str) {
+    let exists = if resolved_asset_path.starts_with("http://")
+        || resolved_asset_path.starts_with("https://")
+        || resolved_asset_path.starts_with("data:")
+        || resolved_asset_path.starts_with("blob:")
+    {
+        "remote".to_string()
+    } else {
+        Path::new(resolved_asset_path).exists().to_string()
+    };
+    eprintln!(
+        "[DocMind] preview image block document={} raw_asset_path={} resolved_asset_path={} exists={}",
+        document_path, raw_asset_path, resolved_asset_path, exists
+    );
+}
+
     pub async fn list_document_chunks(&self, path: &str) -> Result<Vec<ChunkView>, sqlx::Error> {
         let document_id = self.document_id_by_path(path).await?;
         let document_id = match document_id {
@@ -1138,7 +1184,7 @@ impl Database {
 
         let block_rows = sqlx::query_as::<_, BlockRow>(
             r#"
-            SELECT block_index, block_type, text, heading, level, page, markdown, html
+            SELECT block_index, block_type, text, heading, level, page, markdown, html, asset_path, alt_text, caption, ocr_text
             FROM document_blocks
             WHERE document_id = ?
             ORDER BY block_index
@@ -1161,15 +1207,25 @@ impl Database {
                 let preview_blocks: Vec<PreviewBlockView> = block_indexes
                     .iter()
                     .filter_map(|index| {
-                        blocks_by_index.get(&(*index as i64)).map(|b| PreviewBlockView {
-                            block_index: b.block_index as usize,
-                            block_type: b.block_type.clone(),
-                            text: b.text.clone(),
-                            heading: b.heading.clone(),
-                            level: b.level.map(|v| v as u32),
-                            page: b.page.map(|v| v as u32),
-                            markdown: b.markdown.clone(),
-                            html: b.html.clone(),
+                        blocks_by_index.get(&(*index as i64)).map(|b| {
+                            let asset_path = Self::resolve_preview_asset_path(&b.asset_path, path);
+                            if b.block_type == "image" {
+                                Self::log_preview_image_block(path, &b.asset_path, &asset_path);
+                            }
+                            PreviewBlockView {
+                                block_index: b.block_index as usize,
+                                block_type: b.block_type.clone(),
+                                text: b.text.clone(),
+                                heading: b.heading.clone(),
+                                level: b.level.map(|v| v as u32),
+                                page: b.page.map(|v| v as u32),
+                                markdown: b.markdown.clone(),
+                                html: b.html.clone(),
+                                asset_path,
+                                alt_text: b.alt_text.clone(),
+                                caption: b.caption.clone(),
+                                ocr_text: b.ocr_text.clone(),
+                            }
                         })
                     })
                     .collect();
@@ -1823,8 +1879,8 @@ impl Database {
             sqlx::query(
                 r#"
                 INSERT INTO document_blocks
-                    (id, document_id, block_index, block_type, text, heading, level, page, markdown, html)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, document_id, block_index, block_type, text, heading, level, page, markdown, html, asset_path, alt_text, caption, ocr_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&block_id)
@@ -1837,6 +1893,10 @@ impl Database {
             .bind(block.page_no.map(|v| v as i64))
             .bind(block.markdown.as_deref().unwrap_or(""))
             .bind(block.html.as_deref().unwrap_or(""))
+            .bind(block.asset_path.as_deref().unwrap_or(""))
+            .bind(block.alt_text.as_deref().unwrap_or(""))
+            .bind(block.caption.as_deref().unwrap_or(""))
+            .bind(block.ocr_text.as_deref().unwrap_or(""))
             .execute(&self.pool)
             .await?;
         }
@@ -2321,6 +2381,10 @@ impl Database {
                 page INTEGER,
                 markdown TEXT NOT NULL DEFAULT '',
                 html TEXT NOT NULL DEFAULT '',
+                asset_path TEXT NOT NULL DEFAULT '',
+                alt_text TEXT NOT NULL DEFAULT '',
+                caption TEXT NOT NULL DEFAULT '',
+                ocr_text TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
             "#,
@@ -2863,6 +2927,47 @@ impl Database {
             )
             .execute(&self.pool)
             .await?;
+        }
+
+        Ok(())
+    }
+
+
+    async fn ensure_document_blocks_columns(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(document_blocks)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        let mut alter_statements = Vec::new();
+        if !columns.contains("asset_path") {
+            alter_statements.push(
+                "ALTER TABLE document_blocks ADD COLUMN asset_path TEXT NOT NULL DEFAULT ''",
+            );
+        }
+        if !columns.contains("alt_text") {
+            alter_statements.push(
+                "ALTER TABLE document_blocks ADD COLUMN alt_text TEXT NOT NULL DEFAULT ''",
+            );
+        }
+        if !columns.contains("caption") {
+            alter_statements.push(
+                "ALTER TABLE document_blocks ADD COLUMN caption TEXT NOT NULL DEFAULT ''",
+            );
+        }
+        if !columns.contains("ocr_text") {
+            alter_statements.push(
+                "ALTER TABLE document_blocks ADD COLUMN ocr_text TEXT NOT NULL DEFAULT ''",
+            );
+        }
+
+        for statement in alter_statements {
+            sqlx::query(statement).execute(&self.pool).await?;
         }
 
         Ok(())

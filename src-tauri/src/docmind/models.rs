@@ -97,6 +97,14 @@ pub struct PreviewBlockView {
     pub page: Option<u32>,
     pub markdown: String,
     pub html: String,
+    #[serde(default)]
+    pub asset_path: String,
+    #[serde(default)]
+    pub alt_text: String,
+    #[serde(default)]
+    pub caption: String,
+    #[serde(default)]
+    pub ocr_text: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

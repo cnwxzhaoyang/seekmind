@@ -9,6 +9,7 @@ import zipfile
 from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree
 
@@ -43,6 +44,10 @@ class Block:
     level: Optional[int] = None
     markdown: Optional[str] = None
     html: Optional[str] = None
+    asset_path: Optional[str] = None
+    alt_text: Optional[str] = None
+    caption: Optional[str] = None
+    ocr_text: Optional[str] = None
 
 
 @dataclass
@@ -72,8 +77,9 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         "th",
     }
 
-    def __init__(self) -> None:
+    def __init__(self, base_path: Optional[Path] = None) -> None:
         super().__init__()
+        self.base_path = base_path
         self.blocks: List[Block] = []
         self.title: Optional[str] = None
         self._stack: List[str] = []
@@ -85,6 +91,11 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         self._row_in_progress = False
 
     def handle_starttag(self, tag: str, attrs):  # type: ignore[override]
+        attrs_map = {key.lower(): value for key, value in attrs}
+        if tag == "img":
+            self._flush()
+            self._emit_image(attrs_map)
+            return
         self._stack.append(tag)
         if tag == "title":
             self._flush()
@@ -125,6 +136,24 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
             return
         if any(tag in self._stack for tag in self.BLOCK_TAGS):
             self._buffer.append(data)
+
+    def _emit_image(self, attrs: dict[str, str]) -> None:
+        src = normalize_whitespace(attrs.get("src", ""))
+        alt = normalize_whitespace(attrs.get("alt", ""))
+        caption = normalize_whitespace(attrs.get("title", ""))
+        asset_path = resolve_media_src(src, self.base_path)
+        label = alt or caption or image_label_from_path(asset_path) or "image"
+        self.blocks.append(
+            Block(
+                kind="image",
+                text=label,
+                heading=self._current_heading_path(),
+                asset_path=asset_path or None,
+                alt_text=alt or None,
+                caption=caption or None,
+                html=build_img_html(asset_path or src, alt, caption),
+            )
+        )
 
     def _flush_title(self) -> None:
         text = normalize_whitespace("".join(self._buffer))
@@ -184,6 +213,68 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         if not self._heading_stack:
             return None
         return " > ".join(heading for _, heading in self._heading_stack)
+
+
+def resolve_media_src(src: str, base_path: Optional[Path]) -> str:
+    cleaned = normalize_whitespace(src).strip("<>")
+    if not cleaned:
+        return ""
+    parsed = urlparse(cleaned)
+    if parsed.scheme in {"http", "https", "data", "blob"}:
+        return cleaned
+    if parsed.scheme == "file":
+        return parsed.path or cleaned
+    candidate = Path(cleaned)
+    if candidate.is_absolute():
+        return str(candidate)
+    if base_path is not None:
+        return str((base_path / candidate).resolve())
+    return str(candidate.resolve())
+
+
+def image_label_from_path(asset_path: str) -> str:
+    if not asset_path:
+        return ""
+    parsed = urlparse(asset_path)
+    if parsed.scheme in {"http", "https", "data", "blob"}:
+        candidate = parsed.path or asset_path
+    elif parsed.scheme == "file":
+        candidate = parsed.path or asset_path
+    else:
+        candidate = asset_path
+    return Path(candidate).name
+
+
+def build_img_html(src: str, alt: str, caption: str) -> str:
+    src_attr = html.escape(src, quote=True)
+    alt_attr = html.escape(alt, quote=True)
+    title_attr = html.escape(caption, quote=True)
+    title_part = f' title="{title_attr}"' if title_attr else ""
+    return f'<img src="{src_attr}" alt="{alt_attr}"{title_part} />'
+
+
+def parse_markdown_image(raw_line: str, base_path: Path, heading: Optional[str]) -> Optional[Block]:
+    pattern = re.compile(
+        r"""^!\[(?P<alt>.*?)\]\((?P<src>[^\s)]+)(?:\s+(?:"(?P<title1>[^"]*)"|'(?P<title2>[^']*)'|(?P<title3>[^)]*)))?\)$"""
+    )
+    match = pattern.match(raw_line.strip())
+    if not match:
+        return None
+    alt = normalize_whitespace(match.group("alt") or "")
+    src = normalize_whitespace(match.group("src") or "")
+    caption = normalize_whitespace(match.group("title1") or match.group("title2") or match.group("title3") or "")
+    asset_path = resolve_media_src(src, base_path)
+    label = alt or caption or image_label_from_path(asset_path) or "image"
+    return Block(
+        kind="image",
+        text=label,
+        heading=heading,
+        markdown=raw_line.strip(),
+        html=build_img_html(asset_path or src, alt, caption),
+        asset_path=asset_path or None,
+        alt_text=alt or None,
+        caption=caption or None,
+    )
 
 ProgressEmitter = Callable[[dict], None]
 
@@ -266,6 +357,10 @@ def parse_document(
             page_no=block.page_no,
             markdown=block.markdown,
             html=block.html,
+            asset_path=block.asset_path,
+            alt_text=block.alt_text,
+            caption=block.caption,
+            ocr_text=block.ocr_text,
         )
         for index, block in enumerate(blocks, start=1)
         if block.section != "frontmatter" and block.text.strip()
@@ -460,7 +555,7 @@ def parse_text_like(path: Path, ext: str) -> Tuple[Optional[str], List[Block]]:
     text = path.read_text(encoding="utf-8", errors="ignore").replace("\r\n", "\n")
     if ext == "txt":
         return parse_plain_text(text, path.stem)
-    return parse_markdown(text, path.stem)
+    return parse_markdown(text, path.stem, path.parent)
 
 
 def parse_plain_text(text: str, fallback_title: str) -> Tuple[Optional[str], List[Block]]:
@@ -477,7 +572,7 @@ def parse_plain_text(text: str, fallback_title: str) -> Tuple[Optional[str], Lis
     return title or fallback_title, blocks
 
 
-def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[Block]]:
+def parse_markdown(text: str, fallback_title: str, base_path: Path) -> Tuple[Optional[str], List[Block]]:
     blocks: List[Block] = []
     title: Optional[str] = None
     heading_stack: List[tuple[int, str]] = []
@@ -486,7 +581,6 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
     code_fence = ""
     code_lang = ""
     table_buffer: List[str] = []
-    current_heading: Optional[str] = None
 
     def heading_path() -> Optional[str]:
         if not heading_stack:
@@ -515,6 +609,16 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
                 blocks.append(Block(kind="table", text=cleaned, heading=heading_path(), markdown=raw_md))
             if title is None:
                 title = heading_path() or fallback_title
+
+    def emit_image(raw_line: str) -> bool:
+        nonlocal title
+        image_block = parse_markdown_image(raw_line, base_path, heading_path())
+        if image_block is None:
+            return False
+        blocks.append(image_block)
+        if title is None:
+            title = image_block.heading or detect_title_like_line(image_block.text) or fallback_title
+        return True
 
     for raw_line in text.split("\n"):
         line = raw_line.rstrip()
@@ -555,10 +659,9 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
             while heading_stack and heading_stack[-1][0] >= level:
                 heading_stack.pop()
             heading_stack.append((level, heading))
-            current_heading = heading_path()
             blocks.append(Block(kind="heading", text=heading, heading=heading_path(), level=level))
             if title is None:
-                title = current_heading or heading
+                title = heading_path() or heading
             continue
 
         if not stripped:
@@ -573,6 +676,11 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
 
         if table_buffer:
             flush_table()
+
+        if emit_image(stripped):
+            flush_buffer()
+            flush_table()
+            continue
 
         if is_markdown_list_item(stripped):
             flush_buffer()
@@ -602,10 +710,9 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
 
     return title, blocks
 
-
 def parse_html(path: Path) -> Tuple[Optional[str], List[Block]]:
     text = path.read_text(encoding="utf-8", errors="ignore")
-    extractor = HtmlBlockExtractor()
+    extractor = HtmlBlockExtractor(path.parent)
     extractor.feed(text)
     extractor.close()
     title = extractor.title or infer_title_from_blocks(extractor.blocks) or path.stem
@@ -993,6 +1100,8 @@ def build_chunks(
 def chunk_weight(block: Block) -> float:
     if block.kind == "table":
         return 0.55
+    if block.kind == "image":
+        return 0.7
     if block.kind in {"quote", "list", "blockquote", "li"}:
         return 0.9
     return 1.0
@@ -1057,7 +1166,7 @@ def split_block_text(block: Block, max_chars: int) -> Iterable[str]:
     if not text:
         return []
 
-    if block.kind in {"heading", "code"}:
+    if block.kind in {"heading", "code", "image"}:
         return [text]
 
     if block.kind in {"table", "list", "quote", "li", "blockquote", "paragraph"}:
@@ -1092,6 +1201,10 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 level=block.level,
                 markdown=block.markdown,
                 html=block.html,
+                asset_path=block.asset_path,
+                alt_text=block.alt_text,
+                caption=block.caption,
+                ocr_text=block.ocr_text,
             )
             continue
 
@@ -1111,6 +1224,10 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 level=pending.level,
                 markdown=pending.markdown,
                 html=pending.html,
+                asset_path=pending.asset_path,
+                alt_text=pending.alt_text,
+                caption=pending.caption,
+                ocr_text=pending.ocr_text,
             )
         else:
             merged.append(pending)
@@ -1123,6 +1240,10 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 level=block.level,
                 markdown=block.markdown,
                 html=block.html,
+                asset_path=block.asset_path,
+                alt_text=block.alt_text,
+                caption=block.caption,
+                ocr_text=block.ocr_text,
             )
 
     if pending is not None:
@@ -1150,6 +1271,10 @@ def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
                 level=block.level,
                 markdown=block.markdown,
                 html=block.html,
+                asset_path=block.asset_path,
+                alt_text=block.alt_text,
+                caption=block.caption,
+                ocr_text=block.ocr_text,
             )
         )
     return normalized

@@ -34,6 +34,10 @@ class ParsedBlock:
     page_no: Optional[int] = None
     markdown: Optional[str] = None
     html: Optional[str] = None
+    asset_path: Optional[str] = None
+    alt_text: Optional[str] = None
+    caption: Optional[str] = None
+    ocr_text: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

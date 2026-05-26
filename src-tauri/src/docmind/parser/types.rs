@@ -11,6 +11,14 @@ pub struct ParsedBlock {
     pub page_no: Option<u32>,
     pub markdown: Option<String>,
     pub html: Option<String>,
+    #[serde(default)]
+    pub asset_path: Option<String>,
+    #[serde(default)]
+    pub alt_text: Option<String>,
+    #[serde(default)]
+    pub caption: Option<String>,
+    #[serde(default)]
+    pub ocr_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

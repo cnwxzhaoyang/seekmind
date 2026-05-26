@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { PreviewBlockView } from "../../types/docmind";
 
 const props = defineProps<{
@@ -78,6 +79,34 @@ const tableHtml = computed(() => {
 
   return `<table class="w-full border-collapse text-left text-[13px] leading-6 text-slate-700">${thead}<tbody>${tbodyRows}</tbody></table>`;
 });
+
+const imageSrc = computed(() => {
+  const source = props.block.asset_path?.trim();
+  if (!source) return "";
+  if (/^(https?:|data:|blob:)/i.test(source)) return source;
+  return convertFileSrc(source);
+});
+
+const imageTitle = computed(() => props.block.alt_text?.trim() || props.block.caption?.trim() || props.block.text.trim());
+
+const logImagePreview = (state: "load" | "error", event: Event) => {
+  const target = event.target as HTMLImageElement | null;
+  const payload = {
+    state,
+    blockIndex: props.block.block_index,
+    title: imageTitle.value,
+    assetPath: props.block.asset_path || "",
+    resolvedSrc: imageSrc.value,
+    currentSrc: target?.currentSrc || "",
+    naturalWidth: target?.naturalWidth || 0,
+    naturalHeight: target?.naturalHeight || 0,
+  };
+  if (state === "error") {
+    console.warn("[DocMind] preview image failed", payload);
+    return;
+  }
+  console.debug("[DocMind] preview image loaded", payload);
+};
 </script>
 
 <template>
@@ -87,6 +116,32 @@ const tableHtml = computed(() => {
         <span v-if="block.heading" class="text-[11px] font-normal text-slate-400">{{ block.heading }} ›</span>
         {{ block.text }}
       </span>
+    </div>
+
+    <div v-else-if="block.block_type === 'image'" class="preview-image rounded-lg border border-slate-200 bg-white p-3">
+      <div class="flex items-start gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="mb-2 text-sm font-medium text-slate-800">{{ imageTitle }}</div>
+          <div class="rounded-md bg-slate-50 p-2">
+            <img
+              v-if="imageSrc"
+              :src="imageSrc"
+              :alt="block.alt_text || imageTitle"
+              class="max-h-72 w-full rounded object-contain"
+              @load="logImagePreview('load', $event)"
+              @error="logImagePreview('error', $event)"
+            />
+            <div v-else class="flex min-h-24 items-center justify-center rounded border border-dashed border-slate-300 text-sm text-slate-400">
+              图片预览不可用
+            </div>
+          </div>
+          <div class="mt-2 space-y-1 text-xs text-slate-500">
+            <div v-if="block.caption">说明：{{ block.caption }}</div>
+            <div v-if="block.alt_text">Alt：{{ block.alt_text }}</div>
+            <div v-if="block.asset_path" class="break-all">源文件：{{ block.asset_path }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-else-if="block.block_type === 'paragraph'" class="preview-paragraph text-sm leading-7 text-slate-700">

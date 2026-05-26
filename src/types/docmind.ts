@@ -87,6 +87,10 @@ export interface PreviewBlockView {
   page?: number | null;
   markdown: string;
   html: string;
+  asset_path?: string;
+  alt_text?: string;
+  caption?: string;
+  ocr_text?: string;
 }
 
 export interface ChunkView {
