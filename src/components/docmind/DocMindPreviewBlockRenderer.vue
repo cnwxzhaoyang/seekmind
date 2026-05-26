@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { computed, ref, watch } from "vue";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { PreviewBlockView } from "../../types/docmind";
 import DocMindMarkdownRenderer from "./DocMindMarkdownRenderer.vue";
 
@@ -81,14 +81,43 @@ const tableHtml = computed(() => {
   return `<table class="w-full border-collapse text-left text-[13px] leading-6 text-slate-700">${thead}<tbody>${tbodyRows}</tbody></table>`;
 });
 
-const imageSrc = computed(() => {
-  const source = props.block.asset_path?.trim();
-  if (!source) return "";
-  if (/^(https?:|data:|blob:)/i.test(source)) return source;
-  return convertFileSrc(source);
-});
-
 const imageTitle = computed(() => props.block.alt_text?.trim() || props.block.caption?.trim() || props.block.text.trim());
+const imageSrc = ref("");
+
+const loadImageSrc = async () => {
+  imageSrc.value = "";
+
+  const source = props.block.asset_path?.trim();
+  if (!source) return;
+  if (/^(https?:|data:|blob:)/i.test(source)) {
+    imageSrc.value = source;
+    return;
+  }
+
+  try {
+    imageSrc.value = await invoke<string>("read_preview_image_data_url", { path: source });
+    console.debug("[DocMind] preview image data url loaded", {
+      assetPath: source,
+      length: imageSrc.value.length,
+    });
+    return;
+  } catch (error) {
+    console.warn("[DocMind] preview image data url failed, fallback to convertFileSrc", {
+      assetPath: source,
+      error,
+    });
+  }
+
+  imageSrc.value = convertFileSrc(source);
+};
+
+watch(
+  () => props.block.asset_path,
+  () => {
+    void loadImageSrc();
+  },
+  { immediate: true }
+);
 
 const logImagePreview = (state: "load" | "error", event: Event) => {
   const target = event.target as HTMLImageElement | null;
@@ -138,6 +167,7 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
           </div>
           <div class="mt-2 space-y-1 text-xs text-slate-500">
             <div v-if="block.caption">说明：{{ block.caption }}</div>
+            <div v-if="block.ocr_text">备注：{{ block.ocr_text }}</div>
             <div v-if="block.alt_text">Alt：{{ block.alt_text }}</div>
             <div v-if="block.asset_path" class="break-all">源文件：{{ block.asset_path }}</div>
           </div>

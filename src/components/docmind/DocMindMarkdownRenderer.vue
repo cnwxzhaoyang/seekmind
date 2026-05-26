@@ -33,7 +33,7 @@ const sourceMarkdown = computed(() => {
         .map((line) => `> ${line || " "}`)
         .join("\n");
     case "list":
-      return text
+      return props.block.markdown?.trim() || text
         .split("\n")
         .map((line) => `- ${line || " "}`)
         .join("\n");

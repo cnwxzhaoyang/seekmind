@@ -15,6 +15,58 @@ use tauri::Emitter;
 
 const VIRTUAL_IMPORT_DIR: &str = "virtual://临时导入";
 
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | b2 as u32;
+
+        output.push(TABLE[((triple >> 18) & 0x3f) as usize] as char);
+        output.push(TABLE[((triple >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            output.push(TABLE[((triple >> 6) & 0x3f) as usize] as char);
+        } else {
+            output.push('=');
+        }
+        if chunk.len() > 2 {
+            output.push(TABLE[(triple & 0x3f) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+
+    output
+}
+
+fn image_mime_from_path(path: &Path, bytes: &[u8]) -> String {
+    if let Some(kind) = infer::get(bytes) {
+        if kind.mime_type().starts_with("image/") {
+            return kind.mime_type().to_string();
+        }
+    }
+
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
 fn classify_failure(reason: &str, path: &str) -> (String, String) {
     let lower_reason = reason.to_lowercase();
     let lower_path = path.to_lowercase();
@@ -259,6 +311,23 @@ pub async fn list_document_chunks(
         .list_document_chunks(&path)
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn read_preview_image_data_url(path: String) -> Result<String, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("图片路径不能为空".to_string());
+    }
+
+    let path_ref = Path::new(trimmed);
+    let bytes = std::fs::read(path_ref).map_err(|error| format!("读取图片失败: {error}"))?;
+    let mime_type = image_mime_from_path(path_ref, &bytes);
+    if !mime_type.starts_with("image/") {
+        return Err(format!("不是可预览的图片类型: {mime_type}"));
+    }
+
+    Ok(format!("data:{mime_type};base64,{}", base64_encode(&bytes)))
 }
 
 #[tauri::command]

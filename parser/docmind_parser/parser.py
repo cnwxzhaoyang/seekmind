@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import html.parser
 import os
 import re
 import subprocess
+import tempfile
+import shutil
 import zipfile
 from functools import lru_cache
 from dataclasses import dataclass
@@ -31,6 +34,14 @@ EMBEDDING_DIMENSION_HINTS = {
     "BAAI/bge-small-en-v1.5": 384,
     "sentence-transformers/all-MiniLM-L6-v2": 384,
     "jinaai/jina-embeddings-v2-base-zh": 768,
+}
+
+
+DOCX_NAMESPACES = {
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
 }
 
 
@@ -252,6 +263,554 @@ def build_img_html(src: str, alt: str, caption: str) -> str:
     title_attr = html.escape(caption, quote=True)
     title_part = f' title="{title_attr}"' if title_attr else ""
     return f'<img src="{src_attr}" alt="{alt_attr}"{title_part} />'
+
+
+def docx_media_cache_dir(document_path: Path) -> Path:
+    digest = hashlib.sha1(str(document_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    cache_dir = Path(tempfile.gettempdir()) / "docmind-docx-media" / digest
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def docx_media_output_path(document_path: Path, source_name: str, fallback_ext: str = "") -> Path:
+    base_name = Path(source_name).name or "image"
+    suffix = Path(base_name).suffix or fallback_ext
+    stem = Path(base_name).stem or "image"
+    digest = hashlib.sha1(source_name.encode("utf-8")).hexdigest()[:10]
+    safe_name = f"{stem}-{digest}{suffix}"
+    return docx_media_cache_dir(document_path) / safe_name
+
+
+def normalize_docx_media_target(target: str) -> str:
+    cleaned = normalize_whitespace(target).replace("\\", "/")
+    cleaned = cleaned.lstrip("/")
+    while cleaned.startswith("../"):
+        cleaned = cleaned[3:]
+    if cleaned.startswith("word/"):
+        return cleaned
+    if cleaned:
+        return f"word/{cleaned}"
+    return ""
+
+
+def store_docx_media_bytes(document_path: Path, source_name: str, data: bytes) -> str:
+    output_path = docx_media_output_path(document_path, source_name)
+    if not output_path.exists():
+        output_path.write_bytes(data)
+    return str(output_path)
+
+
+def load_docx_relationship_targets(archive: zipfile.ZipFile) -> dict[str, str]:
+    try:
+        rel_xml = archive.read("word/_rels/document.xml.rels")
+    except KeyError:
+        return {}
+
+    try:
+        root = ElementTree.fromstring(rel_xml)
+    except Exception:  # noqa: BLE001
+        return {}
+
+    targets: dict[str, str] = {}
+    for rel in root:
+        if strip_ns(rel.tag) != "Relationship":
+            continue
+        rel_id = rel.attrib.get("Id", "").strip()
+        target = rel.attrib.get("Target", "").strip()
+        if not rel_id or not target:
+            continue
+        if rel.attrib.get("TargetMode", "").lower() == "external":
+            continue
+        targets[rel_id] = target
+    return targets
+
+
+def docx_vector_image_note(source_name: str, content_type: Optional[str] = None) -> Optional[str]:
+    lowered_name = source_name.lower()
+    lowered_type = (content_type or "").lower()
+    if any(token in lowered_name for token in {".x-emf", ".emf", ".wmf"}):
+        return "Office 矢量图暂不支持预览"
+    if any(token in lowered_type for token in {"emf", "wmf"}):
+        return "Office 矢量图暂不支持预览"
+    return None
+
+
+
+def is_docx_vector_image_source(source_name: str, content_type: Optional[str] = None) -> bool:
+    lowered_name = source_name.lower()
+    lowered_type = (content_type or "").lower()
+    return any(token in lowered_name for token in {".x-emf", ".emf", ".wmf"}) or any(
+        token in lowered_type for token in {"emf", "wmf"}
+    )
+
+
+
+def docx_vector_image_converter_path() -> Optional[str]:
+    candidates = [
+        shutil.which("soffice"),
+        shutil.which("libreoffice"),
+        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        "/Applications/LibreOffice.app/Contents/MacOS/libreoffice",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
+
+
+
+def docx_vector_image_output_dir(document_path: Path, source_path: Path) -> Path:
+    digest = hashlib.sha256(f"{document_path}::{source_path}".encode("utf-8")).hexdigest()[:16]
+    return docx_media_cache_dir(document_path) / "soffice" / digest
+
+
+
+def docx_vector_image_input_suffix(source_path: Path) -> str:
+    lowered = source_path.suffix.lower()
+    if lowered in {".emf", ".x-emf"}:
+        return ".emf"
+    if lowered in {".wmf", ".x-wmf"}:
+        return ".wmf"
+    return source_path.suffix or ".emf"
+
+
+
+def try_convert_docx_vector_image_to_png(document_path: Path, source_path: Path) -> Optional[Path]:
+    converter = docx_vector_image_converter_path()
+    if not converter:
+        return None
+
+    output_dir = docx_vector_image_output_dir(document_path, source_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    input_suffix = docx_vector_image_input_suffix(source_path)
+    working_input = output_dir / f"{source_path.stem}{input_suffix}"
+    expected_output = output_dir / f"{working_input.stem}.png"
+
+    if expected_output.exists() and expected_output.stat().st_size > 0:
+        return expected_output
+
+    try:
+        if source_path.resolve() != working_input.resolve():
+            working_input.write_bytes(source_path.read_bytes())
+    except Exception:  # noqa: BLE001
+        return None
+
+    for existing in output_dir.glob("*.png"):
+        try:
+            existing.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        result = subprocess.run(
+            [converter, "--headless", "--nologo", "--nofirststartwizard", "--convert-to", "png", "--outdir", str(output_dir), str(working_input)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    if expected_output.exists() and expected_output.stat().st_size > 0:
+        return expected_output
+
+    candidates = sorted(
+        (path for path in output_dir.glob("*.png") if path.is_file() and path.stat().st_size > 0),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+
+def resolve_docx_image_asset_path(
+    document_path: Path,
+    source_name: str,
+    data: bytes,
+    content_type: Optional[str] = None,
+) -> tuple[str, Optional[str]]:
+    stored_path = Path(store_docx_media_bytes(document_path, source_name, data))
+    if is_docx_vector_image_source(source_name, content_type):
+        converted_path = try_convert_docx_vector_image_to_png(document_path, stored_path)
+        if converted_path is not None:
+            return str(converted_path), None
+        return str(stored_path), docx_vector_image_note(source_name, content_type)
+    return str(stored_path), None
+
+
+
+def build_docx_image_block(
+    asset_path: str,
+    heading: Optional[str],
+    section: Optional[str],
+    alt_text: Optional[str] = None,
+    caption: Optional[str] = None,
+    preview_note: Optional[str] = None,
+) -> Block:
+    label = normalize_whitespace(alt_text or caption or image_label_from_path(asset_path) or "image")
+    note = normalize_whitespace(preview_note or "")
+    final_caption = caption or (note if note else None)
+    return Block(
+        kind="image",
+        text=label,
+        heading=heading,
+        section=section,
+        markdown=f"![{label}]({asset_path})",
+        html=build_img_html(asset_path, alt_text or label, final_caption or ""),
+        asset_path=asset_path or None,
+        alt_text=alt_text or None,
+        caption=final_caption,
+        ocr_text=note or None,
+    )
+
+
+def parse_docx_list_info_from_style(style_name: str) -> tuple[Optional[str], int]:
+    lowered = normalize_whitespace(style_name).lower()
+    if not lowered:
+        return None, 0
+
+    list_kind: Optional[str] = None
+    if "list bullet" in lowered or "bullet" in lowered:
+        list_kind = "bullet"
+    elif "list number" in lowered or "number" in lowered:
+        list_kind = "ordered"
+
+    if list_kind is None:
+        return None, 0
+
+    level_match = re.search(r"(\d+)$", lowered)
+    level = max(int(level_match.group(1)) - 1, 0) if level_match else 0
+    return list_kind, level
+
+
+def parse_docx_list_info_from_element(element: ElementTree.Element, ns: dict[str, str], style_name: str = "") -> tuple[Optional[str], int]:
+    style_kind, style_level = parse_docx_list_info_from_style(style_name)
+    num_pr = element.find("./w:pPr/w:numPr", ns)
+    if num_pr is None:
+        return style_kind, style_level
+
+    ilvl_node = num_pr.find("./w:ilvl", ns)
+    ilvl = 0
+    if ilvl_node is not None:
+        try:
+            ilvl = int(ilvl_node.attrib.get(f"{{{ns['w']}}}val", "0"))
+        except ValueError:
+            ilvl = 0
+
+    num_kind = style_kind or "bullet"
+    return num_kind, max(ilvl, style_level)
+
+
+def format_docx_list_markdown(text: str, list_kind: str, level: int) -> str:
+    indent = "    " * max(level, 0)
+    marker = "1." if list_kind == "ordered" else "-"
+    cleaned = normalize_whitespace(text)
+    return f"{indent}{marker} {cleaned}" if cleaned else ""
+
+
+def extract_docx_ordered_inline_blocks_from_element(
+    paragraph: ElementTree.Element,
+    archive: zipfile.ZipFile,
+    document_path: Path,
+    rel_targets: dict[str, str],
+    heading: Optional[str],
+    section: Optional[str],
+    list_kind: Optional[str] = None,
+    list_level: int = 0,
+) -> List[Block]:
+    blocks: List[Block] = []
+    pending_parts: List[str] = []
+
+    def emit_text_block() -> None:
+        nonlocal pending_parts
+        text = normalize_whitespace(" ".join(pending_parts))
+        pending_parts = []
+        if not text:
+            return
+        if list_kind is not None:
+            markdown = format_docx_list_markdown(text, list_kind, list_level)
+            blocks.append(
+                Block(
+                    kind="list",
+                    text=text,
+                    heading=heading,
+                    section=section,
+                    level=list_level,
+                    markdown=markdown,
+                )
+            )
+        else:
+            blocks.append(
+                Block(
+                    kind="paragraph",
+                    text=text,
+                    heading=heading,
+                    section=section,
+                    markdown=text,
+                )
+            )
+
+    def emit_images_from_node(node: ElementTree.Element) -> None:
+        for blip in node.findall(".//a:blip", DOCX_NAMESPACES):
+            rel_id = blip.attrib.get(f"{{{DOCX_NAMESPACES['r']}}}embed") or blip.attrib.get(
+                f"{{{DOCX_NAMESPACES['r']}}}link"
+            )
+            if not rel_id:
+                continue
+            target = rel_targets.get(rel_id, "")
+            archive_path = normalize_docx_media_target(target)
+            if not archive_path:
+                continue
+            try:
+                data = archive.read(archive_path)
+            except KeyError:
+                continue
+            asset_path, preview_note = resolve_docx_image_asset_path(
+                document_path,
+                archive_path,
+                data,
+            )
+            blocks.append(
+                build_docx_image_block(
+                    asset_path,
+                    heading,
+                    section,
+                    preview_note=preview_note,
+                )
+            )
+
+    def process_container(container: ElementTree.Element) -> None:
+        for child in list(container):
+            tag = strip_ns(child.tag)
+            if tag == "r":
+                for inline in list(child):
+                    inline_tag = strip_ns(inline.tag)
+                    if inline_tag == "t":
+                        if inline.text:
+                            pending_parts.append(inline.text)
+                    elif inline_tag in {"tab"}:
+                        pending_parts.append("\t")
+                    elif inline_tag in {"br"}:
+                        pending_parts.append("\n")
+                    elif inline_tag in {"drawing", "pict"}:
+                        emit_text_block()
+                        emit_images_from_node(inline)
+                continue
+            if tag == "hyperlink":
+                process_container(child)
+                continue
+            # fall back to deep scan for nested drawing-only containers
+            if child.findall(".//a:blip", DOCX_NAMESPACES):
+                emit_text_block()
+                emit_images_from_node(child)
+
+    process_container(paragraph)
+    emit_text_block()
+    return blocks
+
+
+def extract_docx_inline_image_blocks_from_paragraph(
+    paragraph: ElementTree.Element,
+    archive: zipfile.ZipFile,
+    document_path: Path,
+    rel_targets: dict[str, str],
+    heading: Optional[str],
+    section: Optional[str],
+) -> List[Block]:
+    image_blocks: List[Block] = []
+    seen: set[str] = set()
+    for blip in paragraph.findall(".//a:blip", DOCX_NAMESPACES):
+        rel_id = blip.attrib.get(f"{{{DOCX_NAMESPACES['r']}}}embed") or blip.attrib.get(
+            f"{{{DOCX_NAMESPACES['r']}}}link"
+        )
+        if not rel_id or rel_id in seen:
+            continue
+        seen.add(rel_id)
+        target = rel_targets.get(rel_id, "")
+        archive_path = normalize_docx_media_target(target)
+        if not archive_path:
+            continue
+        try:
+            data = archive.read(archive_path)
+        except KeyError:
+            continue
+        asset_path, preview_note = resolve_docx_image_asset_path(
+            document_path,
+            archive_path,
+            data,
+        )
+        image_blocks.append(
+            build_docx_image_block(
+                asset_path,
+                heading,
+                section,
+                preview_note=preview_note,
+            )
+        )
+    return image_blocks
+
+
+def extract_docx_inline_image_blocks_from_python_docx_paragraph(
+    paragraph: object,
+    document_path: Path,
+    heading: Optional[str],
+    section: Optional[str],
+    related_parts: dict[str, object],
+) -> List[Block]:
+    image_blocks: List[Block] = []
+    seen: set[str] = set()
+    paragraph_element = getattr(paragraph, "_element", None)
+    if paragraph_element is None:
+        return image_blocks
+
+    for blip in paragraph_element.findall(".//a:blip", DOCX_NAMESPACES):
+        rel_id = blip.attrib.get(f"{{{DOCX_NAMESPACES['r']}}}embed") or blip.attrib.get(
+            f"{{{DOCX_NAMESPACES['r']}}}link"
+        )
+        if not rel_id or rel_id in seen:
+            continue
+        seen.add(rel_id)
+        part = related_parts.get(rel_id)
+        blob = getattr(part, "blob", None) if part is not None else None
+        if not blob:
+            continue
+        content_type = getattr(part, "content_type", "") or ""
+        suffix = ""
+        if "/" in content_type:
+            suffix = f".{content_type.rsplit('/', 1)[-1].split('+', 1)[0]}"
+        source_name = f"{rel_id}{suffix}"
+        asset_path, preview_note = resolve_docx_image_asset_path(
+            document_path,
+            source_name,
+            bytes(blob),
+            content_type,
+        )
+        image_blocks.append(
+            build_docx_image_block(
+                asset_path,
+                heading,
+                section,
+                preview_note=preview_note,
+            )
+        )
+    return image_blocks
+
+
+def extract_docx_ordered_inline_blocks_from_python_docx_paragraph(
+    paragraph: object,
+    document_path: Path,
+    heading: Optional[str],
+    section: Optional[str],
+    related_parts: dict[str, object],
+    list_kind: Optional[str] = None,
+    list_level: int = 0,
+) -> List[Block]:
+    blocks: List[Block] = []
+    pending_parts: List[str] = []
+    paragraph_element = getattr(paragraph, "_element", None)
+    if paragraph_element is None:
+        return blocks
+
+    def emit_text_block() -> None:
+        nonlocal pending_parts
+        text = normalize_whitespace(" ".join(pending_parts))
+        pending_parts = []
+        if not text:
+            return
+        if list_kind is not None:
+            markdown = format_docx_list_markdown(text, list_kind, list_level)
+            blocks.append(
+                Block(
+                    kind="list",
+                    text=text,
+                    heading=heading,
+                    section=section,
+                    level=list_level,
+                    markdown=markdown,
+                )
+            )
+        else:
+            blocks.append(
+                Block(
+                    kind="paragraph",
+                    text=text,
+                    heading=heading,
+                    section=section,
+                    markdown=text,
+                )
+            )
+
+    def emit_images_from_rel_id(rel_id: str) -> None:
+        part = related_parts.get(rel_id)
+        blob = getattr(part, "blob", None) if part is not None else None
+        if not blob:
+            return
+        content_type = getattr(part, "content_type", "") or ""
+        suffix = ""
+        if "/" in content_type:
+            suffix = f".{content_type.rsplit('/', 1)[-1].split('+', 1)[0]}"
+        source_name = f"{rel_id}{suffix}"
+        asset_path, preview_note = resolve_docx_image_asset_path(
+            document_path,
+            source_name,
+            bytes(blob),
+            content_type,
+        )
+        blocks.append(
+            build_docx_image_block(
+                asset_path,
+                heading,
+                section,
+                preview_note=preview_note,
+            )
+        )
+
+    def process_container(container: ElementTree.Element) -> None:
+        for child in list(container):
+            tag = strip_ns(child.tag)
+            if tag == "r":
+                for inline in list(child):
+                    inline_tag = strip_ns(inline.tag)
+                    if inline_tag == "t":
+                        if inline.text:
+                            pending_parts.append(inline.text)
+                    elif inline_tag in {"tab"}:
+                        pending_parts.append("\t")
+                    elif inline_tag in {"br"}:
+                        pending_parts.append("\n")
+                    elif inline_tag in {"drawing", "pict"}:
+                        emit_text_block()
+                        for blip in inline.findall(".//a:blip", DOCX_NAMESPACES):
+                            rel_id = blip.attrib.get(f"{{{DOCX_NAMESPACES['r']}}}embed") or blip.attrib.get(
+                                f"{{{DOCX_NAMESPACES['r']}}}link"
+                            )
+                            if rel_id:
+                                emit_images_from_rel_id(rel_id)
+                continue
+            if tag == "hyperlink":
+                process_container(child)
+                continue
+            if child.findall(".//a:blip", DOCX_NAMESPACES):
+                emit_text_block()
+                for blip in child.findall(".//a:blip", DOCX_NAMESPACES):
+                    rel_id = blip.attrib.get(f"{{{DOCX_NAMESPACES['r']}}}embed") or blip.attrib.get(
+                        f"{{{DOCX_NAMESPACES['r']}}}link"
+                    )
+                    if rel_id:
+                        emit_images_from_rel_id(rel_id)
+
+    process_container(paragraph_element)
+    emit_text_block()
+    return blocks
 
 
 def parse_markdown_image(raw_line: str, base_path: Path, heading: Optional[str]) -> Optional[Block]:
@@ -767,64 +1326,118 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
 
     with zipfile.ZipFile(path) as archive:
         document_xml = archive.read("word/document.xml")
+        rel_targets = load_docx_relationship_targets(archive)
 
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    root = ElementTree.fromstring(document_xml)
-    blocks: List[Block] = []
-    title: Optional[str] = None
-    heading_stack: List[tuple[int, str]] = []
-    seen_body_heading = False
+        ns = {"w": DOCX_NAMESPACES["w"]}
+        root = ElementTree.fromstring(document_xml)
+        blocks: List[Block] = []
+        title: Optional[str] = None
+        heading_stack: List[tuple[int, str]] = []
+        seen_body_heading = False
 
-    def heading_path() -> Optional[str]:
-        if not heading_stack:
-            return None
-        return " > ".join(heading for _, heading in heading_stack)
+        def heading_path() -> Optional[str]:
+            if not heading_stack:
+                return None
+            return " > ".join(heading for _, heading in heading_stack)
 
-    for element in root.findall(".//w:body/*", ns):
-        tag = strip_ns(element.tag)
-        if tag == "p":
-            style_node = element.find("./w:pPr/w:pStyle", ns)
-            style = style_node.attrib.get(f"{{{ns['w']}}}val") if style_node is not None else None
-            text = extract_docx_text_from_paragraph(element, ns)
-            text = normalize_whitespace(text)
-            if not text:
-                continue
-
-            if style and style.lower().startswith("heading"):
-                match = re.search(r"heading(\d+)", style.lower())
-                level = int(match.group(1)) if match else 1
-                if title is None:
-                    title = text
-                    blocks.append(Block(kind="heading", text=text, level=level, section="frontmatter"))
-                    continue
-                while heading_stack and heading_stack[-1][0] >= level:
-                    heading_stack.pop()
-                heading_stack.append((level, text))
-                seen_body_heading = True
-                blocks.append(Block(kind="heading", text=text, level=level, section="body"))
-            else:
+        for element in root.findall(".//w:body/*", ns):
+            tag = strip_ns(element.tag)
+            if tag == "p":
+                style_node = element.find("./w:pPr/w:pStyle", ns)
+                style = style_node.attrib.get(f"{{{ns['w']}}}val") if style_node is not None else None
+                text = extract_docx_text_from_paragraph(element, ns)
+                text = normalize_whitespace(text)
                 section = "body" if seen_body_heading else "frontmatter"
-                blocks.append(Block(kind="paragraph", text=text, heading=heading_path(), section=section))
-                if title is None:
-                    title = heading_path() or detect_title_like_line(text) or path.stem
-        elif tag == "tbl":
-            rows = extract_docx_table_rows(element, ns)
-            if rows:
-                text, markdown, html_table = table_rows_to_formats(rows)
-                if text:
-                    section = "body" if seen_body_heading else "frontmatter"
+                image_blocks = extract_docx_inline_image_blocks_from_paragraph(
+                    element,
+                    archive,
+                    path,
+                    rel_targets,
+                    heading_path(),
+                    section,
+                )
+
+                if style and style.lower().startswith("heading"):
+                    match = re.search(r"heading(\d+)", style.lower())
+                    level = int(match.group(1)) if match else 1
+                    if title is None and text:
+                        title = text
+                        blocks.append(
+                            Block(
+                                kind="heading",
+                                text=text,
+                                level=level,
+                                section="frontmatter",
+                                markdown=f"{'#' * level} {text}",
+                            )
+                        )
+                        blocks.extend(image_blocks)
+                        continue
+                    while heading_stack and heading_stack[-1][0] >= level:
+                        heading_stack.pop()
+                    heading_stack.append((level, text or heading_path() or path.stem))
+                    seen_body_heading = True
+                    heading_text = text or heading_path() or path.stem
                     blocks.append(
                         Block(
-                            kind="table",
-                            text=text,
-                            heading=heading_path(),
-                            section=section,
-                            markdown=markdown,
-                            html=html_table,
+                            kind="heading",
+                            text=heading_text,
+                            level=level,
+                            section="body",
+                            markdown=f"{'#' * level} {heading_text}",
                         )
                     )
-                    if title is None:
-                        title = heading_path() or path.stem
+                    blocks.extend(image_blocks)
+                else:
+                    list_kind, list_level = parse_docx_list_info_from_element(element, ns, style or "")
+                    if text:
+                        ordered_blocks = extract_docx_ordered_inline_blocks_from_element(
+                            element,
+                            archive,
+                            path,
+                            rel_targets,
+                            heading_path(),
+                            section,
+                            list_kind=list_kind,
+                            list_level=list_level,
+                        )
+                        blocks.extend(ordered_blocks)
+                        if title is None and ordered_blocks:
+                            first_text_block = next((block for block in ordered_blocks if block.kind != "image" and block.text.strip()), None)
+                            if first_text_block is not None:
+                                title = heading_path() or detect_title_like_line(first_text_block.text) or path.stem
+                            elif any(block.kind == "image" for block in ordered_blocks):
+                                title = heading_path() or path.stem
+                    else:
+                        image_blocks = extract_docx_inline_image_blocks_from_paragraph(
+                            element,
+                            archive,
+                            path,
+                            rel_targets,
+                            heading_path(),
+                            section,
+                        )
+                        blocks.extend(image_blocks)
+                        if title is None and image_blocks:
+                            title = heading_path() or path.stem
+            elif tag == "tbl":
+                rows = extract_docx_table_rows(element, ns)
+                if rows:
+                    text, markdown, html_table = table_rows_to_formats(rows)
+                    if text:
+                        section = "body" if seen_body_heading else "frontmatter"
+                        blocks.append(
+                            Block(
+                                kind="table",
+                                text=text,
+                                heading=heading_path(),
+                                section=section,
+                                markdown=markdown,
+                                html=html_table,
+                            )
+                        )
+                        if title is None:
+                            title = heading_path() or path.stem
 
     return title or path.stem, blocks
 
@@ -856,6 +1469,7 @@ def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], Lis
     title: Optional[str] = None
     heading_stack: List[tuple[int, str]] = []
     seen_body_heading = False
+    related_parts = getattr(getattr(document, "part", None), "related_parts", {}) or {}
 
     def heading_path() -> Optional[str]:
         if not heading_stack:
@@ -867,26 +1481,76 @@ def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], Lis
             paragraph = Paragraph(child, document)
             style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
             text = clean_docx_text(paragraph.text)
-            if not text:
-                continue
+            section = "body" if seen_body_heading else "frontmatter"
+            image_blocks = extract_docx_inline_image_blocks_from_python_docx_paragraph(
+                paragraph,
+                path,
+                heading_path(),
+                section,
+                related_parts,
+            )
 
             if style_name.lower().startswith("heading"):
                 match = re.search(r"heading\s*(\d+)", style_name.lower())
                 level = int(match.group(1)) if match else 1
-                if title is None:
+                if title is None and text:
                     title = text
-                    blocks.append(Block(kind="heading", text=text, level=level, section="frontmatter"))
+                    blocks.append(
+                        Block(
+                            kind="heading",
+                            text=text,
+                            level=level,
+                            section="frontmatter",
+                            markdown=f"{'#' * level} {text}",
+                        )
+                    )
+                    blocks.extend(image_blocks)
                     continue
                 while heading_stack and heading_stack[-1][0] >= level:
                     heading_stack.pop()
-                heading_stack.append((level, text))
+                heading_stack.append((level, text or heading_path() or path.stem))
                 seen_body_heading = True
-                blocks.append(Block(kind="heading", text=text, level=level, section="body"))
+                heading_text = text or heading_path() or path.stem
+                blocks.append(
+                    Block(
+                        kind="heading",
+                        text=heading_text,
+                        level=level,
+                        section="body",
+                        markdown=f"{'#' * level} {heading_text}",
+                    )
+                )
+                blocks.extend(image_blocks)
             else:
-                section = "body" if seen_body_heading else "frontmatter"
-                blocks.append(Block(kind="paragraph", text=text, heading=heading_path(), section=section))
-                if title is None:
-                    title = heading_path() or detect_title_like_line(text) or path.stem
+                list_kind, list_level = parse_docx_list_info_from_style(style_name)
+                if text:
+                    ordered_blocks = extract_docx_ordered_inline_blocks_from_python_docx_paragraph(
+                        paragraph,
+                        path,
+                        heading_path(),
+                        section,
+                        related_parts,
+                        list_kind=list_kind,
+                        list_level=list_level,
+                    )
+                    blocks.extend(ordered_blocks)
+                    if title is None and ordered_blocks:
+                        first_text_block = next((block for block in ordered_blocks if block.kind != "image" and block.text.strip()), None)
+                        if first_text_block is not None:
+                            title = heading_path() or detect_title_like_line(first_text_block.text) or path.stem
+                        elif any(block.kind == "image" for block in ordered_blocks):
+                            title = heading_path() or path.stem
+                else:
+                    image_blocks = extract_docx_inline_image_blocks_from_python_docx_paragraph(
+                        paragraph,
+                        path,
+                        heading_path(),
+                        section,
+                        related_parts,
+                    )
+                    blocks.extend(image_blocks)
+                    if title is None and image_blocks:
+                        title = heading_path() or path.stem
 
         elif child.tag.endswith("}tbl"):
             table = Table(child, document)

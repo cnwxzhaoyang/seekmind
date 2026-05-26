@@ -55,6 +55,7 @@ pub fn run() {
             crate::docmind::commands::request_search_debug_report,
             crate::docmind::commands::list_documents_in_dir,
             crate::docmind::commands::list_document_chunks,
+            crate::docmind::commands::read_preview_image_data_url,
             crate::docmind::commands::refresh_document,
             crate::docmind::commands::list_search_history,
             crate::docmind::commands::list_recent_documents,
