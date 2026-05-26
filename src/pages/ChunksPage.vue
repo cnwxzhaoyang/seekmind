@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
+import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
@@ -900,7 +901,14 @@ watch(
                       </button>
                     </div>
                   </div>
-                  <p class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>
+                  <div v-if="chunk.preview_blocks && chunk.preview_blocks.length > 0" class="space-y-1">
+                    <DocMindPreviewBlockRenderer
+                      v-for="block in chunk.preview_blocks"
+                      :key="block.block_index"
+                      :block="block"
+                    />
+                  </div>
+                  <p v-else class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>
                 </div>
               </div>
             </div>

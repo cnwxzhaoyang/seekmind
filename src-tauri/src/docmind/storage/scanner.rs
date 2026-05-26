@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use crate::docmind::parser::types::ParserStreamEvent;
+use crate::docmind::parser::types::ParsedBlock;
 use crate::docmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
 
 use super::types::{
@@ -94,14 +95,14 @@ pub fn extract_document(file: &DiscoveredFile) -> Result<ExtractedDocument, Stri
 
 pub fn parse_document(
     file: &DiscoveredFile,
-) -> Result<(ExtractedDocument, Vec<ChunkRecord>, ParseOutcome), String> {
+) -> Result<(ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>, ParseOutcome), String> {
     parse_document_with_progress(file, |_| {})
 }
 
 pub fn parse_document_with_progress<F>(
     file: &DiscoveredFile,
     mut on_event: F,
-) -> Result<(ExtractedDocument, Vec<ChunkRecord>, ParseOutcome), String>
+) -> Result<(ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>, ParseOutcome), String>
 where
     F: FnMut(ParserStreamEvent),
 {
@@ -112,10 +113,11 @@ where
                 on_event(event);
             }) {
                 Ok(parsed) => {
-                    let (document, chunks) = convert_python_document(file, parsed);
+                    let (document, chunks, blocks) = convert_python_document(file, parsed);
                     return Ok((
                         document,
                         chunks,
+                        blocks,
                         ParseOutcome {
                             source: ParserSource::Python,
                             warning: None,
@@ -135,6 +137,7 @@ where
                     return Ok((
                         document,
                         chunks,
+                        Vec::new(),
                         ParseOutcome {
                             source: ParserSource::Rust,
                             warning: Some(warning),
@@ -150,6 +153,7 @@ where
     Ok((
         document,
         chunks,
+        Vec::new(),
         ParseOutcome {
             source: ParserSource::Rust,
             warning: None,
@@ -221,6 +225,7 @@ pub fn chunk_document(document: &ExtractedDocument) -> Vec<ChunkRecord> {
             paragraph: Some((index + 1) as i64),
             page: None,
             score: 1.0,
+            block_indexes: Vec::new(),
         });
     }
 
@@ -231,6 +236,7 @@ pub fn chunk_document(document: &ExtractedDocument) -> Vec<ChunkRecord> {
             paragraph: Some(1),
             page: None,
             score: 1.0,
+            block_indexes: Vec::new(),
         });
     }
 
@@ -521,7 +527,7 @@ fn truncate_snippet(input: &str, limit: usize) -> String {
 pub(crate) fn convert_python_document(
     file: &DiscoveredFile,
     parsed: ParsedDocument,
-) -> (ExtractedDocument, Vec<ChunkRecord>) {
+) -> (ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>) {
     let content = normalize_whitespace(&parsed.content);
     let file_name = file
         .path
@@ -558,6 +564,7 @@ pub(crate) fn convert_python_document(
             paragraph: Some(chunk.order as i64),
             page: chunk.page_no.map(|value| value as i64),
             score: chunk.score.clamp(0.25, 1.0),
+            block_indexes: chunk.block_indexes.unwrap_or_default(),
         })
         .collect::<Vec<_>>();
 
@@ -568,12 +575,18 @@ pub(crate) fn convert_python_document(
             paragraph: Some(1),
             page: None,
             score: 1.0,
+            block_indexes: Vec::new(),
         }]
     } else {
         chunks
     };
 
-    (document, chunks)
+    let blocks = match parsed.blocks {
+        Some(blocks) => blocks,
+        None => Vec::new(),
+    };
+
+    (document, chunks, blocks)
 }
 
 #[cfg(test)]

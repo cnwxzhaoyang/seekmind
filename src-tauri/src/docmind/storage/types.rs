@@ -29,6 +29,7 @@ pub struct ChunkRecord {
     pub paragraph: Option<i64>,
     pub page: Option<i64>,
     pub score: f32,
+    pub block_indexes: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]

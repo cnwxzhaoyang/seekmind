@@ -78,6 +78,17 @@ export interface DocumentView {
   chunks: number;
 }
 
+export interface PreviewBlockView {
+  block_index: number;
+  block_type: string;
+  text: string;
+  heading: string;
+  level?: number | null;
+  page?: number | null;
+  markdown: string;
+  html: string;
+}
+
 export interface ChunkView {
   id: string;
   heading: string;
@@ -85,6 +96,7 @@ export interface ChunkView {
   snippet: string;
   paragraph?: number | null;
   page?: number | null;
+  preview_blocks?: PreviewBlockView[];
 }
 
 export interface FailedFileView {

@@ -25,12 +25,28 @@ ProgressEmitter = Callable[[Dict[str, Any]], None]
 
 
 @dataclass
+class ParsedBlock:
+    block_index: int
+    type: str
+    text: str
+    heading: Optional[str] = None
+    level: Optional[int] = None
+    page_no: Optional[int] = None
+    markdown: Optional[str] = None
+    html: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class ParsedChunk:
     heading: Optional[str]
     page_no: Optional[int]
     text: str
     order: int
     score: float = 1.0
+    block_indexes: Optional[List[int]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -42,6 +58,7 @@ class ParsedDocument:
     file_type: str
     content: str
     chunks: List[ParsedChunk]
+    blocks: Optional[List[ParsedBlock]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -49,6 +66,7 @@ class ParsedDocument:
             "file_type": self.file_type,
             "content": self.content,
             "chunks": [chunk.to_dict() for chunk in self.chunks],
+            "blocks": [block.to_dict() for block in self.blocks] if self.blocks else None,
         }
 
 

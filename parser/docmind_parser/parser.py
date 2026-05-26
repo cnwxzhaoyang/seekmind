@@ -15,6 +15,7 @@ from xml.etree import ElementTree
 from .models import (
     EmbeddingResponse,
     EmbeddingStatus,
+    ParsedBlock,
     ParsedChunk,
     ParsedDocument,
     ParserStreamMessage,
@@ -39,6 +40,9 @@ class Block:
     heading: Optional[str] = None
     page_no: Optional[int] = None
     section: Optional[str] = None
+    level: Optional[int] = None
+    markdown: Optional[str] = None
+    html: Optional[str] = None
 
 
 @dataclass
@@ -76,12 +80,19 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         self._buffer: List[str] = []
         self._heading_stack: List[tuple[int, str]] = []
         self._current_row: List[str] = []
+        self._table_rows: List[List[str]] = []
+        self._in_table = False
         self._row_in_progress = False
 
     def handle_starttag(self, tag: str, attrs):  # type: ignore[override]
         self._stack.append(tag)
         if tag == "title":
             self._flush()
+            return
+        if tag == "table":
+            self._flush()
+            self._table_rows = []
+            self._in_table = True
             return
         if tag in self.BLOCK_TAGS:
             self._flush()
@@ -92,6 +103,9 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
     def handle_endtag(self, tag: str):  # type: ignore[override]
         if tag == "title":
             self._flush_title()
+        elif tag == "table":
+            self._flush_row()
+            self._flush_table()
         elif tag in {"tr"}:
             self._flush_row()
         elif tag in self.BLOCK_TAGS:
@@ -121,11 +135,29 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
 
     def _flush_row(self) -> None:
         if self._current_row:
-            row_text = normalize_whitespace(" | ".join(cell for cell in self._current_row if cell))
-            if row_text:
-                self.blocks.append(Block(kind="table", text=row_text, heading=self._current_heading_path()))
+            row = [normalize_whitespace(cell) for cell in self._current_row if normalize_whitespace(cell)]
+            if row:
+                self._table_rows.append(row)
         self._current_row.clear()
         self._row_in_progress = False
+
+    def _flush_table(self) -> None:
+        if not self._table_rows:
+            self._in_table = False
+            return
+        text, markdown, html_table = table_rows_to_formats(self._table_rows)
+        if text:
+            self.blocks.append(
+                Block(
+                    kind="table",
+                    text=text,
+                    heading=self._current_heading_path(),
+                    markdown=markdown,
+                    html=html_table,
+                )
+            )
+        self._table_rows = []
+        self._in_table = False
 
     def _flush(self) -> None:
         text = normalize_whitespace("".join(self._buffer))
@@ -136,12 +168,12 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         if current_tag and current_tag.startswith("h") and len(current_tag) == 2 and current_tag[1].isdigit():
             level = int(current_tag[1])
             self._push_heading(level, text)
-            self.blocks.append(Block(kind="heading", text=text, heading=self._current_heading_path()))
+            self.blocks.append(Block(kind="heading", text=text, level=level, heading=self._current_heading_path()))
             return
-        if current_tag in {"li", "p", "pre", "blockquote", "td", "th"}:
-            self.blocks.append(Block(kind=current_tag or "text", text=text, heading=self._current_heading_path()))
-            return
-        self.blocks.append(Block(kind="text", text=text, heading=self._current_heading_path()))
+        html_kind_map = {"li": "list", "p": "paragraph", "pre": "code", "blockquote": "quote", "td": "table", "th": "table"}
+        kind = html_kind_map.get(current_tag or "", current_tag or "text")
+        self.blocks.append(Block(kind=kind, text=text, heading=self._current_heading_path()))
+        return
 
     def _push_heading(self, level: int, text: str) -> None:
         while self._heading_stack and self._heading_stack[-1][0] >= level:
@@ -152,7 +184,6 @@ class HtmlBlockExtractor(html.parser.HTMLParser):
         if not self._heading_stack:
             return None
         return " > ".join(heading for _, heading in self._heading_stack)
-
 
 ProgressEmitter = Callable[[dict], None]
 
@@ -225,12 +256,28 @@ def parse_document(
     if options.max_chunks is not None:
         chunks = chunks[: max(int(options.max_chunks), 0)]
 
+    parsed_blocks = [
+        ParsedBlock(
+            block_index=index,
+            type=block.kind,
+            text=block.text,
+            heading=block.heading,
+            level=block.level,
+            page_no=block.page_no,
+            markdown=block.markdown,
+            html=block.html,
+        )
+        for index, block in enumerate(blocks, start=1)
+        if block.section != "frontmatter" and block.text.strip()
+    ]
+
     progress("done", f"解析完成：{path.name}", 100, path.name, len(chunks), len(chunks))
     return ParsedDocument(
         title=title or path.stem,
         file_type=ext,
         content=content,
         chunks=chunks if options.include_chunks else [],
+        blocks=parsed_blocks,
     )
 
 
@@ -437,6 +484,7 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
     buffer: List[str] = []
     in_code = False
     code_fence = ""
+    code_lang = ""
     table_buffer: List[str] = []
     current_heading: Optional[str] = None
 
@@ -445,25 +493,26 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
             return None
         return " > ".join(heading for _, heading in heading_stack)
 
-    def flush_buffer() -> None:
+    def flush_buffer(kind: str = "paragraph") -> None:
         nonlocal buffer, title
-        paragraph = normalize_whitespace("\n".join(buffer))
+        text = normalize_whitespace("\n".join(buffer))
         buffer = []
-        if paragraph:
-            cleaned = strip_noise_paragraph(paragraph)
+        if text:
+            cleaned = strip_noise_paragraph(text)
             if cleaned:
-                blocks.append(Block(kind="paragraph", text=cleaned, heading=heading_path()))
+                blocks.append(Block(kind=kind, text=cleaned, heading=heading_path()))
             if title is None:
-                title = heading_path() or detect_title_like_line(paragraph) or fallback_title
+                title = heading_path() or detect_title_like_line(text) or fallback_title
 
     def flush_table() -> None:
         nonlocal table_buffer, title
+        raw_md = "\n".join(table_buffer) if table_buffer else ""
         table = normalize_whitespace(" | ".join(line.strip(" |") for line in table_buffer))
         table_buffer = []
         if table:
             cleaned = strip_noise_paragraph(table)
             if cleaned:
-                blocks.append(Block(kind="table", text=cleaned, heading=heading_path()))
+                blocks.append(Block(kind="table", text=cleaned, heading=heading_path(), markdown=raw_md))
             if title is None:
                 title = heading_path() or fallback_title
 
@@ -478,13 +527,20 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
                 flush_table()
                 in_code = True
                 code_fence = fence
+                code_lang = stripped[len(fence):].strip()
                 buffer.append(stripped)
             else:
                 buffer.append(stripped)
                 if fence == code_fence:
                     in_code = False
-                    flush_buffer()
+                    code_text = "\n".join(buffer[1:-1])
+                    buffer = []
+                    if code_text.strip():
+                        blocks.append(Block(kind="code", text=code_text, heading=heading_path()))
+                        if title is None:
+                            title = heading_path() or fallback_title
                     code_fence = ""
+                    code_lang = ""
             continue
 
         if in_code:
@@ -500,7 +556,7 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
                 heading_stack.pop()
             heading_stack.append((level, heading))
             current_heading = heading_path()
-            blocks.append(Block(kind="heading", text=heading, heading=heading_path()))
+            blocks.append(Block(kind="heading", text=heading, heading=heading_path(), level=level))
             if title is None:
                 title = current_heading or heading
             continue
@@ -518,11 +574,20 @@ def parse_markdown(text: str, fallback_title: str) -> Tuple[Optional[str], List[
         if table_buffer:
             flush_table()
 
-        if is_markdown_list_item(stripped) or is_blockquote(stripped):
+        if is_markdown_list_item(stripped):
             flush_buffer()
             cleaned = strip_noise_paragraph(strip_markdown_marker(stripped))
             if cleaned:
-                blocks.append(Block(kind="paragraph", text=cleaned, heading=heading_path()))
+                blocks.append(Block(kind="list", text=cleaned, heading=heading_path()))
+            if title is None:
+                title = heading_path() or detect_title_like_line(stripped) or fallback_title
+            continue
+
+        if is_blockquote(stripped):
+            flush_buffer()
+            cleaned = strip_noise_paragraph(strip_markdown_marker(stripped))
+            if cleaned:
+                blocks.append(Block(kind="quote", text=cleaned, heading=heading_path()))
             if title is None:
                 title = heading_path() or detect_title_like_line(stripped) or fallback_title
             continue
@@ -582,24 +647,34 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
                 level = int(match.group(1)) if match else 1
                 if title is None:
                     title = text
-                    blocks.append(Block(kind="heading", text=text, section="frontmatter"))
+                    blocks.append(Block(kind="heading", text=text, level=level, section="frontmatter"))
                     continue
                 while heading_stack and heading_stack[-1][0] >= level:
                     heading_stack.pop()
                 heading_stack.append((level, text))
                 seen_body_heading = True
-                blocks.append(Block(kind="heading", text=text, section="body"))
+                blocks.append(Block(kind="heading", text=text, level=level, section="body"))
             else:
                 section = "body" if seen_body_heading else "frontmatter"
                 blocks.append(Block(kind="paragraph", text=text, heading=heading_path(), section=section))
                 if title is None:
                     title = heading_path() or detect_title_like_line(text) or path.stem
         elif tag == "tbl":
-            rows = extract_docx_table(element, ns)
-            for row in rows:
-                if row:
+            rows = extract_docx_table_rows(element, ns)
+            if rows:
+                text, markdown, html_table = table_rows_to_formats(rows)
+                if text:
                     section = "body" if seen_body_heading else "frontmatter"
-                    blocks.append(Block(kind="table", text=row, heading=heading_path(), section=section))
+                    blocks.append(
+                        Block(
+                            kind="table",
+                            text=text,
+                            heading=heading_path(),
+                            section=section,
+                            markdown=markdown,
+                            html=html_table,
+                        )
+                    )
                     if title is None:
                         title = heading_path() or path.stem
 
@@ -652,13 +727,13 @@ def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], Lis
                 level = int(match.group(1)) if match else 1
                 if title is None:
                     title = text
-                    blocks.append(Block(kind="heading", text=text, section="frontmatter"))
+                    blocks.append(Block(kind="heading", text=text, level=level, section="frontmatter"))
                     continue
                 while heading_stack and heading_stack[-1][0] >= level:
                     heading_stack.pop()
                 heading_stack.append((level, text))
                 seen_body_heading = True
-                blocks.append(Block(kind="heading", text=text, section="body"))
+                blocks.append(Block(kind="heading", text=text, level=level, section="body"))
             else:
                 section = "body" if seen_body_heading else "frontmatter"
                 blocks.append(Block(kind="paragraph", text=text, heading=heading_path(), section=section))
@@ -667,15 +742,29 @@ def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], Lis
 
         elif child.tag.endswith("}tbl"):
             table = Table(child, document)
+            rows: List[List[str]] = []
             for row in table.rows:
                 cells = [clean_docx_text(cell.text) for cell in row.cells]
-                row_text = normalize_whitespace(" | ".join(cell for cell in cells if cell))
-                if not row_text:
+                normalized_cells = [cell for cell in cells if cell]
+                if not normalized_cells:
                     continue
+                row_text = normalize_whitespace(" | ".join(normalized_cells))
                 if looks_like_docx_xml_noise(row_text):
                     continue
+                rows.append(normalized_cells)
+            if rows:
+                text, markdown, html_table = table_rows_to_formats(rows)
                 section = "body" if seen_body_heading else "frontmatter"
-                blocks.append(Block(kind="table", text=row_text, heading=heading_path(), section=section))
+                blocks.append(
+                    Block(
+                        kind="table",
+                        text=text,
+                        heading=heading_path(),
+                        section=section,
+                        markdown=markdown,
+                        html=html_table,
+                    )
+                )
                 if title is None:
                     title = heading_path() or path.stem
 
@@ -805,13 +894,16 @@ def build_chunks(
     current_page: Optional[int] = None
     current_section: Optional[str] = None
     buffer: List[str] = []
+    buffer_block_indexes: List[int] = []
     buffer_score = 1.0
     order = 1
 
     def flush_buffer() -> None:
-        nonlocal buffer, order, current_section, buffer_score
+        nonlocal buffer, buffer_block_indexes, order, current_section, buffer_score
         text = normalize_whitespace("\n\n".join(buffer))
         buffer = []
+        indexes = sorted(set(buffer_block_indexes)) if buffer_block_indexes else None
+        buffer_block_indexes = []
         if not text:
             return
         if path.suffix.lower() == ".docx" and looks_like_docx_cover_chunk(text):
@@ -825,6 +917,7 @@ def build_chunks(
                 text=text,
                 order=order,
                 score=buffer_score,
+                block_indexes=indexes,
             )
         )
         order += 1
@@ -856,6 +949,8 @@ def build_chunks(
             if buffer and len(candidate) > max_chars:
                 flush_buffer()
             buffer.append(piece)
+            if block_index not in buffer_block_indexes:
+                buffer_block_indexes.append(block_index)
             buffer_score = min(buffer_score, chunk_weight(block))
             candidate = normalize_whitespace("\n\n".join(buffer))
             if len(candidate) >= max_chars:
@@ -888,6 +983,7 @@ def build_chunks(
                     text=joined,
                     order=1,
                     score=1.0,
+                    block_indexes=list(range(1, len(blocks) + 1)) if blocks else None,
                 )
             )
 
@@ -897,7 +993,7 @@ def build_chunks(
 def chunk_weight(block: Block) -> float:
     if block.kind == "table":
         return 0.55
-    if block.kind in {"blockquote", "li"}:
+    if block.kind in {"quote", "list", "blockquote", "li"}:
         return 0.9
     return 1.0
 
@@ -961,10 +1057,10 @@ def split_block_text(block: Block, max_chars: int) -> Iterable[str]:
     if not text:
         return []
 
-    if block.kind in {"heading"}:
+    if block.kind in {"heading", "code"}:
         return [text]
 
-    if block.kind in {"table", "li", "blockquote", "paragraph"}:
+    if block.kind in {"table", "list", "quote", "li", "blockquote", "paragraph"}:
         return split_text(text, max_chars)
 
     return split_text(text, max_chars)
@@ -987,13 +1083,23 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
             continue
 
         if pending is None:
-            pending = Block(kind=block.kind, text=text, heading=block.heading, page_no=block.page_no)
+            pending = Block(
+                kind=block.kind,
+                text=text,
+                heading=block.heading,
+                page_no=block.page_no,
+                section=block.section,
+                level=block.level,
+                markdown=block.markdown,
+                html=block.html,
+            )
             continue
 
         same_context = (
             pending.heading == block.heading
             and pending.page_no == block.page_no
             and pending.section == block.section
+            and pending.kind == block.kind
         )
         if same_context and len(pending.text) + len(text) < min_chars:
             pending = Block(
@@ -1002,6 +1108,9 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 heading=pending.heading,
                 page_no=pending.page_no,
                 section=pending.section,
+                level=pending.level,
+                markdown=pending.markdown,
+                html=pending.html,
             )
         else:
             merged.append(pending)
@@ -1011,6 +1120,9 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 heading=block.heading,
                 page_no=block.page_no,
                 section=block.section,
+                level=block.level,
+                markdown=block.markdown,
+                html=block.html,
             )
 
     if pending is not None:
@@ -1035,6 +1147,9 @@ def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
                 heading=block.heading,
                 page_no=block.page_no,
                 section=block.section,
+                level=block.level,
+                markdown=block.markdown,
+                html=block.html,
             )
         )
     return normalized
@@ -1071,8 +1186,8 @@ def extract_docx_text_from_paragraph(paragraph: ElementTree.Element, ns: dict[st
     return clean_docx_text("".join(runs))
 
 
-def extract_docx_table(table: ElementTree.Element, ns: dict[str, str]) -> List[str]:
-    rows: List[str] = []
+def extract_docx_table_rows(table: ElementTree.Element, ns: dict[str, str]) -> List[List[str]]:
+    rows: List[List[str]] = []
     for row in table.findall("./w:tr", ns):
         cells: List[str] = []
         for cell in row.findall("./w:tc", ns):
@@ -1086,8 +1201,47 @@ def extract_docx_table(table: ElementTree.Element, ns: dict[str, str]) -> List[s
                 cells.append(text)
         row_text = normalize_whitespace(" | ".join(cells))
         if row_text and not looks_like_docx_xml_noise(row_text):
-            rows.append(row_text)
+            rows.append(cells)
     return rows
+
+
+def table_rows_to_formats(rows: Sequence[Sequence[str]]) -> Tuple[str, str, str]:
+    normalized_rows = [
+        [normalize_whitespace(cell) for cell in row if normalize_whitespace(cell)]
+        for row in rows
+        if any(normalize_whitespace(cell) for cell in row)
+    ]
+    normalized_rows = [row for row in normalized_rows if row]
+    if not normalized_rows:
+        return "", "", ""
+
+    max_cols = max(len(row) for row in normalized_rows)
+    padded_rows = [row + [""] * (max_cols - len(row)) for row in normalized_rows]
+
+    if len(padded_rows) == 1:
+        header = [f"列 {index}" for index in range(1, max_cols + 1)]
+        body_rows = padded_rows
+    else:
+        header = padded_rows[0]
+        body_rows = padded_rows[1:]
+
+    def markdown_row(cells: Sequence[str]) -> str:
+        return "| " + " | ".join(cells) + " |"
+
+    def html_row(cells: Sequence[str], tag: str) -> str:
+        return "<tr>" + "".join(f"<{tag}>{html.escape(cell)}</{tag}>" for cell in cells) + "</tr>"
+
+    markdown_lines = [markdown_row(header), markdown_row(["---"] * max_cols)]
+    for row in body_rows:
+        markdown_lines.append(markdown_row(row))
+
+    html_parts = ["<table>", "<thead>", html_row(header, "th"), "</thead>", "<tbody>"]
+    for row in body_rows:
+        html_parts.append(html_row(row, "td"))
+    html_parts.extend(["</tbody>", "</table>"])
+
+    preview_text = normalize_whitespace(" / ".join(" ".join(cell for cell in row if cell) for row in padded_rows))
+    return preview_text, "\n".join(markdown_lines), "".join(html_parts)
 
 
 def parse_fence_line(line: str) -> Optional[str]:

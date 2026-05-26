@@ -128,7 +128,7 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
         .map_err(|error| error.to_string())?;
     let file = scanner::snapshot_supported_file(&dir_path, path_buf, &settings)?;
     match scanner::parse_document(&file) {
-        Ok((document, chunks, outcome)) => {
+        Ok((document, chunks, blocks, outcome)) => {
             if let Some(warning) = outcome.warning {
                 eprintln!("[DocMind] retry_failed_file warning: {warning}");
             }
@@ -137,7 +137,7 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
                 .await
                 .map_err(|error| error.to_string())?;
             database
-                .store_document(&document, &chunks)
+                .store_document(&document, &chunks, &blocks)
                 .await
                 .map_err(|error| error.to_string())?;
             database
@@ -510,11 +510,11 @@ async fn process_index_plan(
         let _ = parser_thread.join();
 
         match parse_result {
-            Ok((document, chunks, outcome)) => {
+            Ok((document, chunks, blocks, outcome)) => {
                 if let Some(warning) = outcome.warning {
                     eprintln!("[DocMind] indexing warning for {}: {warning}", path);
                 }
-                match database.store_document(&document, &chunks).await {
+                match database.store_document(&document, &chunks, &blocks).await {
                     Ok(()) => {
                         plan.succeeded += 1;
                         plan.updated += 1;

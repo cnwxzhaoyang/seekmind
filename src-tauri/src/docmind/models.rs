@@ -88,6 +88,18 @@ pub struct DocumentView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct PreviewBlockView {
+    pub block_index: usize,
+    pub block_type: String,
+    pub text: String,
+    pub heading: String,
+    pub level: Option<u32>,
+    pub page: Option<u32>,
+    pub markdown: String,
+    pub html: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ChunkView {
     pub id: String,
     pub heading: String,
@@ -95,6 +107,8 @@ pub struct ChunkView {
     pub snippet: String,
     pub paragraph: Option<u32>,
     pub page: Option<u32>,
+    #[serde(default)]
+    pub preview_blocks: Vec<PreviewBlockView>,
 }
 
 #[derive(Debug, Clone, Serialize)]

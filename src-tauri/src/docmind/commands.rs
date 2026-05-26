@@ -365,10 +365,11 @@ pub async fn refresh_document(
                 );
             }) {
                 Ok(parsed) => {
-                    let (document, chunks) = scanner::convert_python_document(&file, parsed);
+                    let (document, chunks, blocks) = scanner::convert_python_document(&file, parsed);
                     Ok((
                         document,
                         chunks,
+                        blocks,
                         super::storage::types::ParserSource::Python,
                     ))
                 }
@@ -384,7 +385,12 @@ pub async fn refresh_document(
                     match document {
                         Ok(document) => {
                             let chunks = scanner::chunk_document(&document);
-                            Ok((document, chunks, super::storage::types::ParserSource::Rust))
+                            Ok((
+                                document,
+                                chunks,
+                                Vec::new(),
+                                super::storage::types::ParserSource::Rust,
+                            ))
                         }
                         Err(reason) => Err(reason),
                     }
@@ -394,15 +400,20 @@ pub async fn refresh_document(
             match scanner::extract_document_at(&file.dir_path, &file.path) {
                 Ok(document) => {
                     let chunks = scanner::chunk_document(&document);
-                    Ok((document, chunks, super::storage::types::ParserSource::Rust))
+                    Ok((
+                        document,
+                        chunks,
+                        Vec::new(),
+                        super::storage::types::ParserSource::Rust,
+                    ))
                 }
                 Err(reason) => Err(reason),
             }
         };
 
         match parsed_result {
-            Ok((document, chunks, source)) => {
-                if let Err(error) = database.store_document(&document, &chunks).await {
+            Ok((document, chunks, blocks, source)) => {
+                if let Err(error) = database.store_document(&document, &chunks, &blocks).await {
                     let reason = error.to_string();
                     let (category, code) = classify_failure(&reason, &path_string);
                     let _ = database

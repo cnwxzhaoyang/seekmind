@@ -1,11 +1,26 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedBlock {
+    pub block_index: usize,
+    #[serde(rename = "type")]
+    pub block_type: String,
+    pub text: String,
+    pub heading: Option<String>,
+    pub level: Option<u32>,
+    pub page_no: Option<u32>,
+    pub markdown: Option<String>,
+    pub html: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedDocument {
     pub title: Option<String>,
     pub file_type: String,
     pub content: String,
     pub chunks: Vec<ParsedChunk>,
+    #[serde(default)]
+    pub blocks: Option<Vec<ParsedBlock>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +31,8 @@ pub struct ParsedChunk {
     pub order: usize,
     #[serde(default = "default_chunk_score")]
     pub score: f32,
+    #[serde(default)]
+    pub block_indexes: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

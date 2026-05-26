@@ -15,7 +15,8 @@ use uuid::Uuid;
 use crate::docmind::file_ops;
 use crate::docmind::models::{
     ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
-    IndexDirView, IndexStatusView, RecentDocumentView, SearchHistoryView, SearchResultView,
+    IndexDirView, IndexStatusView, PreviewBlockView, RecentDocumentView, SearchHistoryView,
+    SearchResultView,
 };
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
@@ -157,6 +158,19 @@ struct ChunkRow {
     snippet: String,
     paragraph: Option<i64>,
     page: Option<i64>,
+    block_indexes_json: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BlockRow {
+    block_index: i64,
+    block_type: String,
+    text: String,
+    heading: String,
+    level: Option<i64>,
+    page: Option<i64>,
+    markdown: String,
+    html: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -314,6 +328,10 @@ impl Database {
             .ensure_history_tables()
             .await
             .map_err(|error| error.to_string())?;
+        database
+            .ensure_chunks_block_indexes_column()
+            .await
+            .map_err(|error| error.to_string())?;
 
         if documents_migrated {
             database
@@ -426,6 +444,7 @@ impl Database {
                 paragraph: row.paragraph,
                 page: row.page,
                 score: row.score,
+                block_indexes: Vec::new(),
             })
             .collect())
     }
@@ -1093,6 +1112,12 @@ impl Database {
     }
 
     pub async fn list_document_chunks(&self, path: &str) -> Result<Vec<ChunkView>, sqlx::Error> {
+        let document_id = self.document_id_by_path(path).await?;
+        let document_id = match document_id {
+            Some(id) => id,
+            None => return Ok(Vec::new()),
+        };
+
         let rows = sqlx::query_as::<_, ChunkRow>(
             r#"
             SELECT
@@ -1100,26 +1125,64 @@ impl Database {
                 c.heading,
                 c.snippet,
                 c.paragraph,
-                c.page
+                c.page,
+                c.block_indexes_json
             FROM chunks c
-            INNER JOIN documents d ON d.id = c.document_id
-            WHERE d.path = ?
+            WHERE c.document_id = ?
             ORDER BY c.rowid
             "#,
         )
-        .bind(path)
+        .bind(&document_id)
         .fetch_all(&self.pool)
         .await?;
 
+        let block_rows = sqlx::query_as::<_, BlockRow>(
+            r#"
+            SELECT block_index, block_type, text, heading, level, page, markdown, html
+            FROM document_blocks
+            WHERE document_id = ?
+            ORDER BY block_index
+            "#,
+        )
+        .bind(&document_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let blocks_by_index: std::collections::HashMap<i64, &BlockRow> = block_rows
+            .iter()
+            .map(|row| (row.block_index, row))
+            .collect();
+
         Ok(rows
             .into_iter()
-            .map(|row| ChunkView {
-                id: row.id,
-                heading: row.heading.clone(),
-                title_path: row.heading,
-                snippet: row.snippet,
-                paragraph: row.paragraph.map(|value| value as u32),
-                page: row.page.map(|value| value as u32),
+            .map(|row| {
+                let block_indexes: Vec<usize> =
+                    serde_json::from_str(&row.block_indexes_json).unwrap_or_default();
+                let preview_blocks: Vec<PreviewBlockView> = block_indexes
+                    .iter()
+                    .filter_map(|index| {
+                        blocks_by_index.get(&(*index as i64)).map(|b| PreviewBlockView {
+                            block_index: b.block_index as usize,
+                            block_type: b.block_type.clone(),
+                            text: b.text.clone(),
+                            heading: b.heading.clone(),
+                            level: b.level.map(|v| v as u32),
+                            page: b.page.map(|v| v as u32),
+                            markdown: b.markdown.clone(),
+                            html: b.html.clone(),
+                        })
+                    })
+                    .collect();
+
+                ChunkView {
+                    id: row.id,
+                    heading: row.heading.clone(),
+                    title_path: row.heading,
+                    snippet: row.snippet,
+                    paragraph: row.paragraph.map(|value| value as u32),
+                    page: row.page.map(|value| value as u32),
+                    preview_blocks,
+                }
             })
             .collect())
     }
@@ -1730,6 +1793,7 @@ impl Database {
         &self,
         document: &ExtractedDocument,
         chunks: &[ChunkRecord],
+        blocks: &[crate::docmind::parser::types::ParsedBlock],
     ) -> Result<(), sqlx::Error> {
         self.clear_document_by_path(&document.path).await?;
         let document_id = Uuid::new_v4().to_string();
@@ -1754,12 +1818,37 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
-        for (index, chunk) in chunks.iter().enumerate() {
-            let chunk_id = format!("{document_id}:{index}");
+        for block in blocks {
+            let block_id = format!("{document_id}:{}", block.block_index);
             sqlx::query(
                 r#"
-                INSERT INTO chunks (id, document_id, heading, snippet, paragraph, page, score)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO document_blocks
+                    (id, document_id, block_index, block_type, text, heading, level, page, markdown, html)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&block_id)
+            .bind(&document_id)
+            .bind(block.block_index as i64)
+            .bind(&block.block_type)
+            .bind(&block.text)
+            .bind(block.heading.as_deref().unwrap_or(""))
+            .bind(block.level.map(|v| v as i64))
+            .bind(block.page_no.map(|v| v as i64))
+            .bind(block.markdown.as_deref().unwrap_or(""))
+            .bind(block.html.as_deref().unwrap_or(""))
+            .execute(&self.pool)
+            .await?;
+        }
+
+        for (index, chunk) in chunks.iter().enumerate() {
+            let chunk_id = format!("{document_id}:{index}");
+            let block_indexes_json =
+                serde_json::to_string(&chunk.block_indexes).unwrap_or_else(|_| "[]".to_string());
+            sqlx::query(
+                r#"
+                INSERT INTO chunks (id, document_id, heading, snippet, paragraph, page, score, block_indexes_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(chunk_id)
@@ -1769,6 +1858,7 @@ impl Database {
             .bind(chunk.paragraph)
             .bind(chunk.page)
             .bind(chunk.score)
+            .bind(&block_indexes_json)
             .execute(&self.pool)
             .await?;
         }
@@ -2215,6 +2305,22 @@ impl Database {
                 paragraph INTEGER,
                 page INTEGER,
                 score REAL NOT NULL,
+                block_indexes_json TEXT NOT NULL DEFAULT '[]',
+                FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS document_blocks (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                block_index INTEGER NOT NULL,
+                block_type TEXT NOT NULL,
+                text TEXT NOT NULL,
+                heading TEXT NOT NULL DEFAULT '',
+                level INTEGER,
+                page INTEGER,
+                markdown TEXT NOT NULL DEFAULT '',
+                html TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
             "#,
@@ -2736,6 +2842,30 @@ impl Database {
         }
 
         Ok(altered)
+    }
+
+    async fn ensure_chunks_block_indexes_column(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(chunks)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        if !columns.contains("block_indexes_json") {
+            sqlx::query(
+                r#"
+                ALTER TABLE chunks ADD COLUMN block_indexes_json TEXT NOT NULL DEFAULT '[]'
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+
+        Ok(())
     }
 
     async fn failed_items(&self) -> Result<Vec<FailedFileView>, sqlx::Error> {
