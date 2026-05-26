@@ -169,6 +169,7 @@ struct BlockRow {
     heading: String,
     level: Option<i64>,
     page: Option<i64>,
+    language: String,
     markdown: String,
     html: String,
     asset_path: String,
@@ -1184,7 +1185,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
 
         let block_rows = sqlx::query_as::<_, BlockRow>(
             r#"
-            SELECT block_index, block_type, text, heading, level, page, markdown, html, asset_path, alt_text, caption, ocr_text
+            SELECT block_index, block_type, text, heading, level, page, language, markdown, html, asset_path, alt_text, caption, ocr_text
             FROM document_blocks
             WHERE document_id = ?
             ORDER BY block_index
@@ -1219,6 +1220,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                                 heading: b.heading.clone(),
                                 level: b.level.map(|v| v as u32),
                                 page: b.page.map(|v| v as u32),
+                                language: b.language.clone(),
                                 markdown: b.markdown.clone(),
                                 html: b.html.clone(),
                                 asset_path,
@@ -1879,8 +1881,8 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             sqlx::query(
                 r#"
                 INSERT INTO document_blocks
-                    (id, document_id, block_index, block_type, text, heading, level, page, markdown, html, asset_path, alt_text, caption, ocr_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, document_id, block_index, block_type, text, heading, level, page, language, markdown, html, asset_path, alt_text, caption, ocr_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&block_id)
@@ -1891,6 +1893,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             .bind(block.heading.as_deref().unwrap_or(""))
             .bind(block.level.map(|v| v as i64))
             .bind(block.page_no.map(|v| v as i64))
+            .bind(block.language.as_deref().unwrap_or(""))
             .bind(block.markdown.as_deref().unwrap_or(""))
             .bind(block.html.as_deref().unwrap_or(""))
             .bind(block.asset_path.as_deref().unwrap_or(""))
@@ -2379,6 +2382,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 heading TEXT NOT NULL DEFAULT '',
                 level INTEGER,
                 page INTEGER,
+                language TEXT NOT NULL DEFAULT '',
                 markdown TEXT NOT NULL DEFAULT '',
                 html TEXT NOT NULL DEFAULT '',
                 asset_path TEXT NOT NULL DEFAULT '',
@@ -2958,6 +2962,11 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         if !columns.contains("caption") {
             alter_statements.push(
                 "ALTER TABLE document_blocks ADD COLUMN caption TEXT NOT NULL DEFAULT ''",
+            );
+        }
+        if !columns.contains("language") {
+            alter_statements.push(
+                "ALTER TABLE document_blocks ADD COLUMN language TEXT NOT NULL DEFAULT ''",
             );
         }
         if !columns.contains("ocr_text") {

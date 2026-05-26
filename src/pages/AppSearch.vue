@@ -9,6 +9,7 @@ import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
+import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
@@ -919,9 +920,22 @@ watch(showDebugPanel, async (visible) => {
 
               <div class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
                 <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.hitParagraph") }}</div>
-                <p class="text-sm leading-7 text-slate-700">
-                  <DocMindHighlightedText :text="selected.snippet" :query="query" :spans="selected.highlight_spans" />
-                </p>
+                <DocMindMarkdownRenderer
+                  :block="{
+                    block_index: 0,
+                    block_type: 'paragraph',
+                    text: selected.snippet,
+                    heading: selected.title_path || selected.heading,
+                    level: null,
+                    page: selected.page ?? null,
+                    language: null,
+                    markdown: '',
+                    html: '',
+                  }"
+                  :query="query"
+                  :highlight-text="selected.snippet"
+                  :highlight-spans="selected.highlight_spans"
+                />
               </div>
 
               <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -939,15 +953,28 @@ watch(showDebugPanel, async (visible) => {
                     <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-slate-500">
                       {{ t("page.appSearch.detail.titlePath") }}：{{ item.chunk?.title_path || item.chunk?.heading }}
                     </div>
-                    <p class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-slate-800' : 'text-slate-600'">
+                    <div class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-slate-800' : 'text-slate-600'">
                       <DocMindHighlightedText
                         v-if="item.key === 'current'"
                         :text="item.chunk?.snippet ?? ''"
                         :query="query"
                         :spans="selected.highlight_spans"
                       />
-                      <span v-else>{{ item.chunk?.snippet }}</span>
-                    </p>
+                      <DocMindMarkdownRenderer
+                        v-else
+                        :block="{
+                          block_index: 0,
+                          block_type: 'paragraph',
+                          text: item.chunk?.snippet ?? '',
+                          heading: item.chunk?.title_path || item.chunk?.heading || '',
+                          level: null,
+                          page: item.chunk?.page ?? null,
+                          language: null,
+                          markdown: '',
+                          html: '',
+                        }"
+                      />
+                    </div>
                     <div class="mt-1 text-[11px] text-slate-400">
                       {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
                     </div>

@@ -9,6 +9,8 @@ pub struct ParsedBlock {
     pub heading: Option<String>,
     pub level: Option<u32>,
     pub page_no: Option<u32>,
+    #[serde(default)]
+    pub language: Option<String>,
     pub markdown: Option<String>,
     pub html: Option<String>,
     #[serde(default)]

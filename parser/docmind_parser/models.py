@@ -32,6 +32,7 @@ class ParsedBlock:
     heading: Optional[str] = None
     level: Optional[int] = None
     page_no: Optional[int] = None
+    language: Optional[str] = None
     markdown: Optional[str] = None
     html: Optional[str] = None
     asset_path: Optional[str] = None

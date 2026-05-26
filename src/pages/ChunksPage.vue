@@ -8,6 +8,7 @@ import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
+import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
@@ -908,7 +909,20 @@ watch(
                       :block="block"
                     />
                   </div>
-                  <p v-else class="text-sm leading-7 text-slate-700">{{ chunk.snippet }}</p>
+                  <DocMindMarkdownRenderer
+                    v-else
+                    :block="{
+                      block_index: 0,
+                      block_type: 'paragraph',
+                      text: chunk.snippet,
+                      heading: chunk.title_path || chunk.heading,
+                      level: null,
+                      page: chunk.page ?? null,
+                      language: null,
+                      markdown: '',
+                      html: '',
+                    }"
+                  />
                 </div>
               </div>
             </div>

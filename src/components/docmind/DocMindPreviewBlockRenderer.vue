@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { PreviewBlockView } from "../../types/docmind";
+import DocMindMarkdownRenderer from "./DocMindMarkdownRenderer.vue";
 
 const props = defineProps<{
   block: PreviewBlockView;
@@ -144,31 +145,14 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
       </div>
     </div>
 
-    <div v-else-if="block.block_type === 'paragraph'" class="preview-paragraph text-sm leading-7 text-slate-700">
-      {{ block.text }}
-    </div>
-
-    <div
-      v-else-if="block.block_type === 'code'"
-      class="preview-code overflow-x-auto rounded-md bg-slate-900 px-3 py-2 text-[13px] leading-6 text-green-300"
-    >
-      <pre class="m-0 whitespace-pre-wrap font-mono">{{ block.text }}</pre>
-    </div>
+    <DocMindMarkdownRenderer
+      v-else-if="block.block_type === 'paragraph' || block.block_type === 'quote' || block.block_type === 'list' || block.block_type === 'code'"
+      :block="block"
+    />
 
     <div v-else-if="block.block_type === 'table'" class="preview-table overflow-x-auto rounded-md border border-slate-200 bg-white">
       <div v-if="tableHtml" class="min-w-full" v-html="tableHtml"></div>
-      <div v-else class="whitespace-pre-wrap px-3 py-2 text-sm leading-7 text-slate-700">{{ block.text }}</div>
-    </div>
-
-    <blockquote
-      v-else-if="block.block_type === 'quote'"
-      class="preview-quote border-l-2 border-slate-300 pl-3 text-sm leading-7 text-slate-600 italic"
-    >
-      {{ block.text }}
-    </blockquote>
-
-    <div v-else-if="block.block_type === 'list'" class="preview-list text-sm leading-7 text-slate-700">
-      <span class="mr-1.5 text-slate-400">•</span>{{ block.text }}
+      <DocMindMarkdownRenderer v-else :block="{ ...block, block_type: 'table' }" />
     </div>
 
     <div v-else class="preview-fallback text-sm leading-7 text-slate-700">

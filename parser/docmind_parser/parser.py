@@ -42,6 +42,7 @@ class Block:
     page_no: Optional[int] = None
     section: Optional[str] = None
     level: Optional[int] = None
+    language: Optional[str] = None
     markdown: Optional[str] = None
     html: Optional[str] = None
     asset_path: Optional[str] = None
@@ -276,6 +277,36 @@ def parse_markdown_image(raw_line: str, base_path: Path, heading: Optional[str])
         caption=caption or None,
     )
 
+def parse_html_img_like_line(raw_line: str, base_path: Path, heading: Optional[str]) -> Optional[Block]:
+    stripped = raw_line.strip()
+    if not (stripped.startswith("<img") and "src=" in stripped):
+        return None
+
+    attrs: dict[str, str] = {}
+    for key in ("src", "alt", "title"):
+        match = re.search(rf"{key}\s*=\s*([\"\'])(.*?)\1", stripped, flags=re.IGNORECASE)
+        if match:
+            attrs[key] = match.group(2)
+
+    src = normalize_whitespace(attrs.get("src", ""))
+    if not src:
+        return None
+
+    alt = normalize_whitespace(attrs.get("alt", ""))
+    caption = normalize_whitespace(attrs.get("title", ""))
+    asset_path = resolve_media_src(src, base_path)
+    label = alt or caption or image_label_from_path(asset_path) or "image"
+    return Block(
+        kind="image",
+        text=label,
+        heading=heading,
+        markdown=raw_line.strip(),
+        html=build_img_html(asset_path or src, alt, caption),
+        asset_path=asset_path or None,
+        alt_text=alt or None,
+        caption=caption or None,
+    )
+
 ProgressEmitter = Callable[[dict], None]
 
 
@@ -355,6 +386,7 @@ def parse_document(
             heading=block.heading,
             level=block.level,
             page_no=block.page_no,
+            language=block.language,
             markdown=block.markdown,
             html=block.html,
             asset_path=block.asset_path,
@@ -640,7 +672,7 @@ def parse_markdown(text: str, fallback_title: str, base_path: Path) -> Tuple[Opt
                     code_text = "\n".join(buffer[1:-1])
                     buffer = []
                     if code_text.strip():
-                        blocks.append(Block(kind="code", text=code_text, heading=heading_path()))
+                        blocks.append(Block(kind="code", text=code_text, heading=heading_path(), language=code_lang or None))
                         if title is None:
                             title = heading_path() or fallback_title
                     code_fence = ""
@@ -680,6 +712,15 @@ def parse_markdown(text: str, fallback_title: str, base_path: Path) -> Tuple[Opt
         if emit_image(stripped):
             flush_buffer()
             flush_table()
+            continue
+
+        html_image = parse_html_img_like_line(stripped, base_path, heading_path())
+        if html_image is not None:
+            flush_buffer()
+            flush_table()
+            blocks.append(html_image)
+            if title is None:
+                title = html_image.heading or detect_title_like_line(html_image.text) or fallback_title
             continue
 
         if is_markdown_list_item(stripped):
@@ -1179,11 +1220,15 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
     merged: List[Block] = []
     pending: Optional[Block] = None
 
+    def emit_pending() -> None:
+        nonlocal pending
+        if pending is not None:
+            merged.append(pending)
+            pending = None
+
     for block in blocks:
-        if block.kind == "heading":
-            if pending is not None:
-                merged.append(pending)
-                pending = None
+        if block.kind in {"heading", "code", "image"}:
+            emit_pending()
             merged.append(block)
             continue
 
@@ -1199,6 +1244,7 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 page_no=block.page_no,
                 section=block.section,
                 level=block.level,
+                language=block.language,
                 markdown=block.markdown,
                 html=block.html,
                 asset_path=block.asset_path,
@@ -1222,6 +1268,7 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 page_no=pending.page_no,
                 section=pending.section,
                 level=pending.level,
+                language=pending.language,
                 markdown=pending.markdown,
                 html=pending.html,
                 asset_path=pending.asset_path,
@@ -1230,7 +1277,7 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 ocr_text=pending.ocr_text,
             )
         else:
-            merged.append(pending)
+            emit_pending()
             pending = Block(
                 kind=block.kind,
                 text=text,
@@ -1238,6 +1285,7 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 page_no=block.page_no,
                 section=block.section,
                 level=block.level,
+                language=block.language,
                 markdown=block.markdown,
                 html=block.html,
                 asset_path=block.asset_path,
@@ -1246,15 +1294,36 @@ def merge_short_blocks(blocks: Sequence[Block], min_chars: int = 120) -> List[Bl
                 ocr_text=block.ocr_text,
             )
 
-    if pending is not None:
-        merged.append(pending)
-
+    emit_pending()
     return merged
 
 
 def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
     normalized: List[Block] = []
     for block in blocks:
+        if block.kind == "code":
+            text = block.text.rstrip("\n")
+            if not text.strip():
+                continue
+            normalized.append(
+                Block(
+                    kind=block.kind,
+                    text=text,
+                    heading=block.heading,
+                    page_no=block.page_no,
+                    section=block.section,
+                    level=block.level,
+                    language=block.language,
+                    markdown=block.markdown,
+                    html=block.html,
+                    asset_path=block.asset_path,
+                    alt_text=block.alt_text,
+                    caption=block.caption,
+                    ocr_text=block.ocr_text,
+                )
+            )
+            continue
+
         text = normalize_whitespace(block.text)
         if not text:
             continue
@@ -1269,6 +1338,7 @@ def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
                 page_no=block.page_no,
                 section=block.section,
                 level=block.level,
+                language=block.language,
                 markdown=block.markdown,
                 html=block.html,
                 asset_path=block.asset_path,
@@ -1278,7 +1348,6 @@ def normalize_blocks(blocks: Sequence[Block]) -> List[Block]:
             )
         )
     return normalized
-
 
 def split_paragraphs(text: str) -> List[str]:
     paragraphs: List[str] = []

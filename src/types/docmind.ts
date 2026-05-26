@@ -85,6 +85,7 @@ export interface PreviewBlockView {
   heading: string;
   level?: number | null;
   page?: number | null;
+  language?: string | null;
   markdown: string;
   html: string;
   asset_path?: string;

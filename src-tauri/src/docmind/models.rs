@@ -95,6 +95,7 @@ pub struct PreviewBlockView {
     pub heading: String,
     pub level: Option<u32>,
     pub page: Option<u32>,
+    pub language: String,
     pub markdown: String,
     pub html: String,
     #[serde(default)]
