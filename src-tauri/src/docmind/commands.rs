@@ -443,25 +443,38 @@ pub async fn refresh_document(
                     ))
                 }
                 Err(error) => {
-                    parser_warning = Some(match error {
+                    let warning = match error {
                         super::parser::ParserClientError::ParserFailed(parser_error) => format!(
-                            "Python 解析失败，已回退 Rust：{} ({})",
+                            "Python 解析失败：{} ({})",
                             parser_error.message, parser_error.code
                         ),
-                        other => format!("Python 解析失败，已回退 Rust：{other}"),
-                    });
-                    let document = scanner::extract_document_at(&file.dir_path, &file.path);
-                    match document {
-                        Ok(document) => {
-                            let chunks = scanner::chunk_document(&document);
-                            Ok((
-                                document,
-                                chunks,
-                                Vec::new(),
-                                super::storage::types::ParserSource::Rust,
-                            ))
+                        other => format!("Python 解析失败：{other}"),
+                    };
+                    if file
+                        .path
+                        .extension()
+                        .and_then(|value| value.to_str())
+                        .map(|value| value.eq_ignore_ascii_case("pdf"))
+                        .unwrap_or(false)
+                    {
+                        Err(warning)
+                    } else {
+                        parser_warning = Some(
+                            warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust："),
+                        );
+                        let document = scanner::extract_document_at(&file.dir_path, &file.path);
+                        match document {
+                            Ok(document) => {
+                                let chunks = scanner::chunk_document(&document);
+                                Ok((
+                                    document,
+                                    chunks,
+                                    Vec::new(),
+                                    super::storage::types::ParserSource::Rust,
+                                ))
+                            }
+                            Err(reason) => Err(reason),
                         }
-                        Err(reason) => Err(reason),
                     }
                 }
             }

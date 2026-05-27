@@ -14,9 +14,7 @@ OUTPUT_NAME="${SIDE_CAR_BASE}-${TARGET_TRIPLE}"
 
 mkdir -p "$RESOURCE_DIR" "$APP_RESOURCE_DIR" "$DIST_DIR" "$WORK_DIR" "$SPEC_DIR"
 
-if ! python3 -m pip show fastembed >/dev/null 2>&1; then
-  python3 -m pip install -r "$ROOT_DIR/parser/requirements.txt"
-fi
+python3 -m pip install -r "$ROOT_DIR/parser/requirements.txt"
 
 if ! python3 -m PyInstaller --version >/dev/null 2>&1; then
   python3 -m pip install pyinstaller

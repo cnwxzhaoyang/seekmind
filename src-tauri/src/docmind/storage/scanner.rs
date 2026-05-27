@@ -127,11 +127,16 @@ where
                 Err(error) => {
                     let warning = match error {
                         ParserClientError::ParserFailed(parser_error) => format!(
-                            "Python 解析失败，已回退 Rust：{} ({})",
+                            "Python 解析失败：{} ({})",
                             parser_error.message, parser_error.code
                         ),
-                        other => format!("Python 解析失败，已回退 Rust：{other}"),
+                        other => format!("Python 解析失败：{other}"),
                     };
+                    if extension(&file.path) == "pdf" {
+                        return Err(warning);
+                    }
+
+                    let fallback_warning = warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust：");
                     let document = extract_document_at(&file.dir_path, &file.path)?;
                     let chunks = chunk_document(&document);
                     return Ok((
@@ -140,7 +145,7 @@ where
                         Vec::new(),
                         ParseOutcome {
                             source: ParserSource::Rust,
-                            warning: Some(warning),
+                            warning: Some(fallback_warning),
                         },
                     ));
                 }

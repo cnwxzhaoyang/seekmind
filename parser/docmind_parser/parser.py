@@ -8,6 +8,7 @@ import re
 import subprocess
 import tempfile
 import shutil
+import sys
 import zipfile
 from functools import lru_cache
 from dataclasses import dataclass
@@ -1608,6 +1609,15 @@ PDF_IMAGE_CACHE_ROOT = Path(tempfile.gettempdir()) / "docmind-pdf-media"
 
 
 
+def eprint(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def pdf_debug_log(message: str) -> None:
+    eprint(f"[DocMind][PDF] {message}")
+
+
+
 def pdf_image_cache_dir(path: Path) -> Path:
     digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
     return PDF_IMAGE_CACHE_ROOT / digest
@@ -1626,11 +1636,13 @@ def pdf_ocr_enabled() -> bool:
 
 def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
     if not pdf_ocr_enabled():
+        pdf_debug_log(f"page={page_index} OCR skipped: disabled or tesseract missing")
         return None
 
     try:
         import fitz  # type: ignore
-    except Exception:
+    except Exception as exc:
+        pdf_debug_log(f"page={page_index} OCR skipped: fitz import failed: {exc}")
         return None
 
     try:
@@ -1641,7 +1653,9 @@ def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
         page = doc.load_page(page_index - 1)
         pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
         pixmap.save(str(render_path))
-    except Exception:
+        pdf_debug_log(f"page={page_index} OCR render saved: {render_path}")
+    except Exception as exc:
+        pdf_debug_log(f"page={page_index} OCR render failed: {exc}")
         return None
 
     langs = os.environ.get("DOCMIND_TESSERACT_LANGS", "chi_sim+eng").strip() or "chi_sim+eng"
@@ -1658,6 +1672,7 @@ def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
         except Exception:
             continue
         if result.returncode != 0:
+            pdf_debug_log(f"pdfimages failed page={page_index} code={result.returncode} stderr={normalize_whitespace(result.stderr)[:240]}")
             continue
         text = normalize_whitespace(result.stdout)
         if text:
@@ -1668,7 +1683,8 @@ def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
 def render_pdf_page_preview_block(path: Path, heading: Optional[str], page_index: int) -> Optional[Block]:
     try:
         import fitz  # type: ignore
-    except Exception:
+    except Exception as exc:
+        pdf_debug_log(f"page={page_index} preview skipped: fitz import failed: {exc}")
         return None
 
     try:
@@ -1679,10 +1695,13 @@ def render_pdf_page_preview_block(path: Path, heading: Optional[str], page_index
         page = doc.load_page(page_index - 1)
         pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
         pixmap.save(str(preview_path))
-    except Exception:
+        pdf_debug_log(f"page={page_index} preview saved: {preview_path}")
+    except Exception as exc:
+        pdf_debug_log(f"page={page_index} preview failed: {exc}")
         return None
 
     if not preview_path.exists() or preview_path.stat().st_size <= 0:
+        pdf_debug_log(f"page={page_index} preview missing or empty: {preview_path}")
         return None
 
     label = f"PDF 页面 {page_index}"
@@ -1706,6 +1725,7 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
     image_blocks: List[Block] = []
     output_dir = pdf_image_cache_dir(path)
     output_dir.mkdir(parents=True, exist_ok=True)
+    pdf_debug_log(f"extract image blocks start path={path.name} page={page_index or 'all'} cache={output_dir}")
 
     try:
         import fitz  # type: ignore
@@ -1716,24 +1736,31 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
         try:
             doc = fitz.open(str(path))
             pages = [(page_index, doc.load_page(page_index - 1))] if page_index is not None else list(enumerate(doc, start=1))
+            pdf_debug_log(f"fitz image scan pages={len(pages)} path={path.name}")
             for page_index, page in pages:
-                for image_index, image in enumerate(page.get_images(full=True), start=1):
+                images = page.get_images(full=True)
+                pdf_debug_log(f"page={page_index} fitz found {len(images)} embedded images")
+                for image_index, image in enumerate(images, start=1):
                     xref = image[0]
                     try:
                         extracted = doc.extract_image(xref)
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        pdf_debug_log(f"page={page_index} image={image_index} xref={xref} extract failed: {exc}")
                         continue
                     image_bytes = extracted.get("image") if isinstance(extracted, dict) else None
                     if not image_bytes:
+                        pdf_debug_log(f"page={page_index} image={image_index} xref={xref} extracted empty image bytes")
                         continue
                     ext = normalize_extension(str(extracted.get("ext") or "png").lower().lstrip("."))
                     image_path = output_dir / f"page-{page_index}-{image_index}.{ext}"
                     try:
                         image_path.write_bytes(image_bytes)
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        pdf_debug_log(f"page={page_index} image={image_index} write failed: {exc}")
                         continue
                     label = f"PDF 图片 {page_index}-{image_index}"
                     caption = "PDF 图片预览"
+                    pdf_debug_log(f"page={page_index} image={image_index} extracted -> {image_path}")
                     image_blocks.append(
                         Block(
                             kind="image",
@@ -1749,11 +1776,14 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
                         )
                     )
             if image_blocks:
+                pdf_debug_log(f"fitz extraction success path={path.name} page={page_index or 'all'} images={len(image_blocks)}")
                 return image_blocks
-        except Exception:
+        except Exception as exc:
+            pdf_debug_log(f"fitz extraction failed path={path.name} page={page_index or 'all'} err={exc}")
             image_blocks = []
 
     if not pdf_image_extraction_enabled():
+        pdf_debug_log(f"system pdfimages disabled path={path.name}")
         return image_blocks
 
     total_pages = 0
@@ -1766,11 +1796,13 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
         total_pages = 0
 
     if total_pages <= 0:
+        pdf_debug_log(f"pdfimages fallback skipped path={path.name}: no page count")
         return image_blocks
 
     page_indices = [page_index] if page_index is not None else list(range(1, total_pages + 1))
     for page_index in page_indices:
         page_prefix = output_dir / f"page-{page_index}"
+        pdf_debug_log(f"pdfimages extracting page={page_index} prefix={page_prefix}")
         for existing in output_dir.glob(f"{page_prefix.name}*"):
             try:
                 existing.unlink()
@@ -1824,6 +1856,7 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
             )
 
         if not output_files:
+            pdf_debug_log(f"pdfimages page={page_index} produced no output files")
             continue
 
         for image_index, image_path in enumerate(output_files, start=1):
@@ -1831,6 +1864,7 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
                 continue
             label = f"PDF 图片 {page_index}-{image_index}"
             caption = "PDF 图片预览"
+            pdf_debug_log(f"pdfimages page={page_index} extracted -> {image_path}")
             image_blocks.append(
                 Block(
                     kind="image",
@@ -1880,15 +1914,18 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
 
     title: Optional[str] = None
     blocks: List[Block] = []
+    pdf_debug_log(f"parse start path={path.name}")
 
     try:
         from pypdf import PdfReader  # type: ignore
 
         reader = PdfReader(str(path))
         total_pages = len(reader.pages)
+        pdf_debug_log(f"pdf reader opened path={path.name} pages={total_pages}")
         progress("extract", f"正在解析 PDF，共 {total_pages} 页", 10, path.name, total_pages, 0)
         for page_index, page in enumerate(reader.pages, start=1):
             page_text = normalize_whitespace((page.extract_text() or "").replace("\x0c", "\n\n"))
+            pdf_debug_log(f"page={page_index} text_len={len(page_text)}")
             if page_text:
                 page_paragraphs = split_paragraphs(page_text)
                 for paragraph in page_paragraphs:
@@ -1939,15 +1976,20 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                     )
 
             page_image_blocks = extract_pdf_image_blocks(path, title or path.stem, page_index)
+            pdf_debug_log(f"page={page_index} image_block_count={len(page_image_blocks)}")
             if page_image_blocks:
                 blocks.extend(page_image_blocks)
             else:
                 page_preview = render_pdf_page_preview_block(path, title or path.stem, page_index)
                 if page_preview is not None:
+                    pdf_debug_log(f"page={page_index} page preview fallback appended")
                     blocks.append(page_preview)
+                else:
+                    pdf_debug_log(f"page={page_index} no image block and no page preview")
 
         if blocks:
             image_count = sum(1 for block in blocks if block.kind == "image")
+            pdf_debug_log(f"parse done path={path.name} blocks={len(blocks)} images={image_count}")
             if image_count:
                 progress("image", f"已提取 {image_count} 个 PDF 图片", 85, path.name, image_count, image_count)
             progress("done", f"PDF 解析完成：{path.name}", 100, path.name, total_pages, total_pages)
