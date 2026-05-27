@@ -39,6 +39,7 @@ const emit = defineEmits<{
   select: [id: string];
   toggle: [path: string];
   toggleFavorite: [item: SearchResultView];
+  contextmenu: [event: MouseEvent];
 }>();
 
 const isSelected = computed(() => props.group.results.some((item) => item.id === props.selectedId));
@@ -62,6 +63,11 @@ const emitSelect = (id: string, source: string, event: MouseEvent | KeyboardEven
   debugClick(event, source, id);
   emit("select", id);
 };
+
+const emitContextMenu = (event: MouseEvent) => {
+  emit("select", props.group.topResult.id);
+  emit("contextmenu", event);
+};
 </script>
 
 <template>
@@ -73,6 +79,7 @@ const emitSelect = (id: string, source: string, event: MouseEvent | KeyboardEven
     @click="emitSelect(group.topResult.id, 'group-card', $event)"
     @keydown.enter.prevent="emitSelect(group.topResult.id, 'group-card-key', $event)"
     @keydown.space.prevent="emitSelect(group.topResult.id, 'group-card-key', $event)"
+    @contextmenu.prevent="emitContextMenu"
   >
     <div class="flex items-start gap-2.5">
       <DocMindFileIcon :ext="group.ext" />
@@ -117,7 +124,7 @@ const emitSelect = (id: string, source: string, event: MouseEvent | KeyboardEven
             <span>·</span>
             <span>{{ t("searchResultCard.rankReason") }}: {{ group.topResult.rank_reason.summary || t("common.none") }}</span>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5">
             <button
               class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary transition hover:bg-surface-hover hover:text-primary"
               type="button"

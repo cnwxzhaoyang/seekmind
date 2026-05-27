@@ -124,6 +124,8 @@
         "chunkPosition": "Chunk {current} / {total}",
         "titlePath": "Title Path",
         "pdfPage": "PDF Page {page}",
+        "openFile": "Open File",
+        "viewChunks": "View Chunks",
         "quickLook": "Quick Look",
         "quickLookOpened": "Quick Look preview opened",
         "quickLookFailed": "Quick Look failed to open",

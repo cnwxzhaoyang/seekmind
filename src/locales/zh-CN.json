@@ -124,6 +124,8 @@
         "chunkPosition": "第 {current} / {total} 段",
         "titlePath": "标题路径",
         "pdfPage": "PDF 页码 {page}",
+        "openFile": "打开文件",
+        "viewChunks": "查看切片",
         "quickLook": "Quick Look",
         "quickLookOpened": "已打开 Quick Look 预览",
         "quickLookFailed": "Quick Look 打开失败",

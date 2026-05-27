@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import { Clock, Copy, Eye, ExternalLink, FileText, Filter, FolderOpen, History, Search, Star } from "lucide-vue-next";
+import { ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderOpen, History, Link2, Search, SquareArrowOutUpRight, Star } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
@@ -592,6 +592,8 @@ const openLibrary = async () => {
 const contextMenuRow = ref<VisibleIndexDirRow | null>(null);
 const contextMenuPosition = ref({ x: 0, y: 0 });
 const contextMenuVisible = ref(false);
+const resultMenuPosition = ref({ x: 0, y: 0 });
+const resultMenuVisible = ref(false);
 
 const contextMenuItems = computed<ContextMenuItem[]>(() => {
   const row = contextMenuRow.value;
@@ -606,10 +608,65 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
   ];
 });
 
+const resultContextMenuItems = computed<ContextMenuItem[]>(() => {
+  if (!selected.value) {
+    return [];
+  }
+
+  return [
+    {
+      key: "openFile",
+      label: t("page.appSearch.detail.openFile"),
+      icon: SquareArrowOutUpRight,
+      handler: () => openSelectedFile(),
+    },
+    {
+      key: "viewChunks",
+      label: t("page.appSearch.detail.viewChunks"),
+      icon: Files,
+      handler: () => viewChunks(),
+    },
+    {
+      key: "quickLook",
+      label: t("page.appSearch.detail.quickLook"),
+      icon: Eye,
+      handler: () => quickLookSelectedFile(),
+    },
+    { key: "divider-copy", label: "", divider: true },
+    {
+      key: "copyPath",
+      label: t("page.appSearch.detail.copyPath"),
+      icon: ClipboardCopy,
+      handler: () => copySelectedPath(),
+    },
+    {
+      key: "copyTitlePath",
+      label: t("page.appSearch.detail.copyTitlePath"),
+      icon: Link2,
+      handler: () => copySelectedTitlePath(),
+    },
+    {
+      key: "copyCitation",
+      label: t("page.appSearch.detail.copyCitation"),
+      icon: FileText,
+      handler: () => copySelectedCitation(),
+    },
+  ];
+});
+
 const handleTreeContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
   contextMenuRow.value = row;
   contextMenuPosition.value = { x: event.clientX, y: event.clientY };
   contextMenuVisible.value = true;
+};
+
+const handleResultContextMenu = (event: MouseEvent) => {
+  if (!selected.value) {
+    return;
+  }
+
+  resultMenuPosition.value = { x: event.clientX, y: event.clientY };
+  resultMenuVisible.value = true;
 };
 
 onMounted(async () => {
@@ -879,6 +936,7 @@ watch(showDebugPanel, async (visible) => {
                   @select="selectResult"
                   @toggle="toggleGroup"
                   @toggle-favorite="toggleFavoriteResult"
+                  @contextmenu="handleResultContextMenu"
                 />
               </div>
             </div>
@@ -995,34 +1053,6 @@ watch(showDebugPanel, async (visible) => {
                 </div>
               </div>
 
-              <div class="mt-4 grid grid-cols-2 gap-3">
-                <button class="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-white" @click="openSelectedFile">
-                  <ExternalLink :size="16" />
-                  {{ t("common.openFile") }}
-                </button>
-                <button class="flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-4 py-3 text-sm font-medium text-secondary" @click="viewChunks">
-                  <FileText :size="16" />
-                  {{ t("common.viewChunks") }}
-                </button>
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-2">
-                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="quickLookSelectedFile">
-                  <Eye :size="14" />
-                  {{ t("page.appSearch.detail.quickLook") }}
-                </button>
-                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="copySelectedPath">
-                  <Copy :size="14" />
-                  {{ t("page.appSearch.detail.copyPath") }}
-                </button>
-                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="copySelectedTitlePath">
-                  <Copy :size="14" />
-                  {{ t("page.appSearch.detail.copyTitlePath") }}
-                </button>
-                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="copySelectedCitation">
-                  <FileText :size="14" />
-                  {{ t("page.appSearch.detail.copyCitation") }}
-                </button>
-              </div>
               <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
                 {{ actionMessage }}
               </div>
@@ -1033,6 +1063,14 @@ watch(showDebugPanel, async (visible) => {
           </aside>
         </template>
       </SplitPane>
+
+      <DocMindContextMenu
+        v-if="resultMenuVisible"
+        :items="resultContextMenuItems"
+        :x="resultMenuPosition.x"
+        :y="resultMenuPosition.y"
+        @close="resultMenuVisible = false"
+      />
     </main>
   </div>
 </template>
