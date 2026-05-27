@@ -14,12 +14,14 @@ interface Props {
   selected?: boolean;
   query?: string;
   favorited?: boolean;
+  nested?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   selected: false,
   query: "",
   favorited: false,
+  nested: false,
 });
 
 const emit = defineEmits<{
@@ -62,8 +64,13 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
 
 <template>
   <div
-    class="w-full cursor-pointer rounded-lg border bg-surface p-2.5 text-left transition"
-    :class="props.selected ? 'border-accent ring-1 ring-accent-soft' : 'border-default hover:border-accent'"
+    class="w-full cursor-pointer rounded-lg border p-2.5 text-left transition"
+    :class="[
+      props.nested
+        ? 'border-transparent bg-transparent hover:bg-surface-hover/50'
+        : 'border-default bg-surface hover:border-accent',
+      props.selected ? 'ring-1 ring-accent-soft' : '',
+    ]"
     role="button"
     tabindex="0"
     @click="emitSelect($event)"
@@ -74,7 +81,7 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
       <DocMindFileIcon :ext="item.ext" />
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-2">
-          <div class="truncate text-[13px] font-semibold text-accent-text">
+          <div class="truncate text-[13px] font-semibold" :class="props.nested ? 'text-primary' : 'text-accent-text'">
             <DocMindHighlightedText :text="item.fileName" :query="props.query" />
           </div>
           <div class="flex items-center gap-2">
@@ -93,11 +100,11 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
         <div v-if="item.title_path || item.heading" class="mt-1 text-[11px] text-dim">
           {{ t("page.appSearch.detail.titlePath") }}：<DocMindHighlightedText :text="item.title_path || item.heading" :query="props.query" />
         </div>
-        <div class="mt-2 text-sm leading-6 text-secondary">
+        <div class="mt-2 text-sm leading-6" :class="props.nested ? 'text-secondary' : 'text-secondary'">
           <DocMindHighlightedText :text="item.snippet" :query="props.query" :spans="item.highlight_spans" />
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
-          <DocMindBadge>{{ t("page.appSearch.detail.titlePath") }}</DocMindBadge>
+          <DocMindBadge>{{ props.nested ? "片段" : t("page.appSearch.detail.titlePath") }}</DocMindBadge>
           <span>{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</span>
           <span>·</span>
           <span>{{ t("searchResultCard.rankReason") }}</span>

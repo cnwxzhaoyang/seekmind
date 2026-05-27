@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronDown, ChevronRight } from "lucide-vue-next";
+import { PanelTopClose, PanelTopOpen } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import DocMindFileIcon from "./DocMindFileIcon.vue";
 import DocMindHighlightedText from "./DocMindHighlightedText.vue";
@@ -66,8 +66,8 @@ const emitSelect = (id: string, source: string, event: MouseEvent | KeyboardEven
 
 <template>
   <section
-    class="cursor-pointer rounded-lg border bg-surface p-2.5 transition hover:border-accent hover:shadow-card-hover"
-    :class="isSelected ? 'border-accent ring-1 ring-accent-soft' : 'border-default'"
+    class="cursor-pointer rounded-lg border-t border-l border-light bg-surface p-3 shadow-card transition hover:shadow-card-hover"
+    :class="isSelected ? 'ring-1 ring-accent-soft' : ''"
     role="button"
     tabindex="0"
     @click="emitSelect(group.topResult.id, 'group-card', $event)"
@@ -107,42 +107,54 @@ const emitSelect = (id: string, source: string, event: MouseEvent | KeyboardEven
         <div class="mt-2 text-sm leading-6 text-secondary">
           <DocMindHighlightedText :text="group.topResult.snippet" :query="props.query" :spans="group.topResult.highlight_spans" />
         </div>
-        <div class="mt-1.5 text-[11px] text-dim">
-          {{ t("searchResultCard.rankReason") }}: {{ group.topResult.rank_reason.summary || t("common.none") }}
-        </div>
 
-        <div class="mt-2.5 flex items-center justify-between">
-          <button
-            class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-secondary transition hover:bg-surface-hover"
-            type="button"
-            @click.stop="emit('toggle', group.path)"
-          >
-            <ChevronDown v-if="props.expanded" :size="14" />
-            <ChevronRight v-else :size="14" />
-            {{ props.expanded ? t("searchResultGroupCard.collapse") : t("searchResultGroupCard.expand") }}
-          </button>
-          <button
-            class="rounded-md px-2 py-1 text-xs font-medium text-dim transition hover:bg-surface-hover"
-            type="button"
-            @click.stop="emitSelect(group.topResult.id, 'open-first', $event)"
-          >
-            {{ t("searchResultGroupCard.openFirst") }}
-          </button>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-light pt-3">
+          <div class="flex flex-wrap items-center gap-2 text-[11px] text-dim">
+            <DocMindBadge>{{ group.ext.toUpperCase() }}</DocMindBadge>
+            <span>{{ t("searchResultGroupCard.segments", { count: group.count }) }}</span>
+            <span>·</span>
+            <span>{{ t("searchResultGroupCard.totalScore", { score: Math.round(group.totalScore * 100) }) }}</span>
+            <span>·</span>
+            <span>{{ t("searchResultCard.rankReason") }}: {{ group.topResult.rank_reason.summary || t("common.none") }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary transition hover:bg-surface-hover hover:text-primary"
+              type="button"
+              :title="props.expanded ? t('searchResultGroupCard.collapse') : t('searchResultGroupCard.expand')"
+              :aria-label="props.expanded ? t('searchResultGroupCard.collapse') : t('searchResultGroupCard.expand')"
+              @click.stop="emit('toggle', group.path)"
+            >
+              <PanelTopClose v-if="props.expanded" :size="16" />
+              <PanelTopOpen v-else :size="16" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
-  <div v-if="props.expanded" class="mt-4 space-y-2 border-t border-light pt-3" @click.stop>
-      <DocMindSearchResultCard
-        v-for="item in group.results"
-        :key="item.id"
-        :item="item"
-        :selected="item.id === props.selectedId"
-        :query="props.query"
-        :favorited="props.isFavorited(item.path, item.heading, item.paragraph, item.page)"
-        @select="emitSelect(item.id, 'child-card', $event)"
-        @toggle-favorite="emit('toggleFavorite', item)"
-      />
+    <div v-if="props.expanded" class="mt-4 border-l border-light pl-3" @click.stop>
+      <div class="mb-2 flex items-center justify-between text-[11px] text-dim">
+        <div class="flex items-center gap-2">
+          <span class="font-semibold uppercase tracking-[0.16em] text-secondary">片段列表</span>
+          <span class="text-dim">·</span>
+          <span>{{ t("searchResultGroupCard.segments", { count: group.count }) }}</span>
+        </div>
+        <span class="text-dim">{{ t("searchResultGroupCard.expand") }}</span>
+      </div>
+      <div class="space-y-1.5">
+        <DocMindSearchResultCard
+          v-for="item in group.results"
+          :key="item.id"
+          :item="item"
+          :selected="item.id === props.selectedId"
+          :query="props.query"
+          :favorited="props.isFavorited(item.path, item.heading, item.paragraph, item.page)"
+          nested
+          @select="emitSelect(item.id, 'child-card', $event)"
+          @toggle-favorite="emit('toggleFavorite', item)"
+        />
+      </div>
     </div>
   </section>
 </template>

@@ -674,53 +674,24 @@ watch(showDebugPanel, async (visible) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-page text-primary">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
-      <div class="min-w-0 flex-1">
-        <form
-          class="flex h-8 max-w-[640px] items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
-          @submit.prevent="runSearch"
-        >
-          <Search :size="15" class="shrink-0 text-muted" />
-          <input
-            ref="searchInputRef"
-            v-model="query"
-            :placeholder="t('page.appSearch.placeholder')"
-            class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
-          />
-          <span class="hidden text-xs text-muted sm:inline">Cmd+K</span>
-        </form>
-      </div>
-      <div class="hidden shrink-0 items-center gap-2 text-xs lg:flex">
-        <DocMindBadge tone="success">
-          SQLite: {{ status?.indexed_docs ?? 0 }}/{{ status?.scanned_docs ?? 0 }}
-        </DocMindBadge>
-        <DocMindBadge tone="default">
-          Tantivy: {{ status?.indexed_chunks ?? 0 }}
-        </DocMindBadge>
-        <DocMindBadge tone="default">
-          {{ t("page.appSearch.semanticWeight", { weight: Math.round((indexSettings?.semantic_weight ?? 0.25) * 100) }) }}
-        </DocMindBadge>
-      </div>
-    </header>
-
     <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
         <template #left>
           <aside class="min-h-0 flex-1 overflow-y-auto bg-panel p-4">
-            <div class="space-y-7">
+            <div class="space-y-6">
               <section>
-                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                <div class="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
                   <History :size="14" />
                   {{ t("page.appSearch.section.recentSearch") }}
                 </div>
-                <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
+                <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
                   {{ t("page.appSearch.section.noHistory") }}
                 </div>
                 <div v-else class="flex flex-wrap gap-2">
                   <button
                     v-for="item in searchHistory"
                     :key="item.query"
-                    class="rounded-md bg-surface-hover px-2 py-0.5 text-[11px] text-secondary transition hover:bg-badge"
+                    class="rounded-md bg-surface-hover px-2 py-0.5 text-[10px] leading-4 text-secondary transition hover:bg-badge"
                     @click="runQueryFromHistory(item)"
                   >
                     {{ item.query }}
@@ -729,53 +700,53 @@ watch(showDebugPanel, async (visible) => {
               </section>
 
               <section>
-                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                <div class="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
                   <FileText :size="14" />
                   {{ t("page.appSearch.section.recentOpen") }}
                 </div>
-                <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
+                <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
                   {{ t("page.appSearch.section.noRecent") }}
                 </div>
                 <div v-else class="space-y-2">
                   <button
                     v-for="item in recentDocuments"
                     :key="item.path"
-                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-secondary transition hover:bg-panel"
+                    class="block w-full rounded-md px-2 py-1.5 text-left text-[11px] leading-4 text-secondary transition hover:bg-panel"
                     @click="openRecentDocument(item)"
                   >
-                    <div class="truncate font-medium text-primary">{{ item.title }}</div>
-                    <div class="mt-1 truncate text-[11px] text-muted">{{ item.path }}</div>
+                    <div class="truncate text-[12px] font-medium leading-4 text-primary">{{ item.title }}</div>
+                    <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.path }}</div>
                   </button>
                 </div>
               </section>
 
               <section>
-                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                <div class="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
                   <Star :size="14" />
                   {{ t("page.appSearch.section.favorites") }}
                 </div>
-                <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
+                <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
                   {{ t("page.appSearch.section.noFavorites") }}
                 </div>
                 <div v-else class="space-y-2">
                   <button
                     v-for="item in favoriteResults"
                     :key="item.target"
-                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-secondary transition hover:bg-panel"
+                    class="block w-full rounded-md px-2 py-1.5 text-left text-[11px] leading-4 text-secondary transition hover:bg-panel"
                     @click="openFavoriteDocument(item.path)"
                   >
-                    <div class="truncate font-medium text-primary">{{ item.title }}</div>
-                    <div class="mt-1 truncate text-[11px] text-muted">{{ item.path }}</div>
+                    <div class="truncate text-[12px] font-medium leading-4 text-primary">{{ item.title }}</div>
+                    <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.path }}</div>
                   </button>
                 </div>
               </section>
 
               <section>
-                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                <div class="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
                   <FolderOpen :size="14" />
                   {{ t("page.appSearch.section.quickDirs") }}
                 </div>
-                <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
+                <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
                   {{ t("page.appSearch.section.noDirs") }}
                 </div>
                 <DocMindIndexTree
@@ -805,7 +776,35 @@ watch(showDebugPanel, async (visible) => {
         </template>
 
         <template #center>
-          <section class="min-h-0 flex-1 overflow-y-auto bg-panel/70">
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/70">
+            <div class="flex items-center justify-between gap-4 border-b border-default bg-surface px-4 py-3">
+              <form
+                class="flex h-9 min-w-0 max-w-[760px] flex-1 items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
+                @submit.prevent="runSearch"
+              >
+                <Search :size="15" class="shrink-0 text-muted" />
+                <input
+                  ref="searchInputRef"
+                  v-model="query"
+                  :placeholder="t('page.appSearch.placeholder')"
+                  class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+                />
+                <span class="hidden text-xs text-muted sm:inline">Cmd+K</span>
+              </form>
+
+              <div class="hidden shrink-0 items-center gap-2 text-xs lg:flex">
+                <DocMindBadge tone="success">
+                  SQLite: {{ status?.indexed_docs ?? 0 }}/{{ status?.scanned_docs ?? 0 }}
+                </DocMindBadge>
+                <DocMindBadge tone="default">
+                  Tantivy: {{ status?.indexed_chunks ?? 0 }}
+                </DocMindBadge>
+                <DocMindBadge tone="default">
+                  {{ t("page.appSearch.semanticWeight", { weight: Math.round((indexSettings?.semantic_weight ?? 0.25) * 100) }) }}
+                </DocMindBadge>
+              </div>
+            </div>
+
             <div class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
               <div class="text-xs font-medium text-dim">
                 {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
@@ -816,70 +815,72 @@ watch(showDebugPanel, async (visible) => {
               </button>
             </div>
 
-            <div v-if="showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.title") }}</div>
-                  <div class="mt-1 text-xs text-dim">{{ t("page.appSearch.debug.desc") }}</div>
+            <div class="min-h-0 flex-1 overflow-y-auto">
+              <div v-if="showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.title") }}</div>
+                    <div class="mt-1 text-xs text-dim">{{ t("page.appSearch.debug.desc") }}</div>
+                  </div>
+                  <button class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover" @click="requestSearchDebugReport">
+                    {{ t("common.refresh") }}
+                  </button>
                 </div>
-                <button class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover" @click="requestSearchDebugReport">
-                  {{ t("common.refresh") }}
-                </button>
-              </div>
-              <div v-if="debugReportLoading" class="mt-3 rounded-md border border-dashed border-default bg-surface px-3 py-3 text-muted">
-                {{ t("page.appSearch.debug.loading") }}
-              </div>
-              <div v-else-if="debugReportError" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-3 text-danger">
-                {{ debugReportError }}
-              </div>
-              <div v-else-if="debugReport" class="mt-3 space-y-3">
-                <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                  <div class="rounded-md border border-default bg-surface px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.hits") }}</div>
-                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.hit_count }}</div>
+                <div v-if="debugReportLoading" class="mt-3 rounded-md border border-dashed border-default bg-surface px-3 py-3 text-muted">
+                  {{ t("page.appSearch.debug.loading") }}
+                </div>
+                <div v-else-if="debugReportError" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-3 text-danger">
+                  {{ debugReportError }}
+                </div>
+                <div v-else-if="debugReport" class="mt-3 space-y-3">
+                  <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                    <div class="rounded-md border border-default bg-surface px-3 py-2">
+                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.hits") }}</div>
+                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.hit_count }}</div>
+                    </div>
+                    <div class="rounded-md border border-default bg-surface px-3 py-2">
+                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.keywordHits") }}</div>
+                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.keyword_hit_count }}</div>
+                    </div>
+                    <div class="rounded-md border border-default bg-surface px-3 py-2">
+                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.semanticHits") }}</div>
+                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.semantic_hit_count }}</div>
+                    </div>
+                    <div class="rounded-md border border-default bg-surface px-3 py-2">
+                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.mode") }}</div>
+                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.search_mode }}</div>
+                    </div>
                   </div>
-                  <div class="rounded-md border border-default bg-surface px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.keywordHits") }}</div>
-                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.keyword_hit_count }}</div>
-                  </div>
-                  <div class="rounded-md border border-default bg-surface px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.semanticHits") }}</div>
-                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.semantic_hit_count }}</div>
-                  </div>
-                  <div class="rounded-md border border-default bg-surface px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.mode") }}</div>
-                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.search_mode }}</div>
+                  <div class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary">
+                    <div>{{ t("page.appSearch.debug.normalized", { query: debugReport.normalized_search_text || t("common.none") }) }}</div>
+                    <div class="mt-1 break-all">{{ t("page.appSearch.debug.rewritten", { query: debugReport.rewritten_query || t("common.none") }) }}</div>
+                    <div class="mt-1 break-all">{{ t("page.appSearch.debug.expanded", { query: debugReport.expanded_query || t("common.none") }) }}</div>
                   </div>
                 </div>
-                <div class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary">
-                  <div>{{ t("page.appSearch.debug.normalized", { query: debugReport.normalized_search_text || t("common.none") }) }}</div>
-                  <div class="mt-1 break-all">{{ t("page.appSearch.debug.rewritten", { query: debugReport.rewritten_query || t("common.none") }) }}</div>
-                  <div class="mt-1 break-all">{{ t("page.appSearch.debug.expanded", { query: debugReport.expanded_query || t("common.none") }) }}</div>
-                </div>
               </div>
-            </div>
 
-            <div v-if="errorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
-              {{ errorMessage }}
-            </div>
+              <div v-if="errorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
+                {{ errorMessage }}
+              </div>
 
-            <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
-              {{ t("page.appSearch.noResults") }}
-            </div>
+              <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                {{ t("page.appSearch.noResults") }}
+              </div>
 
-            <div class="space-y-3 p-4">
-              <DocMindSearchResultGroupCard
-                v-for="group in groupedResults"
-                :key="group.path"
-                :group="group"
-                :query="query"
-                :selected-id="selectedId"
-                :expanded="Boolean(expandedGroups[group.path])"
-                :is-favorited="isResultFavorited"
-                @select="selectResult"
-                @toggle="toggleGroup"
-                @toggle-favorite="toggleFavoriteResult"
-              />
+              <div class="space-y-3 pr-2 pb-4">
+                <DocMindSearchResultGroupCard
+                  v-for="group in groupedResults"
+                  :key="group.path"
+                  :group="group"
+                  :query="query"
+                  :selected-id="selectedId"
+                  :expanded="Boolean(expandedGroups[group.path])"
+                  :is-favorited="isResultFavorited"
+                  @select="selectResult"
+                  @toggle="toggleGroup"
+                  @toggle-favorite="toggleFavoriteResult"
+                />
+              </div>
             </div>
           </section>
         </template>

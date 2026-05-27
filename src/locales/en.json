@@ -368,6 +368,7 @@
       "section": {
         "rules": "Index Rules",
         "instructions": "Instructions",
+        "appearance": "Appearance",
         "danger": "Danger Zone"
       },
       "rulesDesc": "Directory names and extensions are split by comma, semicolon, or newline. Extensions do not need leading dots.",

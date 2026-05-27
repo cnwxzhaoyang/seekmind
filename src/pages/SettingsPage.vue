@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Languages, Moon, Monitor, RefreshCw, Save, Sun, Trash2 } from "lucide-vue-next";
+import { Database, Languages, Moon, Monitor, RefreshCw, Save, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
@@ -51,6 +51,9 @@ const saving = ref(false);
 const clearing = ref(false);
 const errorMessage = ref("");
 const infoMessage = ref("");
+const activeSection = ref("settings-rules");
+const mainScrollEl = ref<HTMLElement | null>(null);
+let sectionObserver: IntersectionObserver | null = null;
 
 const hasChanges = computed(() => {
   if (!savedSettings.value) {
@@ -179,7 +182,103 @@ const clearAllIndexes = async () => {
   }
 };
 
-onMounted(loadSettings);
+const scrollToSection = (id: string) => {
+  activeSection.value = id;
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+const settingsNavItems = computed(() => [
+  {
+    id: "settings-rules",
+    label: t("page.settings.section.rules"),
+    hint: t("page.settings.rulesDesc"),
+    icon: SlidersHorizontal,
+  },
+  {
+    id: "settings-semantic",
+    label: t("page.settings.semantic.title"),
+    hint: t("page.settings.semantic.thresholdDesc"),
+    icon: Sparkles,
+  },
+  {
+    id: "settings-model",
+    label: t("semantic.title"),
+    hint: t("semantic.desc"),
+    icon: Database,
+  },
+  {
+    id: "settings-appearance",
+    label: t("page.settings.section.appearance"),
+    hint: `${t("page.settings.language")} / ${t("page.settings.theme")}`,
+    icon: Languages,
+  },
+  {
+    id: "settings-danger",
+    label: t("page.settings.section.danger"),
+    hint: t("page.settings.btn.clear"),
+    icon: Trash2,
+    danger: true,
+  },
+] as const);
+
+const syncActiveSection = () => {
+  if (sectionObserver) {
+    sectionObserver.disconnect();
+    sectionObserver = null;
+  }
+
+  const root = mainScrollEl.value;
+  if (!root) {
+    return;
+  }
+
+  const sectionIds = settingsNavItems.value.map((item) => item.id);
+  const sectionElements = sectionIds
+    .map((id) => document.getElementById(id))
+    .filter((element): element is HTMLElement => Boolean(element));
+
+  if (!sectionElements.length) {
+    return;
+  }
+
+  sectionObserver = new IntersectionObserver(
+    (entries) => {
+      const visibleEntries = entries.filter((entry) => entry.isIntersecting);
+      if (!visibleEntries.length) {
+        return;
+      }
+
+      const topMost = visibleEntries.reduce((current, entry) => {
+        if (!current) {
+          return entry;
+        }
+        return entry.boundingClientRect.top < current.boundingClientRect.top ? entry : current;
+      });
+
+      if (topMost.target instanceof HTMLElement) {
+        activeSection.value = topMost.target.id;
+      }
+    },
+    {
+      root,
+      threshold: 0.18,
+      rootMargin: "-18% 0px -62% 0px",
+    },
+  );
+
+  sectionElements.forEach((element) => sectionObserver?.observe(element));
+};
+
+onMounted(async () => {
+  await loadSettings();
+  await nextTick();
+  syncActiveSection();
+});
+
+onBeforeUnmount(() => {
+  sectionObserver?.disconnect();
+  sectionObserver = null;
+});
 </script>
 
 <template>
@@ -210,7 +309,7 @@ onMounted(loadSettings);
       </div>
     </header>
 
-    <main class="min-h-0 flex-1 overflow-y-auto p-4">
+    <main ref="mainScrollEl" class="min-h-0 flex-1 overflow-y-auto p-4">
       <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
         {{ errorMessage }}
       </div>
@@ -223,10 +322,109 @@ onMounted(loadSettings);
         {{ t("page.settings.loading") }}
       </div>
 
-      <div v-else class="mx-auto grid w-full max-w-[1600px] gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div v-else class="mx-auto grid w-full max-w-[1720px] gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside class="hidden min-h-0 min-w-0 self-start xl:sticky xl:top-4 xl:block">
+          <section class="rounded-lg border border-default bg-surface">
+            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+              <div>
+                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">导航</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.instructions.effective") }}</div>
+              </div>
+              <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
+            </div>
+            <div class="space-y-2 p-4">
+              <button
+                v-for="item in settingsNavItems"
+                :key="item.id"
+                class="w-full rounded-lg border px-3 py-2 text-left transition"
+                :class="activeSection === item.id
+                  ? item.danger
+                    ? 'border-danger-soft bg-danger-soft text-danger'
+                    : 'border-accent bg-accent-soft text-primary'
+                  : item.danger
+                    ? 'border-danger-soft bg-danger-soft opacity-80 text-secondary hover:opacity-100'
+                    : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                @click="scrollToSection(item.id)"
+              >
+                <div class="flex items-start gap-3">
+                  <span
+                    class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border"
+                    :class="activeSection === item.id
+                      ? item.danger
+                        ? 'border-danger-soft bg-danger text-white'
+                        : 'border-accent bg-accent text-white'
+                      : item.danger
+                        ? 'border-danger-soft bg-danger-soft text-danger'
+                        : 'border-default bg-surface text-muted'"
+                  >
+                    <component :is="item.icon" :size="15" />
+                  </span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium leading-5">{{ item.label }}</span>
+                    <span class="mt-0.5 block text-[11px] leading-4 text-dim">{{ item.hint }}</span>
+                  </span>
+                </div>
+              </button>
+            </div>
+          </section>
+
+          <section class="rounded-lg border border-default bg-surface">
+            <div class="border-b border-default px-4 py-2.5">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">快捷</div>
+            </div>
+            <div class="grid gap-2 p-4">
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-4 py-2.5 text-sm font-medium text-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="loading || saving"
+                @click="resetToDefaults"
+              >
+                <RefreshCw :size="15" />
+                {{ t("page.settings.btn.reset") }}
+              </button>
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="loading || saving"
+                @click="saveSettings"
+              >
+                <Save :size="15" />
+                {{ saving ? t("page.settings.btn.saving") : t("page.settings.btn.save") }}
+              </button>
+              <button
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm font-medium text-danger transition hover:opacity-90"
+                @click="scrollToSection('settings-danger')"
+              >
+                <Trash2 :size="15" />
+                {{ t("page.settings.section.danger") }}
+              </button>
+            </div>
+          </section>
+
+          <section class="rounded-lg border border-default bg-surface">
+            <div class="border-b border-default px-4 py-2.5">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">状态</div>
+            </div>
+            <div class="space-y-3 p-4 text-sm">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-dim">{{ t("page.settings.status.synced") }}</span>
+                <DocMindBadge :tone="hasChanges ? 'warning' : 'success'">{{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}</DocMindBadge>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-dim">{{ t("page.settings.language") }}</span>
+                <span class="font-medium text-primary">{{ currentLocale === "zh-CN" ? "中文" : "English" }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-dim">{{ t("page.settings.theme") }}</span>
+                <span class="font-medium text-primary">
+                  {{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}
+                </span>
+              </div>
+            </div>
+          </section>
+        </aside>
+
         <div class="min-w-0 space-y-4">
-          <div class="grid gap-4 2xl:grid-cols-2">
-            <section class="rounded-lg border border-default bg-surface">
+          <div class="grid gap-4 xl:grid-cols-2">
+            <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
                 <div>
                   <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.rules") }}</div>
@@ -236,9 +434,9 @@ onMounted(loadSettings);
               </div>
 
               <div class="space-y-4 p-4">
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-start">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.label.excludeDirs") }}</div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.excludeDirs") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.placeholder.dirs") }}</div>
                   </div>
                   <textarea
@@ -249,9 +447,9 @@ onMounted(loadSettings);
                   />
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-start">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.label.excludeExts") }}</div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.excludeExts") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.placeholder.exts") }}</div>
                   </div>
                   <textarea
@@ -262,9 +460,9 @@ onMounted(loadSettings);
                   />
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.label.maxFileSize") }}</div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.maxFileSize") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
                   </div>
                   <div class="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
@@ -286,7 +484,7 @@ onMounted(loadSettings);
               </div>
             </section>
 
-            <section class="rounded-lg border border-default bg-surface">
+            <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
                 <div>
                   <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.title") }}</div>
@@ -296,9 +494,9 @@ onMounted(loadSettings);
               </div>
 
               <div class="space-y-4 p-4">
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.semantic.title") }}</div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.title") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.desc") }}</div>
                   </div>
                   <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
@@ -307,9 +505,9 @@ onMounted(loadSettings);
                   </label>
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.semantic.weight") }}</div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.weight") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.thresholdDesc") }}</div>
                   </div>
                   <div class="rounded-lg border border-default bg-panel px-4 py-3">
@@ -330,7 +528,7 @@ onMounted(loadSettings);
 
                 <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.semantic.threshold") }}</div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.threshold") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.thresholdDesc") }}</div>
                   </div>
                   <div class="rounded-lg border border-default bg-panel px-4 py-3">
@@ -349,9 +547,9 @@ onMounted(loadSettings);
                   </div>
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-start">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.preference.title") }}</div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.preference.title") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.preference.title") }}</div>
                   </div>
                   <div class="grid gap-2 rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
@@ -370,9 +568,9 @@ onMounted(loadSettings);
                   </div>
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-start">
+                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="text-sm font-medium text-primary">{{ t("page.settings.weight.title") }}</div>
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.weight.title") }}</div>
                     <div class="mt-1 text-xs text-dim">{{ t("page.settings.weight.title") }}</div>
                   </div>
                   <div class="space-y-4 rounded-lg border border-default bg-panel px-4 py-3">
@@ -403,93 +601,96 @@ onMounted(loadSettings);
             </section>
           </div>
 
-          <DocMindSemanticPanel />
-        </div>
+          <div id="settings-model" class="scroll-mt-4">
+            <DocMindSemanticPanel />
+          </div>
 
-        <aside class="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
-          <section class="rounded-lg border border-default bg-surface">
-            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-              <div>
-                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.instructions") }}</div>
-                <div class="mt-1 text-xs text-dim">{{ t("page.settings.instructions.effective") }}</div>
+          <div class="grid gap-4 xl:grid-cols-2">
+            <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
+              <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+                <div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.appearance") }}</div>
+                  <div class="mt-1 text-xs text-dim">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
+                </div>
+                <Languages :size="15" class="text-muted" />
               </div>
-              <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
-            </div>
-            <div class="space-y-2 p-4 text-sm text-secondary">
-              <p>• {{ t("page.settings.instructions.dirs") }}</p>
-              <p>• {{ t("page.settings.instructions.exts") }}</p>
-              <p>• {{ t("page.settings.instructions.maxSize") }}</p>
-            </div>
-          </section>
+              <div class="space-y-4 p-4">
+                <div>
+                  <div class="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.language") }}</div>
+                  <div class="grid gap-2">
+                    <button
+                      class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                      :class="currentLocale === 'zh-CN'
+                        ? 'border-default bg-accent text-white'
+                        : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                      @click="switchLocale('zh-CN')"
+                    >
+                      中文
+                    </button>
+                    <button
+                      class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                      :class="currentLocale === 'en'
+                        ? 'border-default bg-accent text-white'
+                        : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                      @click="switchLocale('en')"
+                    >
+                      English
+                    </button>
+                  </div>
+                </div>
 
-          <section class="rounded-lg border border-default bg-surface">
-            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-              <div>
-                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.language") }}</div>
+                <div>
+                  <div class="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.theme") }}</div>
+                  <div class="grid gap-2">
+                    <button
+                      class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                      :class="themeMode === 'light'
+                        ? 'border-default bg-accent text-white'
+                        : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                      @click="setTheme('light')"
+                    >
+                      <Sun :size="15" />{{ t("page.settings.themeLight") }}
+                    </button>
+                    <button
+                      class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                      :class="themeMode === 'dark'
+                        ? 'border-default bg-accent text-white'
+                        : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                      @click="setTheme('dark')"
+                    >
+                      <Moon :size="15" />{{ t("page.settings.themeDark") }}
+                    </button>
+                    <button
+                      class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                      :class="themeMode === 'system'
+                        ? 'border-default bg-accent text-white'
+                        : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                      @click="setTheme('system')"
+                    >
+                      <Monitor :size="15" />{{ t("page.settings.themeSystem") }}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <Languages :size="15" class="text-muted" />
-            </div>
-            <div class="grid gap-2 p-4">
-              <button
-                class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                :class="currentLocale === 'zh-CN'
-                  ? 'border-default bg-accent text-white'
-                  : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                @click="switchLocale('zh-CN')"
-              >
-                中文
-              </button>
-              <button
-                class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                :class="currentLocale === 'en'
-                  ? 'border-default bg-accent text-white'
-                  : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                @click="switchLocale('en')"
-              >
-                English
-              </button>
-            </div>
-          </section>
+            </section>
 
-          <section class="rounded-lg border border-default bg-surface">
-            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-              <div>
-                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.theme") }}</div>
+            <section class="rounded-lg border border-default bg-surface">
+              <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+                <div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.instructions") }}</div>
+                  <div class="mt-1 text-xs text-dim">{{ t("page.settings.instructions.effective") }}</div>
+                </div>
+                <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
               </div>
-              <component :is="themeMode === 'dark' ? Moon : themeMode === 'system' ? Monitor : Sun" :size="15" class="text-muted" />
-            </div>
-            <div class="grid gap-2 p-4">
-              <button
-                class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                :class="themeMode === 'light'
-                  ? 'border-default bg-accent text-white'
-                  : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                @click="setTheme('light')"
-              >
-                <Sun :size="15" />{{ t("page.settings.themeLight") }}
-              </button>
-              <button
-                class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                :class="themeMode === 'dark'
-                  ? 'border-default bg-accent text-white'
-                  : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                @click="setTheme('dark')"
-              >
-                <Moon :size="15" />{{ t("page.settings.themeDark") }}
-              </button>
-              <button
-                class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                :class="themeMode === 'system'
-                  ? 'border-default bg-accent text-white'
-                  : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                @click="setTheme('system')"
-              >
-                <Monitor :size="15" />{{ t("page.settings.themeSystem") }}
-              </button>
-            </div>
-          </section>
+              <div class="space-y-2 p-4 text-sm text-secondary">
+                <p>• {{ t("page.settings.instructions.dirs") }}</p>
+                <p>• {{ t("page.settings.instructions.exts") }}</p>
+                <p>• {{ t("page.settings.instructions.maxSize") }}</p>
+              </div>
+            </section>
+          </div>
 
-          <section class="rounded-lg border border-danger-soft bg-danger-soft px-4 py-3">
+          <section id="settings-danger" class="scroll-mt-4 rounded-lg border border-danger-soft bg-danger-soft px-4 py-3">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
                 <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-danger">
@@ -511,7 +712,7 @@ onMounted(loadSettings);
               </button>
             </div>
           </section>
-        </aside>
+        </div>
       </div>
     </main>
   </div>

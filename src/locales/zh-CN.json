@@ -364,6 +364,7 @@
       "section": {
         "rules": "索引规则",
         "instructions": "操作说明",
+        "appearance": "界面",
         "danger": "危险操作"
       },
       "rulesDesc": "目录名和扩展名会按逗号、分号或换行分隔，扩展名无需输入点号。",
