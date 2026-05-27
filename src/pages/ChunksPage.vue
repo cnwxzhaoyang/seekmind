@@ -611,21 +611,21 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <h1 class="text-base font-semibold tracking-tight text-slate-950">{{ t("page.chunks.title") }}</h1>
-          <span class="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{{ t("page.chunks.section.indexDirs") }}</span>
+          <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.chunks.title") }}</h1>
+          <span class="rounded-md bg-surface-hover px-2 py-0.5 text-[10px] text-dim">{{ t("page.chunks.section.indexDirs") }}</span>
         </div>
-        <p class="mt-0.5 text-xs text-slate-500">
+        <p class="mt-0.5 text-xs text-dim">
           {{ t("page.chunks.subtitle") }}
         </p>
       </div>
-      <div class="flex items-center gap-3 text-xs text-slate-500">
+      <div class="flex items-center gap-3 text-xs text-dim">
         <div class="hidden sm:block">
           {{ t("page.chunks.parserInfo") }}
-          <span class="font-medium text-slate-600">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
+          <span class="font-medium text-secondary">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
           {{ t("page.chunks.parserInfo2") }}
         </div>
         <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
@@ -635,16 +635,16 @@ watch(
       </div>
     </header>
 
-    <div v-if="errorMessage" class="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div v-if="errorMessage" class="mb-4 rounded-2xl border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
       {{ errorMessage }}
     </div>
 
     <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
         <template #left>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-3 py-3">
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
             <div class="shrink-0 mb-3 flex items-center justify-between">
-              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.indexDirs") }}</div>
+              <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ t("page.chunks.section.indexDirs") }}</div>
               <DocMindBadge tone="default">
                 <FolderOpen class="mr-1" :size="13" />
                 {{ explicitIndexDirCount }}
@@ -652,9 +652,9 @@ watch(
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-              <div v-if="loading && dirs.length === 0" class="text-sm text-slate-500">{{ t("page.chunks.empty.dirs") }}</div>
+              <div v-if="loading && dirs.length === 0" class="text-sm text-dim">{{ t("page.chunks.empty.dirs") }}</div>
 
-              <div v-else-if="visibleDirRows.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              <div v-else-if="visibleDirRows.length === 0" class="rounded-md bg-panel px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.dirs") }}
               </div>
 
@@ -676,11 +676,11 @@ watch(
         </template>
 
         <template #center>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/60 px-3 py-3">
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/60 px-3 py-3">
             <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
               <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.docList") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ t("page.chunks.section.docList") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
               </div>
               <div class="flex items-center gap-2">
                 <DocMindBadge tone="default">
@@ -697,14 +697,14 @@ watch(
             <div class="shrink-0 mb-3">
               <input
                 v-model="docFilter"
-                class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300"
+                class="w-full rounded-md border border-default bg-input px-3 py-2 text-sm outline-none focus:border-accent"
                 :placeholder="t('page.chunks.filterPlaceholder')"
               />
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-              <div v-if="loadingDocs" class="text-sm text-slate-500">{{ t("page.chunks.readingDocs") }}</div>
-              <div v-else-if="filteredDocuments.length === 0" class="rounded-md bg-white px-4 py-6 text-sm text-slate-500">
+              <div v-if="loadingDocs" class="text-sm text-dim">{{ t("page.chunks.readingDocs") }}</div>
+              <div v-else-if="filteredDocuments.length === 0" class="rounded-md bg-surface px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.docs") }}
               </div>
               <div v-else class="space-y-2">
@@ -712,7 +712,7 @@ watch(
                   v-for="doc in filteredDocuments"
                   :key="doc.id"
                   class="w-full rounded-md border px-2.5 py-2 text-left transition"
-                  :class="selectedDocPath === doc.path ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'"
+                  :class="selectedDocPath === doc.path ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-hover'"
                   role="button"
                   tabindex="0"
                   @click="selectDoc(doc.path)"
@@ -720,9 +720,9 @@ watch(
                   <div class="flex items-start gap-3">
                     <DocMindFileIcon :ext="doc.ext" />
                     <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm font-medium text-slate-950">{{ doc.file_name }}</div>
-                      <div class="mt-1 truncate text-[11px] text-slate-500">{{ doc.path }}</div>
-                      <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+                      <div class="truncate text-sm font-medium text-primary">{{ doc.file_name }}</div>
+                      <div class="mt-1 truncate text-[11px] text-dim">{{ doc.path }}</div>
+                      <div class="mt-2 flex items-center gap-2 text-[11px] text-dim">
                         <span>{{ t("page.chunks.chunkStats", { count: doc.chunks }) }}</span>
                         <span>·</span>
                         <span>{{ doc.modified }}</span>
@@ -731,8 +731,8 @@ watch(
                         v-if="refreshWarnings[doc.path]"
                         class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
                         :class="refreshOutcomes[doc.path] === 'python'
-                          ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                          : 'border-amber-100 bg-amber-50 text-amber-700'"
+                          ? 'border-emerald-soft bg-emerald-soft text-success'
+                          : 'border-amber-soft bg-amber-soft text-warning'"
                       >
                         {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
                       </div>
@@ -740,14 +740,14 @@ watch(
                         v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
                         class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px]"
                         :class="refreshOutcomes[doc.path] === 'python'
-                          ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
-                          : 'border border-amber-100 bg-amber-50 text-amber-700'"
+                          ? 'border border-emerald-soft bg-emerald-soft text-success'
+                          : 'border border-amber-soft bg-amber-soft text-warning'"
                       >
                         {{ refreshOutcomeLabel(doc.path) }}
                       </div>
                     </div>
                     <button
-                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-default bg-surface px-2 py-1 text-xs text-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="loadingDocs || isDocRefreshBusy(doc.path)"
                       @click.stop="void refreshDocument(doc)"
                     >
@@ -762,36 +762,36 @@ watch(
         </template>
 
         <template #right>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-3 py-3">
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
             <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
               <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t("page.chunks.section.chunkDetail") }}</div>
-                <div class="mt-1 text-xs text-slate-500">
+                <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ t("page.chunks.section.chunkDetail") }}</div>
+                <div class="mt-1 text-xs text-dim">
                   {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
                 </div>
                 <div
                   v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
                   class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
                   :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    ? 'border-emerald-soft bg-emerald-soft text-success'
                     : refreshOutcomeTone(currentDocument.path) === 'warning'
-                      ? 'border-amber-100 bg-amber-50 text-amber-700'
+                      ? 'border-amber-soft bg-amber-soft text-warning'
                       : refreshOutcomeTone(currentDocument.path) === 'danger'
-                        ? 'border-rose-100 bg-rose-50 text-rose-700'
-                        : 'border-slate-200 bg-slate-50 text-slate-600'"
+                        ? 'border-rose-soft bg-rose-soft text-danger'
+                        : 'border-default bg-panel text-secondary'"
                 >
                   <Cpu :size="11" />
                   {{ refreshOutcomeLabel(currentDocument.path) }}
                 </div>
                 <div
                   v-if="currentDocumentRefreshWarning"
-                  class="mt-2 text-[11px] leading-5 text-amber-700"
+                  class="mt-2 text-[11px] leading-5 text-warning"
                 >
                   {{ currentDocumentRefreshWarning }}
                 </div>
               </div>
               <button
-                class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+                class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover"
                 :disabled="loading || !selectedDirPath"
                 @click="void syncSelection()"
               >
@@ -801,9 +801,9 @@ watch(
             </div>
 
             <div class="shrink-0 mb-3">
-              <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                <div class="text-sm font-medium text-slate-950">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
-                <div class="mt-1 break-all text-[11px] text-slate-500">
+              <div class="rounded-md border border-default bg-panel px-4 py-3">
+                <div class="text-sm font-medium text-primary">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
+                <div class="mt-1 break-all text-[11px] text-dim">
                   {{ currentDocument?.path || t("page.chunks.selectDoc") }}
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2">
@@ -812,7 +812,7 @@ watch(
                 </div>
                 <div class="mt-3 grid grid-cols-2 gap-2">
                   <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
                     :disabled="!currentDocument"
                     @click="quickLookCurrentDocument"
                   >
@@ -820,7 +820,7 @@ watch(
                     {{ t("page.chunks.action.quickLook") }}
                   </button>
                   <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
                     :disabled="!currentDocument"
                     @click="openCurrentDocument"
                   >
@@ -828,7 +828,7 @@ watch(
                     {{ t("common.openFile") }}
                   </button>
                   <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
                     :disabled="!currentDocument"
                     @click="copyCurrentDocumentPath"
                   >
@@ -836,7 +836,7 @@ watch(
                     {{ t("page.chunks.action.copyPath") }}
                   </button>
                   <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
                     :disabled="!currentDocument"
                     @click="copyText(currentDocumentCitation, t('page.chunks.action.copiedCitation'))"
                   >
@@ -848,45 +848,45 @@ watch(
                   v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
                   class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
                   :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    ? 'border-emerald-soft bg-emerald-soft text-success'
                     : refreshOutcomeTone(currentDocument.path) === 'warning'
-                      ? 'border-amber-100 bg-amber-50 text-amber-700'
+                      ? 'border-amber-soft bg-amber-soft text-warning'
                       : refreshOutcomeTone(currentDocument.path) === 'danger'
-                        ? 'border-rose-100 bg-rose-50 text-rose-700'
-                        : 'border-slate-200 bg-slate-50 text-slate-600'"
+                        ? 'border-rose-soft bg-rose-soft text-danger'
+                        : 'border-default bg-panel text-secondary'"
                 >
                   <Cpu :size="11" />
                   {{ refreshOutcomeLabel(currentDocument.path) }}
                 </div>
                 <div
                   v-if="currentDocumentRefreshWarning"
-                  class="mt-2 text-[11px] leading-5 text-amber-700"
+                  class="mt-2 text-[11px] leading-5 text-warning"
                 >
                   {{ currentDocumentRefreshWarning }}
                 </div>
-                <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
                   {{ actionMessage }}
                 </div>
-                <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
                   {{ actionErrorMessage }}
                 </div>
               </div>
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-              <div v-if="loadingChunks" class="text-sm text-slate-500">{{ t("page.chunks.readingChunks") }}</div>
-              <div v-else-if="!currentDocument" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              <div v-if="loadingChunks" class="text-sm text-dim">{{ t("page.chunks.readingChunks") }}</div>
+              <div v-else-if="!currentDocument" class="rounded-md bg-panel px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.selectDocToView") }}
               </div>
-              <div v-else-if="chunks.length === 0" class="rounded-md bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              <div v-else-if="chunks.length === 0" class="rounded-md bg-panel px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.chunks") }}
               </div>
               <div v-else class="space-y-3">
-                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-md border border-slate-200 bg-white p-3">
+                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-md border border-default bg-surface p-3">
                   <div class="mb-2 flex items-center justify-between gap-2">
                     <div class="min-w-0 flex-1">
-                      <div class="text-sm font-medium text-slate-950">{{ chunk.title_path || chunk.heading }}</div>
-                      <div class="mt-1 text-[11px] text-slate-500">
+                      <div class="text-sm font-medium text-primary">{{ chunk.title_path || chunk.heading }}</div>
+                      <div class="mt-1 text-[11px] text-dim">
                         {{ t("page.chunks.titlePath") }}：{{ chunk.title_path || chunk.heading }}
                       </div>
                     </div>
@@ -895,7 +895,7 @@ watch(
                         {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
                       </DocMindBadge>
                       <button
-                        class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+                        class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
                         @click="copyChunkCitation(chunk)"
                       >
                         {{ t("page.chunks.action.copyCitation") }}
@@ -931,7 +931,7 @@ watch(
       </SplitPane>
     </main>
 
-    <footer class="flex h-6 items-center justify-between border-t border-slate-200 bg-slate-100 px-4 text-[11px] text-slate-500">
+    <footer class="flex h-6 items-center justify-between border-t border-default bg-statusbar px-4 text-[11px] text-dim">
       <div class="flex items-center gap-3">
         <span>
           <Cpu :size="12" class="mr-1 inline" />

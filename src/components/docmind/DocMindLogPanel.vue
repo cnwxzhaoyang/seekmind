@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="pointer-events-none fixed bottom-0 right-0 z-50" :style="{ left: `${sidebarWidth}px` }">
     <div
-      class="pointer-events-auto overflow-hidden border-t border-slate-200 bg-slate-100 shadow-lg transition-all duration-200"
+      class="pointer-events-auto overflow-hidden border-t border-default bg-panel shadow-lg transition-all duration-200"
       :class="expanded ? 'w-full max-h-[320px]' : 'w-full'"
     >
       <button
@@ -145,49 +145,49 @@ onBeforeUnmount(() => {
         @click="toggleExpanded"
       >
         <div class="flex items-center gap-2">
-          <NotebookText class="text-slate-600" :size="14" />
-          <div class="text-[11px] font-medium text-slate-700">{{ t("logPanel.title") }}</div>
-          <div class="hidden text-[11px] text-slate-500 sm:block">{{ t("logPanel.desc") }}</div>
+          <NotebookText class="text-dim" :size="14" />
+          <div class="text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
+          <div class="hidden text-[11px] text-dim sm:block">{{ t("logPanel.desc") }}</div>
         </div>
-        <div class="flex items-center gap-3 text-[11px] text-slate-500">
+        <div class="flex items-center gap-3 text-[11px] text-muted">
           <span>{{ t("logPanel.events", { count: entries.length }) }}</span>
-          <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-slate-500" />
+          <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
         </div>
       </button>
 
       <div v-if="expanded" class="max-h-[460px] overflow-hidden">
-        <div class="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+        <div class="flex items-center justify-between border-t border-light px-4 py-2 text-xs text-dim">
           <div>{{ t("logPanel.events", { count: entries.length }) }}</div>
-          <button class="inline-flex items-center gap-1 hover:text-slate-700" @click="clearLogs">
+          <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
             <Trash2 :size="13" /> {{ t("logPanel.clear") }}
           </button>
         </div>
         <div class="max-h-[400px] overflow-y-auto p-2">
-          <div v-if="entries.length === 0" class="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
+          <div v-if="entries.length === 0" class="rounded-2xl bg-panel px-4 py-6 text-sm text-dim">
             {{ t("logPanel.empty") }}
           </div>
           <div v-else class="space-y-2">
             <div
               v-for="entry in displayedEntries"
               :key="entry.id"
-              class="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2"
+              class="rounded-2xl border border-light bg-panel px-3 py-2"
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
                     <DocMindBadge :tone="levelTone[entry.level]">{{ t(scopeMeta[entry.scope].label) }}</DocMindBadge>
-                    <div class="truncate text-sm font-medium text-slate-900">{{ entry.title }}</div>
+                    <div class="truncate text-sm font-medium text-primary">{{ entry.title }}</div>
                   </div>
-                  <div class="mt-1 text-xs leading-5 text-slate-600">{{ entry.message }}</div>
-                  <div class="mt-1 truncate text-[11px] text-slate-400">{{ entry.details }}</div>
+                  <div class="mt-1 text-xs leading-5 text-secondary">{{ entry.message }}</div>
+                  <div class="mt-1 truncate text-[11px] text-muted">{{ entry.details }}</div>
                   <div
                     v-if="entry.warning"
-                    class="mt-1 rounded-xl border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-4 text-amber-700"
+                    class="mt-1 rounded-xl border border-amber-soft bg-amber-soft px-2 py-1 text-[11px] leading-4 text-warning"
                   >
                     {{ entry.warning }}
                   </div>
                 </div>
-                <div class="shrink-0 text-[11px] text-slate-400">{{ formatTime(entry.timestamp) }}</div>
+                <div class="shrink-0 text-[11px] text-muted">{{ formatTime(entry.timestamp) }}</div>
               </div>
             </div>
           </div>

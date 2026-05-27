@@ -398,6 +398,10 @@
       "confirmClear": "确认清空全部索引？这不会删除原始文件，只会清理本地索引数据。",
       "confirmRemoveDir": "确认删除索引目录？\n{path}",
       "language": "界面语言",
+      "theme": "主题",
+      "themeLight": "浅色",
+      "themeDark": "深色",
+      "themeSystem": "跟随系统",
       "error": {
         "load": "加载设置失败",
         "save": "保存设置失败",

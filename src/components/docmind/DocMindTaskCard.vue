@@ -38,11 +38,11 @@ const remainingCount = computed(() => {
 </script>
 
 <template>
-  <div v-if="props.task" class="rounded-lg border border-slate-200 bg-white p-3">
+  <div v-if="props.task" class="rounded-lg border border-default bg-surface p-3">
     <div class="mb-2.5 flex items-center justify-between">
       <div>
-        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ displayTitle }}</div>
-        <div class="mt-1 text-xs text-slate-500">{{ displayDesc }}</div>
+        <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ displayTitle }}</div>
+        <div class="mt-1 text-xs text-dim">{{ displayDesc }}</div>
       </div>
       <DocMindBadge :tone="badgeTone">
         <Loader2 v-if="badgeSpinning" class="mr-1 animate-spin" :size="13" />
@@ -50,68 +50,68 @@ const remainingCount = computed(() => {
       </DocMindBadge>
     </div>
 
-    <div class="h-1 rounded-full bg-slate-100">
+    <div class="h-1 rounded-full bg-badge">
       <div
-        class="h-1 rounded-full bg-slate-900 transition-[width] duration-500"
+        class="h-1 rounded-full bg-accent transition-[width] duration-500"
         :style="{ width: `${Math.max(props.task.progress, 8)}%` }"
       />
     </div>
 
-    <div v-if="props.task.warning" class="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+    <div v-if="props.task.warning" class="mb-2 rounded-md border border-amber-soft bg-amber-soft px-3 py-2 text-xs text-warning">
       {{ props.task.warning }}
     </div>
 
     <div class="mt-2.5 grid gap-2 md:grid-cols-2 xl:grid-cols-6">
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.currentDir") }}</div>
-        <div class="mt-1 truncate text-sm font-medium text-slate-900">
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.currentDir") }}</div>
+        <div class="mt-1 truncate text-sm font-medium text-primary">
           {{ props.task.current_dir || t("taskCard.noDir") }}
         </div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.currentFile") }}</div>
-        <div class="mt-1 truncate text-sm font-medium text-slate-900">
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.currentFile") }}</div>
+        <div class="mt-1 truncate text-sm font-medium text-primary">
           {{ props.task.current_file || t("taskCard.noFile") }}
         </div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.cumulativeSuccess") }}</div>
-        <div class="mt-1 text-sm font-semibold text-emerald-700">{{ props.task.succeeded }}</div>
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.cumulativeSuccess") }}</div>
+        <div class="mt-1 text-sm font-semibold text-success">{{ props.task.succeeded }}</div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.cumulativeFailed") }}</div>
-        <div class="mt-1 text-sm font-semibold text-rose-700">{{ props.task.failed }}</div>
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.cumulativeFailed") }}</div>
+        <div class="mt-1 text-sm font-semibold text-danger">{{ props.task.failed }}</div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.thisUpdate") }}</div>
-        <div class="mt-1 text-sm font-semibold text-slate-900">{{ props.task.updated }}</div>
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.thisUpdate") }}</div>
+        <div class="mt-1 text-sm font-semibold text-primary">{{ props.task.updated }}</div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.thisSkipped") }}</div>
-        <div class="mt-1 text-sm font-semibold text-slate-900">{{ props.task.skipped }}</div>
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.thisSkipped") }}</div>
+        <div class="mt-1 text-sm font-semibold text-primary">{{ props.task.skipped }}</div>
       </div>
     </div>
 
     <div class="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.thisDeleted") }}</div>
-        <div class="mt-1 text-sm font-semibold text-slate-900">{{ props.task.deleted }}</div>
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.thisDeleted") }}</div>
+        <div class="mt-1 text-sm font-semibold text-primary">{{ props.task.deleted }}</div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.processed") }}</div>
-        <div class="mt-1 text-sm font-semibold text-slate-900">
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.processed") }}</div>
+        <div class="mt-1 text-sm font-semibold text-primary">
           {{ props.task.scanned }} / {{ props.task.total }}
         </div>
       </div>
-      <div class="rounded-md bg-slate-50 px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.queueRemaining") }}</div>
-        <div class="mt-1 text-sm font-semibold text-slate-900">
+      <div class="rounded-md bg-panel px-2.5 py-2">
+        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.queueRemaining") }}</div>
+        <div class="mt-1 text-sm font-semibold text-primary">
           {{ remainingCount }}
         </div>
       </div>
     </div>
 
-    <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+    <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-dim">
       <span>{{ props.task.scanned }} / {{ props.task.total }} {{ t("taskCard.files", { count: "" }) }}</span>
       <span>·</span>
       <span>{{ props.task.progress }}%</span>

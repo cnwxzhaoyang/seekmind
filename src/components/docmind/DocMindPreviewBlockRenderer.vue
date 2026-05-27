@@ -68,17 +68,17 @@ const tableHtml = computed(() => {
   };
 
   const renderCells = (cells: string[], tag: "th" | "td") =>
-    cells.map((cell) => `<${tag} class="border border-slate-200 px-3 py-2 align-top">${escapeHtml(cell)}</${tag}>`).join("");
+    cells.map((cell) => `<${tag} style="border:1px solid var(--color-border);padding:0.5rem 0.75rem;vertical-align:top">${escapeHtml(cell)}</${tag}>`).join("");
 
   const thead = header
-    ? `<thead class="bg-slate-50 text-slate-700"><tr>${renderCells(normalizeRow(header), "th")}</tr></thead>`
+    ? `<thead style="background:var(--color-panel-bg);color:var(--color-text-secondary)"><tr>${renderCells(normalizeRow(header), "th")}</tr></thead>`
     : "";
 
   const tbodyRows = bodyRows
     .map((row) => `<tr>${renderCells(normalizeRow(row), "td")}</tr>`)
     .join("");
 
-  return `<table class="w-full border-collapse text-left text-[13px] leading-6 text-slate-700">${thead}<tbody>${tbodyRows}</tbody></table>`;
+  return `<table style="width:100%;border-collapse:collapse;text-align:left;font-size:13px;line-height:1.5rem;color:var(--color-text-secondary)">${thead}<tbody>${tbodyRows}</tbody></table>`;
 });
 
 const imageTitle = computed(() => props.block.alt_text?.trim() || props.block.caption?.trim() || props.block.text.trim());
@@ -141,21 +141,21 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
 
 <template>
   <div class="preview-block">
-    <div v-if="block.page" class="mb-2 flex items-center justify-end gap-2 text-[11px] text-slate-400">
-      <span class="rounded-full bg-slate-100 px-2 py-0.5">第 {{ block.page }} 页</span>
+    <div v-if="block.page" class="mb-2 flex items-center justify-end gap-2 text-[11px] text-muted">
+      <span class="rounded-full bg-badge px-2 py-0.5">第 {{ block.page }} 页</span>
     </div>
     <div v-if="block.block_type === 'heading'" class="preview-heading" :class="`preview-heading--${block.level || 1}`">
       <span class="inline-flex items-center gap-1 font-semibold" :class="headingSize">
-        <span v-if="block.heading" class="text-[11px] font-normal text-slate-400">{{ block.heading }} ›</span>
+        <span v-if="block.heading" class="text-[11px] font-normal text-muted">{{ block.heading }} ›</span>
         {{ block.text }}
       </span>
     </div>
 
-    <div v-else-if="block.block_type === 'image'" class="preview-image rounded-lg border border-slate-200 bg-white p-3">
+    <div v-else-if="block.block_type === 'image'" class="preview-image rounded-lg border border-default bg-surface p-3">
       <div class="flex items-start gap-3">
         <div class="flex-1 min-w-0">
-          <div class="mb-2 text-sm font-medium text-slate-800">{{ imageTitle }}</div>
-          <div class="rounded-md bg-slate-50 p-2">
+          <div class="mb-2 text-sm font-medium text-primary">{{ imageTitle }}</div>
+          <div class="rounded-md bg-panel p-2">
             <img
               v-if="imageSrc"
               :src="imageSrc"
@@ -164,11 +164,11 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
               @load="logImagePreview('load', $event)"
               @error="logImagePreview('error', $event)"
             />
-            <div v-else class="flex min-h-24 items-center justify-center rounded border border-dashed border-slate-300 text-sm text-slate-400">
+            <div v-else class="flex min-h-24 items-center justify-center rounded border border-dashed border-default text-sm text-muted">
               图片预览不可用
             </div>
           </div>
-          <div class="mt-2 space-y-1 text-xs text-slate-500">
+          <div class="mt-2 space-y-1 text-xs text-dim">
             <div v-if="block.caption">说明：{{ block.caption }}</div>
             <div v-if="block.ocr_text">备注：{{ block.ocr_text }}</div>
             <div v-if="block.alt_text">Alt：{{ block.alt_text }}</div>
@@ -183,12 +183,12 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
       :block="block"
     />
 
-    <div v-else-if="block.block_type === 'table'" class="preview-table overflow-x-auto rounded-md border border-slate-200 bg-white">
+    <div v-else-if="block.block_type === 'table'" class="preview-table overflow-x-auto rounded-md border border-default bg-surface">
       <div v-if="tableHtml" class="min-w-full" v-html="tableHtml"></div>
       <DocMindMarkdownRenderer v-else :block="{ ...block, block_type: 'table' }" />
     </div>
 
-    <div v-else class="preview-fallback text-sm leading-7 text-slate-700">
+    <div v-else class="preview-fallback text-sm leading-7 text-secondary">
       {{ block.text }}
     </div>
   </div>
@@ -202,12 +202,12 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
 }
 
 .preview-table :deep(thead) {
-  background: rgb(248 250 252);
+  background: var(--color-panel-bg);
 }
 
 .preview-table :deep(th),
 .preview-table :deep(td) {
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid var(--color-border);
   padding: 0.5rem 0.75rem;
   vertical-align: top;
   white-space: normal;
@@ -216,10 +216,10 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
 
 .preview-table :deep(th) {
   font-weight: 600;
-  color: rgb(51 65 85);
+  color: var(--color-text-secondary);
 }
 
 .preview-table :deep(tbody tr:nth-child(even)) {
-  background: rgb(248 250 252);
+  background: var(--color-panel-bg);
 }
 </style>

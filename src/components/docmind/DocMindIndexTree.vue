@@ -52,7 +52,7 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
 </script>
 
 <template>
-  <div v-if="rows.length === 0" class="px-3 py-4 text-xs text-slate-400">
+  <div v-if="rows.length === 0" class="px-3 py-4 text-xs text-muted">
     <slot name="empty">
       {{ emptyText || "No items" }}
     </slot>
@@ -64,7 +64,7 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
       class="flex items-center gap-1.5 transition-colors"
       :class="[
         rowPadding,
-        selectedPath === row.dir.path ? 'bg-indigo-50' : 'hover:bg-slate-100',
+        selectedPath === row.dir.path ? 'bg-accent-soft' : 'hover:bg-surface-hover',
         selectable === false ? 'cursor-default' : 'cursor-pointer select-none',
       ]"
       :style="{ paddingLeft: `${(nodePaddingBase ?? 8) + row.depth * (nodePaddingStep ?? 14)}px`, paddingRight: '12px' }"
@@ -77,7 +77,7 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
     >
       <button
         v-if="row.hasChildren"
-        class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:text-slate-600"
+        class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted hover:text-secondary"
         type="button"
         :title="row.expanded ? (collapseTitle || 'Collapse') : (expandTitle || 'Expand')"
         :aria-expanded="row.expanded"
@@ -86,18 +86,18 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
         <FolderOpen v-if="row.expanded" :size="15" />
         <Folder v-else :size="15" />
       </button>
-      <span v-else class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-slate-400">
+      <span v-else class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-muted">
         <Folder :size="15" />
       </span>
 
-      <div class="min-w-0 flex-1 truncate text-sm  leading-none">
+      <div class="min-w-0 flex-1 truncate text-sm leading-none">
         <slot name="label" :row="row">
           {{ row.displayName }}
         </slot>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2 text-[10px] text-slate-400">
-        <span v-if="row.isVirtual" class="rounded bg-violet-50 px-1 py-[1px] text-[10px] text-violet-600">
+      <div class="flex shrink-0 items-center gap-2 text-[10px] text-muted">
+        <span v-if="row.isVirtual" class="rounded bg-badge px-1 py-[1px] text-[10px] text-accent-text">
           {{ virtualLabel || "Virtual" }}
         </span>
         <slot name="meta" :row="row">
@@ -113,7 +113,7 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
         <slot name="status" :row="row">
           <span
             class="inline-block h-1.5 w-1.5 rounded-full"
-            :class="row.dir.enabled ? 'bg-emerald-500' : 'bg-slate-300'"
+            :class="row.dir.enabled ? 'bg-success' : 'bg-muted'"
             :title="row.dir.enabled ? 'Enabled' : 'Disabled'"
           />
         </slot>

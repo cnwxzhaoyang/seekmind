@@ -679,11 +679,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold tracking-tight text-slate-950">{{ t("page.status.title") }}</h1>
-        <p class="mt-0.5 text-xs text-slate-500">{{ t("page.status.subtitle") }}</p>
+        <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.status.title") }}</h1>
+        <p class="mt-0.5 text-xs text-dim">{{ t("page.status.subtitle") }}</p>
       </div>
       <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
         <Cpu class="mr-1" :size="13" />
@@ -692,14 +692,14 @@ onBeforeUnmount(() => {
     </header>
 
     <main class="min-h-0 flex-1 overflow-y-auto p-4">
-      <div class="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
+      <div class="mb-3 flex items-center justify-between border-b border-default bg-surface px-4 py-2">
         <div>
-          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.taskOps") }}</div>
-          <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.taskOpsDesc") }}</div>
+          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.status.section.taskOps") }}</div>
+          <div class="mt-1 text-xs text-dim">{{ t("page.status.section.taskOpsDesc") }}</div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button
-            class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-1.5 text-sm font-medium text-secondary hover:bg-panel disabled:cursor-not-allowed disabled:opacity-70"
             :disabled="refreshing || loading || !status?.current_task || status.current_task.state === 'paused'"
             @click="pauseIndexing"
           >
@@ -707,7 +707,7 @@ onBeforeUnmount(() => {
             {{ actionState === 'pausing' ? t("page.status.btn.pausing") : t("page.status.btn.pause") }}
           </button>
           <button
-            class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-1.5 text-sm font-medium text-secondary hover:bg-panel disabled:cursor-not-allowed disabled:opacity-70"
             :disabled="refreshing || loading || !status?.current_task || status.current_task.state !== 'paused'"
             @click="resumeIndexing"
           >
@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
             {{ actionState === 'resuming' ? t("page.status.btn.resuming") : t("page.status.btn.resume") }}
           </button>
           <button
-            class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+            class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
             :disabled="refreshing || loading"
             @click="refreshIndex"
           >
@@ -735,87 +735,87 @@ onBeforeUnmount(() => {
             { label: t('page.status.stats.failed'), value: status?.failed_files ?? 0 },
           ]"
           :key="card.label"
-          class="rounded-md border border-slate-200 bg-white px-3 py-2"
+          class="rounded-md border border-default bg-panel px-3 py-2"
         >
-          <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ card.label }}</div>
-          <div class="mt-1 text-xl font-semibold text-slate-950">{{ card.value }}</div>
+          <div class="text-[10px] uppercase tracking-wide text-dim">{{ card.label }}</div>
+          <div class="mt-1 text-xl font-semibold text-primary">{{ card.value }}</div>
         </div>
       </div>
 
       <div class="mt-3 grid gap-3 xl:grid-cols-2">
-        <div class="rounded-md border border-slate-200 bg-white px-4 py-3">
+        <div class="rounded-md border border-default bg-surface px-4 py-3">
           <div class="mb-2 flex items-center justify-between gap-3">
             <div>
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.incrementalSummary") }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.incrementalDesc") }}</div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.status.section.incrementalSummary") }}</div>
+              <div class="mt-1 text-xs text-dim">{{ t("page.status.section.incrementalDesc") }}</div>
             </div>
             <DocMindBadge tone="default">
               {{ status?.last_run ? status.last_run.completed_at : t("status.noRecentRun") }}
             </DocMindBadge>
           </div>
           <div v-if="status?.last_run" class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.updated") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.updated }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.incremental.updated") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ status.last_run.updated }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.skipped") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.skipped }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.incremental.skipped") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ status.last_run.skipped }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.deleted") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.deleted }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.incremental.deleted") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ status.last_run.deleted }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.scannedCandidates") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.scanned }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.incremental.scannedCandidates") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ status.last_run.scanned }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.incremental.successFail") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ status.last_run.succeeded }} / {{ status.last_run.failed }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.incremental.successFail") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ status.last_run.succeeded }} / {{ status.last_run.failed }}</div>
             </div>
           </div>
-          <div v-else class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+          <div v-else class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
             {{ t("page.status.incremental.none") }}
           </div>
         </div>
 
-        <div class="rounded-md border border-slate-200 bg-white px-4 py-3">
+        <div class="rounded-md border border-default bg-surface px-4 py-3">
           <div class="mb-2 flex items-center justify-between gap-3">
             <div>
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.parserStatus") }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.parserDesc") }}</div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.status.section.parserStatus") }}</div>
+              <div class="mt-1 text-xs text-dim">{{ t("page.status.section.parserDesc") }}</div>
             </div>
           </div>
           <div v-if="parserRuntime" class="grid gap-2 md:grid-cols-2">
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.enabled") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.enabled ? t("common.yes") : t("common.no") }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.parser.enabled") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ parserRuntime.enabled ? t("common.yes") : t("common.no") }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.available") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.available ? t("common.yes") : t("common.no") }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.parser.available") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ parserRuntime.available ? t("common.yes") : t("common.no") }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.pythonBin") }}</div>
-              <div class="mt-1 truncate text-sm font-medium text-slate-900">{{ parserRuntime.python_bin }}</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.parser.pythonBin") }}</div>
+              <div class="mt-1 truncate text-sm font-medium text-primary">{{ parserRuntime.python_bin }}</div>
             </div>
-            <div class="rounded-md bg-slate-50 px-3 py-2">
-              <div class="text-[10px] uppercase tracking-wide text-slate-500">{{ t("page.status.parser.timeout") }}</div>
-              <div class="mt-1 text-sm font-semibold text-slate-900">{{ parserRuntime.timeout_ms }} ms</div>
+            <div class="rounded-md bg-panel px-3 py-2">
+              <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.parser.timeout") }}</div>
+              <div class="mt-1 text-sm font-semibold text-primary">{{ parserRuntime.timeout_ms }} ms</div>
             </div>
           </div>
-          <div v-if="parserRuntime" class="mt-2 text-xs text-slate-500">
+          <div v-if="parserRuntime" class="mt-2 text-xs text-dim">
             {{ t("page.status.parser.script", { path: parserRuntime.script_path }) }}
           </div>
         </div>
       </div>
 
-      <div class="mt-3 rounded-md border border-slate-200 bg-white px-4 py-3">
+      <div class="mt-3 rounded-md border border-default bg-surface px-4 py-3">
         <div class="mb-2 flex items-center justify-between gap-3">
           <div>
-            <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.status.section.indexDirs") }}</div>
-            <div class="mt-1 text-xs text-slate-500">{{ t("page.status.section.indexDirsDesc") }}</div>
+            <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.status.section.indexDirs") }}</div>
+            <div class="mt-1 text-xs text-dim">{{ t("page.status.section.indexDirsDesc") }}</div>
           </div>
           <DocMindBadge tone="default">
             <Database class="mr-1" :size="13" />
@@ -824,7 +824,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="mt-3 flex flex-col gap-2 lg:flex-row lg:items-stretch">
           <button
-            class="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            class="inline-flex shrink-0 items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-panel disabled:cursor-not-allowed disabled:opacity-70"
             :disabled="importing || refreshing || !!busyPath"
             @click="chooseAndAddDir"
           >
@@ -833,7 +833,7 @@ onBeforeUnmount(() => {
           </button>
           <div
             class="flex min-w-0 flex-1 items-center gap-3 rounded-md border border-dashed px-4 py-3 text-sm transition"
-            :class="dragActive ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-500'"
+            :class="dragActive ? 'border-accent bg-accent-soft text-accent-text' : 'border-default bg-panel text-dim'"
           >
             <UploadCloud :size="16" />
             <div class="min-w-0">
@@ -843,8 +843,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="mt-3 rounded-md border border-slate-200 bg-white">
-          <div v-if="dirs.length === 0" class="px-4 py-6 text-xs text-slate-400">
+        <div class="mt-3 rounded-md border border-default bg-surface">
+          <div v-if="dirs.length === 0" class="px-4 py-6 text-xs text-muted">
             {{ t("page.status.emptyDirs") }}
           </div>
           <div v-else class="max-h-[420px] overflow-auto p-2">
@@ -871,15 +871,15 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <div v-if="infoMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700">
+      <div v-if="infoMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
         {{ infoMessage }}
       </div>
 
-      <div v-if="errorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+      <div v-if="errorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
         {{ errorMessage }}
       </div>
 
-      <div v-if="loading" class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-4 py-5 text-xs text-slate-400">
+      <div v-if="loading" class="mt-3 rounded-md border border-dashed border-default bg-surface px-4 py-5 text-xs text-muted">
         {{ t("page.status.subtitle") }}...
       </div>
 
@@ -894,25 +894,25 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <div class="mt-3 rounded-md border border-slate-200 bg-white px-4 py-3">
-        <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          <AlertCircle :size="16" class="text-amber-500" />
+      <div class="mt-3 rounded-md border border-default bg-surface px-4 py-3">
+        <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
+          <AlertCircle :size="16" class="text-warning" />
           {{ t("page.status.section.failedFiles") }}
         </div>
-        <div v-if="failedGroups.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+        <div v-if="failedGroups.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
           {{ t("page.status.failed.noFailed") }}
         </div>
         <div v-else class="space-y-3">
-          <div v-for="group in failedGroups" :key="group.code" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+          <div v-for="group in failedGroups" :key="group.code" class="rounded-md border border-default bg-panel px-3 py-3">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
                 <FolderOpen :size="13" />
                 {{ group.category }}
-                <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.code }}</span>
-                <span class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400">{{ group.items.length }}</span>
+                <span class="rounded-full bg-surface px-2 py-0.5 text-[10px] text-muted">{{ group.code }}</span>
+                <span class="rounded-full bg-surface px-2 py-0.5 text-[10px] text-muted">{{ group.items.length }}</span>
               </div>
               <button
-                class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                class="inline-flex items-center gap-1 rounded-md border border-default bg-surface px-3 py-1 text-xs font-medium text-secondary hover:bg-panel disabled:cursor-not-allowed disabled:opacity-70"
                 :disabled="retryingTarget === group.code"
                 @click="retryFailedGroup(group.code, group.items)"
               >
@@ -924,19 +924,19 @@ onBeforeUnmount(() => {
               <div
                 v-for="file in group.items"
                 :key="file.file"
-                class="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2"
+                class="flex items-start justify-between gap-3 rounded-md border border-default bg-surface px-3 py-2"
               >
                 <div class="min-w-0">
-                  <div class="truncate text-sm font-medium text-slate-950">{{ file.file }}</div>
-                  <div class="mt-1 text-xs text-slate-500">{{ file.reason }}</div>
-                  <div class="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                  <div class="truncate text-sm font-medium text-primary">{{ file.file }}</div>
+                  <div class="mt-1 text-xs text-dim">{{ file.reason }}</div>
+                  <div class="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
                     <span>{{ t("page.status.failed.code", { code: file.code }) }}</span>
                     <span>{{ t("page.status.failed.retryCount", { count: file.retry_count }) }}</span>
                     <span>{{ file.last_failed_at }}</span>
                   </div>
                 </div>
                 <button
-                  class="shrink-0 text-xs font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-70"
+                  class="shrink-0 text-xs font-medium text-secondary disabled:cursor-not-allowed disabled:opacity-70"
                   :disabled="retryingTarget === file.file"
                   @click="retryFailedFile(file.file)"
                 >

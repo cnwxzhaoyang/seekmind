@@ -101,7 +101,7 @@ const segments = computed<Segment[]>(() => {
     <template v-for="(segment, index) in segments" :key="`${index}-${segment.text}`">
       <mark
         v-if="segment.highlighted"
-        class="rounded-sm bg-amber-200/80 px-0.5 py-0.5 font-medium text-slate-950"
+        class="rounded-sm bg-highlight px-0.5 py-0.5 font-medium text-highlight-text"
       >
         {{ segment.text }}
       </mark>

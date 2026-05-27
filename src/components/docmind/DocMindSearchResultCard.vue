@@ -62,8 +62,8 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
 
 <template>
   <div
-    class="w-full cursor-pointer rounded-lg border bg-white p-2.5 text-left transition"
-    :class="props.selected ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200 hover:border-indigo-300'"
+    class="w-full cursor-pointer rounded-lg border bg-surface p-2.5 text-left transition"
+    :class="props.selected ? 'border-accent ring-1 ring-accent-soft' : 'border-default hover:border-accent'"
     role="button"
     tabindex="0"
     @click="emitSelect($event)"
@@ -74,35 +74,35 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
       <DocMindFileIcon :ext="item.ext" />
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-2">
-          <div class="truncate text-[13px] font-semibold text-indigo-600">
+          <div class="truncate text-[13px] font-semibold text-accent-text">
             <DocMindHighlightedText :text="item.fileName" :query="props.query" />
           </div>
           <div class="flex items-center gap-2">
             <button
-              class="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-950"
+              class="rounded-md p-1 text-muted transition hover:bg-surface-hover hover:text-primary"
               type="button"
               :title="favoriteTitle"
               @click.stop="emit('toggleFavorite')"
             >
-              <Heart :size="14" :class="props.favorited ? 'fill-rose-500 text-rose-500' : ''" />
+              <Heart :size="14" :class="props.favorited ? 'fill-danger text-danger' : ''" />
             </button>
-            <div class="text-[11px] font-medium text-slate-500">{{ Math.round(item.score * 100) }}%</div>
+            <div class="text-[11px] font-medium text-dim">{{ Math.round(item.score * 100) }}%</div>
           </div>
         </div>
-        <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
-        <div v-if="item.title_path || item.heading" class="mt-1 text-[11px] text-slate-500">
+        <div class="mt-1 truncate text-[11px] text-muted">{{ item.path }}</div>
+        <div v-if="item.title_path || item.heading" class="mt-1 text-[11px] text-dim">
           {{ t("page.appSearch.detail.titlePath") }}：<DocMindHighlightedText :text="item.title_path || item.heading" :query="props.query" />
         </div>
-        <div class="mt-2 text-sm leading-6 text-slate-700">
+        <div class="mt-2 text-sm leading-6 text-secondary">
           <DocMindHighlightedText :text="item.snippet" :query="props.query" :spans="item.highlight_spans" />
         </div>
-        <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+        <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
           <DocMindBadge>{{ t("page.appSearch.detail.titlePath") }}</DocMindBadge>
           <span>{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</span>
           <span>·</span>
           <span>{{ t("searchResultCard.rankReason") }}</span>
           <span>·</span>
-          <span class="text-slate-700">{{ item.rank_reason.summary || t("common.none") }}</span>
+          <span class="text-secondary">{{ item.rank_reason.summary || t("common.none") }}</span>
           <span>·</span>
           <span>{{ item.snippet_window_start }}-{{ item.snippet_window_end }} / {{ item.snippet_source_len }}</span>
           <span>·</span>
@@ -112,7 +112,7 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
           <span>·</span>
           <span><Clock class="mr-1 inline" :size="12" />{{ item.modified }}</span>
         </div>
-        <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+        <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
           <span>{{ t("searchResultCard.scoreKeywords", { score: item.rank_reason.keyword_score.toFixed(2) }) }}</span>
           <span>·</span>
           <span>{{ t("searchResultCard.scoreSemantic", { score: item.rank_reason.semantic_score.toFixed(2) }) }}</span>
@@ -123,10 +123,10 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
           <span>·</span>
           <span>{{ t("searchResultCard.scorePreference", { score: item.rank_reason.preference_score.toFixed(2) }) }}</span>
         </div>
-        <div v-if="item.rank_reason.boosts.length > 0" class="mt-1.5 text-[11px] text-slate-500">
+        <div v-if="item.rank_reason.boosts.length > 0" class="mt-1.5 text-[11px] text-dim">
           {{ item.rank_reason.boosts.join(" · ") }}
         </div>
-        <div class="mt-1 text-[11px] text-slate-500">
+        <div class="mt-1 text-[11px] text-dim">
           {{ t("searchResultCard.rankChange", { original: item.rank_reason.original_rank, final: item.rank_reason.final_rank, delta: item.rank_reason.rank_delta }) }}
         </div>
       </div>

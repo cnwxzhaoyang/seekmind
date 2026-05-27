@@ -28,16 +28,16 @@ const activeKey = computed(() => {
 
 <template>
   <aside
-    class="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-slate-100 p-2 transition-[width] duration-200"
+    class="flex h-full flex-col overflow-hidden border-r border-default bg-sidebar p-2 transition-[width] duration-200"
     :class="sidebarCollapsed ? 'w-[68px]' : 'w-[200px]'"
   >
     <div class="mb-4 flex items-center justify-between gap-2 px-2 py-2">
-      <div class="flex h-6 w-6 items-center justify-center rounded bg-indigo-600 text-xs font-bold text-white shadow-sm">dm</div>
+      <div class="flex h-6 w-6 items-center justify-center rounded bg-accent text-xs font-bold text-white shadow-card">dm</div>
       <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-        <div class="text-sm font-semibold text-slate-900">docMind</div>
+        <div class="text-sm font-semibold text-primary">docMind</div>
       </div>
       <button
-        class="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+        class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted transition hover:bg-surface-active hover:text-primary"
         :title="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
         :aria-label="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
         @click="toggleSidebar"
@@ -56,8 +56,8 @@ const activeKey = computed(() => {
         :class="[
           sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3',
           activeKey === item.key
-            ? 'bg-slate-200 !text-indigo-600 font-medium'
-            : '!text-slate-600 hover:bg-slate-200 hover:!text-slate-900',
+            ? 'bg-surface-active !text-accent font-medium'
+            : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
         :title="sidebarCollapsed ? item.label : undefined"
         :aria-label="item.label"
@@ -67,16 +67,16 @@ const activeKey = computed(() => {
       </RouterLink>
     </nav>
 
-    <div v-if="!sidebarCollapsed" class="mt-auto rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-[10px] leading-snug text-indigo-400">
-      <div class="mb-1 font-semibold text-indigo-600">{{ t("sidebar.localFirst") }}</div>
+    <div v-if="!sidebarCollapsed" class="mt-auto rounded-lg border border-accent-soft bg-accent-soft p-3 text-[10px] leading-snug text-muted">
+      <div class="mb-1 font-semibold text-accent-text">{{ t("sidebar.localFirst") }}</div>
       {{ t("sidebar.localFirstDesc") }}
     </div>
     <div
       v-else
-      class="mt-auto flex items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 p-2 text-indigo-600"
+      class="mt-auto flex items-center justify-center rounded-lg border border-accent-soft bg-accent-soft p-2 text-accent-text"
       :title="t('sidebar.localFirst')"
     >
-      <div class="flex h-6 w-6 items-center justify-center rounded bg-indigo-600 text-[10px] font-bold text-white shadow-sm">dm</div>
+      <div class="flex h-6 w-6 items-center justify-center rounded bg-accent text-[10px] font-bold text-white shadow-card">dm</div>
     </div>
   </aside>
 </template>

@@ -402,6 +402,10 @@
       "confirmClear": "Clear all indexes? Original files will not be deleted.",
       "confirmRemoveDir": "Remove index directory?\n{path}",
       "language": "Language",
+      "theme": "Theme",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "themeSystem": "System",
       "error": {
         "load": "Failed to load settings",
         "save": "Failed to save settings",

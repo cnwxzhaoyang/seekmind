@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Languages, RefreshCw, Save, Trash2 } from "lucide-vue-next";
+import { Languages, Moon, Monitor, RefreshCw, Save, Sun, Trash2 } from "lucide-vue-next";
+import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
@@ -9,6 +10,7 @@ import { setLocale as setI18nLocale } from "../i18n";
 import type { IndexSettingsView } from "../types/docmind";
 
 const { t, locale } = useI18n();
+const { themeMode, setTheme } = useTheme();
 
 const currentLocale = ref(locale.value);
 const switchLocale = (lang: "zh-CN" | "en") => {
@@ -181,16 +183,16 @@ onMounted(loadSettings);
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold tracking-tight text-slate-950">{{ t("page.settings.title") }}</h1>
-        <p class="mt-0.5 text-xs text-slate-500">{{ t("page.settings.subtitle") }}</p>
+        <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.settings.title") }}</h1>
+        <p class="mt-0.5 text-xs text-dim">{{ t("page.settings.subtitle") }}</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
         <button
-          class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+          class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
           :disabled="loading || saving"
           @click="resetToDefaults"
         >
@@ -198,7 +200,7 @@ onMounted(loadSettings);
           {{ t("page.settings.btn.reset") }}
         </button>
         <button
-          class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+          class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
           :disabled="loading || saving"
           @click="saveSettings"
         >
@@ -209,24 +211,24 @@ onMounted(loadSettings);
     </header>
 
     <main class="min-h-0 flex-1 overflow-y-auto p-4">
-      <div v-if="errorMessage" class="mb-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+      <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
         {{ errorMessage }}
       </div>
 
-      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700">
+      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
         {{ infoMessage }}
       </div>
 
-      <div v-if="loading" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+      <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
         {{ t("page.settings.loading") }}
       </div>
 
       <div v-else class="space-y-4">
-        <section class="rounded-lg border border-slate-200 bg-white">
-          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+        <section class="rounded-lg border border-default bg-surface">
+          <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
             <div>
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.settings.section.rules") }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.rulesDesc") }}</div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.rules") }}</div>
+              <div class="mt-1 text-xs text-dim">{{ t("page.settings.rulesDesc") }}</div>
             </div>
             <DocMindBadge tone="default">{{ t("status.localEffective") }}</DocMindBadge>
           </div>
@@ -234,34 +236,34 @@ onMounted(loadSettings);
           <div class="space-y-4 p-4">
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.label.excludeDirs") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.placeholder.dirs") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.label.excludeDirs") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.placeholder.dirs") }}</div>
               </div>
               <textarea
                 v-model="excludeDirsText"
                 rows="4"
-                class="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
                 :placeholder="t('page.settings.placeholder.dirs')"
               />
             </div>
 
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.label.excludeExts") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.placeholder.exts") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.label.excludeExts") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.placeholder.exts") }}</div>
               </div>
               <textarea
                 v-model="excludeExtsText"
                 rows="3"
-                class="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
                 :placeholder="t('page.settings.placeholder.exts')"
               />
             </div>
 
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.label.maxFileSize") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.label.maxFileSize") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
               </div>
               <div class="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
                 <input
@@ -269,11 +271,11 @@ onMounted(loadSettings);
                   type="number"
                   min="1"
                   step="1"
-                  class="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
                 />
-                <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.settings.label.currentStatus") }}</div>
-                  <div class="mt-1 text-sm font-medium text-slate-900">
+                <div class="rounded-lg border border-default bg-panel px-4 py-3 text-xs text-dim">
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.currentStatus") }}</div>
+                  <div class="mt-1 text-sm font-medium text-primary">
                     {{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}
                   </div>
                 </div>
@@ -282,11 +284,11 @@ onMounted(loadSettings);
           </div>
         </section>
 
-        <section class="rounded-lg border border-slate-200 bg-white">
-          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+        <section class="rounded-lg border border-default bg-surface">
+          <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
             <div>
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.settings.semantic.title") }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.semantic.desc") }}</div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.title") }}</div>
+              <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.desc") }}</div>
             </div>
             <DocMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</DocMindBadge>
           </div>
@@ -294,22 +296,22 @@ onMounted(loadSettings);
           <div class="space-y-4 p-4">
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.semantic.title") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.semantic.desc") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.semantic.title") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.desc") }}</div>
               </div>
-              <label class="inline-flex items-center justify-start gap-2 text-sm text-slate-700">
-                <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900" />
+              <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
+                <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
                 {{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}
               </label>
             </div>
 
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.semantic.weight") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.semantic.thresholdDesc") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.semantic.weight") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.thresholdDesc") }}</div>
               </div>
-              <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+              <div class="rounded-lg border border-default bg-panel px-4 py-3">
+                <div class="mb-2 flex items-center justify-between text-xs text-dim">
                   <span>{{ t("page.settings.semantic.weight") }}</span>
                   <span>{{ Math.round(semanticWeight * 100) }}%</span>
                 </div>
@@ -319,18 +321,18 @@ onMounted(loadSettings);
                   min="0"
                   max="1"
                   step="0.05"
-                  class="w-full accent-slate-900"
+                  class="w-full accent-accent"
                 />
               </div>
             </div>
 
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-center">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.semantic.threshold") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.semantic.thresholdDesc") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.semantic.threshold") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.thresholdDesc") }}</div>
               </div>
-              <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+              <div class="rounded-lg border border-default bg-panel px-4 py-3">
+                <div class="mb-2 flex items-center justify-between text-xs text-dim">
                   <span>{{ t("page.settings.semantic.threshold") }}</span>
                   <span>{{ Math.round(semanticThreshold * 100) }}%</span>
                 </div>
@@ -340,58 +342,58 @@ onMounted(loadSettings);
                   min="0"
                   max="1"
                   step="0.05"
-                  class="w-full accent-slate-900"
+                  class="w-full accent-accent"
                 />
               </div>
             </div>
 
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.preference.title") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.preference.title") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.preference.title") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.preference.title") }}</div>
               </div>
-              <div class="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <div class="grid gap-2 rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
                 <label class="inline-flex items-center justify-between gap-3">
                   <span>{{ t("page.settings.preference.favorite") }}</span>
-                  <input v-model="preferFavoritesEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900" />
+                  <input v-model="preferFavoritesEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
                 </label>
                 <label class="inline-flex items-center justify-between gap-3">
                   <span>{{ t("page.settings.preference.recent") }}</span>
-                  <input v-model="preferRecentEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900" />
+                  <input v-model="preferRecentEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
                 </label>
                 <label class="inline-flex items-center justify-between gap-3">
                   <span>{{ t("page.settings.preference.history") }}</span>
-                  <input v-model="preferHistoryEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-slate-900" />
+                  <input v-model="preferHistoryEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
                 </label>
               </div>
             </div>
 
             <div class="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
               <div>
-                <div class="text-sm font-medium text-slate-900">{{ t("page.settings.weight.title") }}</div>
-                <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.weight.title") }}</div>
+                <div class="text-sm font-medium text-primary">{{ t("page.settings.weight.title") }}</div>
+                <div class="mt-1 text-xs text-dim">{{ t("page.settings.weight.title") }}</div>
               </div>
-              <div class="space-y-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div class="space-y-4 rounded-lg border border-default bg-panel px-4 py-3">
                 <label class="block">
-                  <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+                  <div class="mb-2 flex items-center justify-between text-xs text-dim">
                     <span>{{ t("page.settings.weight.titleWeight") }}</span>
                     <span>{{ titleWeight.toFixed(2) }}</span>
                   </div>
-                  <input v-model.number="titleWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-slate-900" />
+                  <input v-model.number="titleWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                 </label>
                 <label class="block">
-                  <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+                  <div class="mb-2 flex items-center justify-between text-xs text-dim">
                     <span>{{ t("page.settings.weight.filenameWeight") }}</span>
                     <span>{{ filenameWeight.toFixed(2) }}</span>
                   </div>
-                  <input v-model.number="filenameWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-slate-900" />
+                  <input v-model.number="filenameWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                 </label>
                 <label class="block">
-                  <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+                  <div class="mb-2 flex items-center justify-between text-xs text-dim">
                     <span>{{ t("page.settings.weight.preferenceWeight") }}</span>
                     <span>{{ preferenceWeight.toFixed(2) }}</span>
                   </div>
-                  <input v-model.number="preferenceWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-slate-900" />
+                  <input v-model.number="preferenceWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                 </label>
               </div>
             </div>
@@ -400,34 +402,34 @@ onMounted(loadSettings);
 
         <DocMindSemanticPanel />
 
-        <section class="rounded-lg border border-slate-200 bg-white">
-          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+        <section class="rounded-lg border border-default bg-surface">
+          <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
             <div>
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.settings.section.instructions") }}</div>
-              <div class="mt-1 text-xs text-slate-500">{{ t("page.settings.instructions.effective") }}</div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.instructions") }}</div>
+              <div class="mt-1 text-xs text-dim">{{ t("page.settings.instructions.effective") }}</div>
             </div>
             <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
           </div>
-          <div class="space-y-2 p-4 text-sm text-slate-600">
+          <div class="space-y-2 p-4 text-sm text-secondary">
             <p>• {{ t("page.settings.instructions.dirs") }}</p>
             <p>• {{ t("page.settings.instructions.exts") }}</p>
             <p>• {{ t("page.settings.instructions.maxSize") }}</p>
           </div>
         </section>
 
-        <section class="rounded-lg border border-slate-200 bg-white">
-          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+        <section class="rounded-lg border border-default bg-surface">
+          <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
             <div>
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.settings.language") }}</div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.language") }}</div>
             </div>
-            <Languages :size="15" class="text-slate-400" />
+            <Languages :size="15" class="text-muted" />
           </div>
           <div class="flex gap-2 p-4">
             <button
               class="flex-1 rounded-md border px-4 py-2.5 text-sm font-medium transition"
               :class="currentLocale === 'zh-CN'
-                ? 'border-slate-900 bg-slate-900 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                ? 'border-default bg-accent text-white'
+                : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
               @click="switchLocale('zh-CN')"
             >
               中文
@@ -435,8 +437,8 @@ onMounted(loadSettings);
             <button
               class="flex-1 rounded-md border px-4 py-2.5 text-sm font-medium transition"
               :class="currentLocale === 'en'
-                ? 'border-slate-900 bg-slate-900 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                ? 'border-default bg-accent text-white'
+                : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
               @click="switchLocale('en')"
             >
               English
@@ -444,20 +446,58 @@ onMounted(loadSettings);
           </div>
         </section>
 
-        <section class="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+        <section class="rounded-lg border border-default bg-surface">
+          <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+            <div>
+              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.theme") }}</div>
+            </div>
+            <component :is="themeMode === 'dark' ? Moon : themeMode === 'system' ? Monitor : Sun" :size="15" class="text-muted" />
+          </div>
+          <div class="flex gap-2 p-4">
+            <button
+              class="flex-1 rounded-md border px-4 py-2.5 text-sm font-medium transition inline-flex items-center justify-center gap-1.5"
+              :class="themeMode === 'light'
+                ? 'border-default bg-accent text-white'
+                : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+              @click="setTheme('light')"
+            >
+              <Sun :size="15" />{{ t("page.settings.themeLight") }}
+            </button>
+            <button
+              class="flex-1 rounded-md border px-4 py-2.5 text-sm font-medium transition inline-flex items-center justify-center gap-1.5"
+              :class="themeMode === 'dark'
+                ? 'border-default bg-accent text-white'
+                : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+              @click="setTheme('dark')"
+            >
+              <Moon :size="15" />{{ t("page.settings.themeDark") }}
+            </button>
+            <button
+              class="flex-1 rounded-md border px-4 py-2.5 text-sm font-medium transition inline-flex items-center justify-center gap-1.5"
+              :class="themeMode === 'system'
+                ? 'border-default bg-accent text-white'
+                : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+              @click="setTheme('system')"
+            >
+              <Monitor :size="15" />{{ t("page.settings.themeSystem") }}
+            </button>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-danger-soft bg-danger-soft px-4 py-3">
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
-              <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-600">
+              <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-danger">
                 <Trash2 :size="15" />
                 {{ t("page.settings.section.danger") }}
               </div>
-              <div class="mt-1 text-xs text-red-500">{{ t("page.settings.danger.desc") }}</div>
-              <div class="mt-2 max-w-3xl text-xs leading-5 text-red-700/80">
+              <div class="mt-1 text-xs text-danger opacity-80">{{ t("page.settings.danger.desc") }}</div>
+              <div class="mt-2 max-w-3xl text-xs leading-5 text-danger opacity-70">
                 {{ t("page.settings.danger.detail") }}
               </div>
             </div>
             <button
-              class="inline-flex shrink-0 items-center gap-2 rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-70"
+              class="inline-flex shrink-0 items-center gap-2 rounded-md bg-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
               :disabled="clearing"
               @click="clearAllIndexes"
             >

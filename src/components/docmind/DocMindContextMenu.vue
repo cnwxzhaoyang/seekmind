@@ -68,17 +68,17 @@ onBeforeUnmount(() => {
     />
     <div
       ref="menu"
-      class="fixed z-[10000] min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+      class="fixed z-[10000] min-w-[180px] rounded-lg border border-default bg-surface py-1 shadow-lg shadow-card"
       :style="{ left: `${adjustedPosition.x}px`, top: `${adjustedPosition.y}px` }"
       @click.stop
     >
       <template v-for="item in items" :key="item.key">
-        <div v-if="item.divider" class="my-1 border-t border-slate-100" />
+        <div v-if="item.divider" class="my-1 border-t border-light" />
         <button
           v-else
           class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition"
           :class="[
-            item.danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-100',
+            item.danger ? 'text-danger hover:bg-danger-soft' : 'text-secondary hover:bg-surface-hover',
             item.disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
           ]"
           :disabled="item.disabled"

@@ -62,7 +62,7 @@ const renderedHtml = computed(() => {
   <div class="docmind-markdown-renderer markdown-body">
     <div
       v-if="block.block_type === 'paragraph' && hasHighlight"
-      class="text-sm leading-7 text-slate-700"
+      class="text-sm leading-7 text-secondary"
     >
       <DocMindHighlightedText
         :text="highlightText"
@@ -76,7 +76,7 @@ const renderedHtml = computed(() => {
 
 <style scoped>
 .docmind-markdown-renderer {
-  color: rgb(51 65 85);
+  color: var(--color-text-secondary);
   font-size: 14px;
   line-height: 1.75;
 }
@@ -92,8 +92,8 @@ const renderedHtml = computed(() => {
 .docmind-markdown-renderer :deep(blockquote) {
   margin: 0;
   padding-left: 0.875rem;
-  border-left: 3px solid rgb(203 213 225);
-  color: rgb(71 85 105);
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-dim);
 }
 
 .docmind-markdown-renderer :deep(ul),
@@ -136,15 +136,15 @@ const renderedHtml = computed(() => {
 
 .docmind-markdown-renderer :deep(th),
 .docmind-markdown-renderer :deep(td) {
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid var(--color-border);
   padding: 0.5rem 0.75rem;
   vertical-align: top;
   word-break: break-word;
 }
 
 .docmind-markdown-renderer :deep(th) {
-  background: rgb(248 250 252);
+  background: var(--color-panel-bg);
   font-weight: 600;
-  color: rgb(51 65 85);
+  color: var(--color-text-secondary);
 }
 </style>

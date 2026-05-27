@@ -135,8 +135,8 @@ watch(() => props.panels.length, () => {
       </div>
       <div
         v-if="index < panels.length - 1"
-        class="relative w-[3px] cursor-col-resize shrink-0 bg-transparent hover:bg-indigo-300 active:bg-indigo-400 transition-colors"
-        :class="{ 'bg-indigo-300': dragging?.dividerIndex === index }"
+        class="relative w-[3px] cursor-col-resize shrink-0 bg-transparent hover:bg-accent active:bg-accent transition-colors"
+        :class="{ 'bg-accent': dragging?.dividerIndex === index }"
         @mousedown.prevent="onDividerMouseDown(index, $event)"
       >
         <div class="absolute inset-y-0 -left-1 -right-1" />

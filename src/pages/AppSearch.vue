@@ -673,21 +673,21 @@ watch(showDebugPanel, async (visible) => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0 flex-1">
         <form
-          class="flex h-8 max-w-[640px] items-center gap-2 rounded-md border border-slate-200 bg-white px-3 transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100"
+          class="flex h-8 max-w-[640px] items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
           @submit.prevent="runSearch"
         >
-          <Search :size="15" class="shrink-0 text-slate-400" />
+          <Search :size="15" class="shrink-0 text-muted" />
           <input
             ref="searchInputRef"
             v-model="query"
             :placeholder="t('page.appSearch.placeholder')"
-            class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
-          <span class="hidden text-xs text-slate-400 sm:inline">Cmd+K</span>
+          <span class="hidden text-xs text-muted sm:inline">Cmd+K</span>
         </form>
       </div>
       <div class="hidden shrink-0 items-center gap-2 text-xs lg:flex">
@@ -706,21 +706,21 @@ watch(showDebugPanel, async (visible) => {
     <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
         <template #left>
-          <aside class="min-h-0 flex-1 overflow-y-auto bg-white p-4">
+          <aside class="min-h-0 flex-1 overflow-y-auto bg-panel p-4">
             <div class="space-y-7">
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
                   <History :size="13" />
                   {{ t("page.appSearch.section.recentSearch") }}
                 </div>
-                <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
                   {{ t("page.appSearch.section.noHistory") }}
                 </div>
                 <div v-else class="flex flex-wrap gap-2">
                   <button
                     v-for="item in searchHistory"
                     :key="item.query"
-                    class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 transition hover:bg-slate-200"
+                    class="rounded-md bg-surface-hover px-2 py-0.5 text-[11px] text-secondary transition hover:bg-badge"
                     @click="runQueryFromHistory(item)"
                   >
                     {{ item.query }}
@@ -729,53 +729,53 @@ watch(showDebugPanel, async (visible) => {
               </section>
 
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
                   <FileText :size="13" />
                   {{ t("page.appSearch.section.recentOpen") }}
                 </div>
-                <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
                   {{ t("page.appSearch.section.noRecent") }}
                 </div>
                 <div v-else class="space-y-2">
                   <button
                     v-for="item in recentDocuments"
                     :key="item.path"
-                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
+                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-secondary transition hover:bg-panel"
                     @click="openRecentDocument(item)"
                   >
-                    <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
-                    <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+                    <div class="truncate font-medium text-primary">{{ item.title }}</div>
+                    <div class="mt-1 truncate text-[11px] text-muted">{{ item.path }}</div>
                   </button>
                 </div>
               </section>
 
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
                   <Star :size="13" />
                   {{ t("page.appSearch.section.favorites") }}
                 </div>
-                <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
                   {{ t("page.appSearch.section.noFavorites") }}
                 </div>
                 <div v-else class="space-y-2">
                   <button
                     v-for="item in favoriteResults"
                     :key="item.target"
-                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-50"
+                    class="block w-full rounded-md px-2 py-1.5 text-left text-xs text-secondary transition hover:bg-panel"
                     @click="openFavoriteDocument(item.path)"
                   >
-                    <div class="truncate font-medium text-slate-900">{{ item.title }}</div>
-                    <div class="mt-1 truncate text-[11px] text-slate-400">{{ item.path }}</div>
+                    <div class="truncate font-medium text-primary">{{ item.title }}</div>
+                    <div class="mt-1 truncate text-[11px] text-muted">{{ item.path }}</div>
                   </button>
                 </div>
               </section>
 
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
                   <FolderOpen :size="13" />
                   {{ t("page.appSearch.section.quickDirs") }}
                 </div>
-                <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
                   {{ t("page.appSearch.section.noDirs") }}
                 </div>
                 <DocMindIndexTree
@@ -805,53 +805,53 @@ watch(showDebugPanel, async (visible) => {
         </template>
 
         <template #center>
-          <section class="min-h-0 flex-1 overflow-y-auto bg-slate-50/70">
-            <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2">
-              <div class="text-xs font-medium text-slate-500">
+          <section class="min-h-0 flex-1 overflow-y-auto bg-panel/70">
+            <div class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
+              <div class="text-xs font-medium text-dim">
                 {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
               </div>
-              <button class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50">
+              <button class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent-text hover:bg-accent-soft">
                 <Filter :size="14" />
                 {{ t("page.appSearch.filter") }}
               </button>
             </div>
 
-            <div v-if="showDebugPanel" class="border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+            <div v-if="showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.title") }}</div>
-                  <div class="mt-1 text-xs text-slate-500">{{ t("page.appSearch.debug.desc") }}</div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.title") }}</div>
+                  <div class="mt-1 text-xs text-dim">{{ t("page.appSearch.debug.desc") }}</div>
                 </div>
-                <button class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100" @click="requestSearchDebugReport">
+                <button class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover" @click="requestSearchDebugReport">
                   {{ t("common.refresh") }}
                 </button>
               </div>
-              <div v-if="debugReportLoading" class="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-slate-400">
+              <div v-if="debugReportLoading" class="mt-3 rounded-md border border-dashed border-default bg-surface px-3 py-3 text-muted">
                 {{ t("page.appSearch.debug.loading") }}
               </div>
-              <div v-else-if="debugReportError" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-3 text-red-700">
+              <div v-else-if="debugReportError" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-3 text-danger">
                 {{ debugReportError }}
               </div>
               <div v-else-if="debugReport" class="mt-3 space-y-3">
                 <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.hits") }}</div>
-                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.hit_count }}</div>
+                  <div class="rounded-md border border-default bg-surface px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.hits") }}</div>
+                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.hit_count }}</div>
                   </div>
-                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.keywordHits") }}</div>
-                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.keyword_hit_count }}</div>
+                  <div class="rounded-md border border-default bg-surface px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.keywordHits") }}</div>
+                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.keyword_hit_count }}</div>
                   </div>
-                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.semanticHits") }}</div>
-                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.semantic_hit_count }}</div>
+                  <div class="rounded-md border border-default bg-surface px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.semanticHits") }}</div>
+                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.semantic_hit_count }}</div>
                   </div>
-                  <div class="rounded-md border border-slate-200 bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-[0.16em] text-slate-500">{{ t("page.appSearch.debug.mode") }}</div>
-                    <div class="mt-1 text-sm font-medium text-slate-900">{{ debugReport.search_mode }}</div>
+                  <div class="rounded-md border border-default bg-surface px-3 py-2">
+                    <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.mode") }}</div>
+                    <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.search_mode }}</div>
                   </div>
                 </div>
-                <div class="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                <div class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary">
                   <div>{{ t("page.appSearch.debug.normalized", { query: debugReport.normalized_search_text || t("common.none") }) }}</div>
                   <div class="mt-1 break-all">{{ t("page.appSearch.debug.rewritten", { query: debugReport.rewritten_query || t("common.none") }) }}</div>
                   <div class="mt-1 break-all">{{ t("page.appSearch.debug.expanded", { query: debugReport.expanded_query || t("common.none") }) }}</div>
@@ -859,11 +859,11 @@ watch(showDebugPanel, async (visible) => {
               </div>
             </div>
 
-            <div v-if="errorMessage" class="m-4 rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div v-if="errorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
               {{ errorMessage }}
             </div>
 
-            <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+            <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
               {{ t("page.appSearch.noResults") }}
             </div>
 
@@ -885,23 +885,23 @@ watch(showDebugPanel, async (visible) => {
         </template>
 
         <template #right>
-          <aside class="min-h-0 flex-1 overflow-y-auto bg-white p-5">
+          <aside class="min-h-0 flex-1 overflow-y-auto bg-surface p-5">
             <div class="docmind-detail">
-              <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div class="mb-4 rounded-lg border border-default bg-panel p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="text-lg font-semibold text-slate-950">{{ selected.fileName }}</div>
-                    <div class="mt-1 break-all text-xs text-slate-400">{{ selected.path }}</div>
+                    <div class="text-lg font-semibold text-primary">{{ selected.fileName }}</div>
+                    <div class="mt-1 break-all text-xs text-muted">{{ selected.path }}</div>
                   </div>
-                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[10px] font-semibold text-slate-600">
+                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[10px] font-semibold text-secondary">
                     {{ selected.ext.toUpperCase() }}
                   </div>
                 </div>
-                <div v-if="selectedTitlePath" class="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2">
-                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div v-if="selectedTitlePath" class="mt-3 rounded-md border border-default bg-surface px-3 py-2">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
                     {{ t("page.appSearch.detail.titlePath") }}
                   </div>
-                  <div class="mt-1 text-sm leading-6 text-slate-800">
+                  <div class="mt-1 text-sm leading-6 text-primary">
                     {{ selectedTitlePath }}
                   </div>
                 </div>
@@ -918,8 +918,8 @@ watch(showDebugPanel, async (visible) => {
                 <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
               </div>
 
-              <div class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
-                <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.hitParagraph") }}</div>
+              <div class="mb-4 rounded-lg border border-default bg-surface p-4">
+                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.detail.hitParagraph") }}</div>
                 <DocMindMarkdownRenderer
                   :block="{
                     block_index: 0,
@@ -938,22 +938,22 @@ watch(showDebugPanel, async (visible) => {
                 />
               </div>
 
-              <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div class="mb-2 text-sm font-medium text-slate-700">{{ t("page.appSearch.detail.contextPreview") }}</div>
+              <div class="rounded-lg border border-default bg-panel p-4">
+                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.detail.contextPreview") }}</div>
                 <div v-if="selectedChunk" class="space-y-3">
                   <div
                     v-for="item in selectedContextChunks"
                     :key="item.key"
                     class="rounded-md border px-3 py-2"
-                    :class="item.key === 'current' ? 'border-indigo-200 bg-white' : 'border-slate-200 bg-white/70'"
+                    :class="item.key === 'current' ? 'border-accent bg-surface' : 'border-default bg-surface/70'"
                   >
-                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" :class="item.key === 'current' ? 'text-indigo-600' : 'text-slate-500'">
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" :class="item.key === 'current' ? 'text-accent-text' : 'text-dim'">
                       {{ item.label }}
                     </div>
-                    <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-slate-500">
+                    <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-dim">
                       {{ t("page.appSearch.detail.titlePath") }}：{{ item.chunk?.title_path || item.chunk?.heading }}
                     </div>
-                    <div class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-slate-800' : 'text-slate-600'">
+                    <div class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-primary' : 'text-secondary'">
                       <DocMindHighlightedText
                         v-if="item.key === 'current'"
                         :text="item.chunk?.snippet ?? ''"
@@ -975,57 +975,57 @@ watch(showDebugPanel, async (visible) => {
                         }"
                       />
                     </div>
-                    <div class="mt-1 text-[11px] text-slate-400">
+                    <div class="mt-1 text-[11px] text-muted">
                       {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
                     </div>
                   </div>
                 </div>
-                <div v-else class="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-400">
+                <div v-else class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
                   {{ t("page.appSearch.detail.noContext") }}
                 </div>
-                <p class="mt-3 text-xs text-slate-400">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
+                <p class="mt-3 text-xs text-muted">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
               </div>
 
-              <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("searchResultCard.rankReason") }}</div>
-                <div class="mt-1 text-sm font-medium text-slate-900">{{ selected.rank_reason.summary || t("common.none") }}</div>
-                <div v-if="selected.rank_reason.boosts.length > 0" class="mt-1 text-xs text-slate-500">
+              <div class="mt-4 rounded-lg border border-default bg-surface p-4">
+                <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("searchResultCard.rankReason") }}</div>
+                <div class="mt-1 text-sm font-medium text-primary">{{ selected.rank_reason.summary || t("common.none") }}</div>
+                <div v-if="selected.rank_reason.boosts.length > 0" class="mt-1 text-xs text-dim">
                   {{ selected.rank_reason.boosts.join(" · ") }}
                 </div>
               </div>
 
               <div class="mt-4 grid grid-cols-2 gap-3">
-                <button class="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white" @click="openSelectedFile">
+                <button class="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-white" @click="openSelectedFile">
                   <ExternalLink :size="16" />
                   {{ t("common.openFile") }}
                 </button>
-                <button class="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700" @click="viewChunks">
+                <button class="flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-4 py-3 text-sm font-medium text-secondary" @click="viewChunks">
                   <FileText :size="16" />
                   {{ t("common.viewChunks") }}
                 </button>
               </div>
               <div class="mt-3 grid grid-cols-2 gap-2">
-                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="quickLookSelectedFile">
+                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="quickLookSelectedFile">
                   <Eye :size="14" />
                   {{ t("page.appSearch.detail.quickLook") }}
                 </button>
-                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedPath">
+                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="copySelectedPath">
                   <Copy :size="14" />
                   {{ t("page.appSearch.detail.copyPath") }}
                 </button>
-                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedTitlePath">
+                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="copySelectedTitlePath">
                   <Copy :size="14" />
                   {{ t("page.appSearch.detail.copyTitlePath") }}
                 </button>
-                <button class="flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50" @click="copySelectedCitation">
+                <button class="flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-panel" @click="copySelectedCitation">
                   <FileText :size="14" />
                   {{ t("page.appSearch.detail.copyCitation") }}
                 </button>
               </div>
-              <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
                 {{ actionMessage }}
               </div>
-              <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
                 {{ actionErrorMessage }}
               </div>
             </div>

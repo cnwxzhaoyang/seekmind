@@ -542,14 +542,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-slate-50 text-slate-900">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
+  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
+    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold tracking-tight text-slate-950">{{ t("page.library.title") }}</h1>
-        <p class="mt-0.5 text-xs text-slate-500">{{ t("page.library.subtitle") }}</p>
+        <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.library.title") }}</h1>
+        <p class="mt-0.5 text-xs text-dim">{{ t("page.library.subtitle") }}</p>
       </div>
       <button
-        class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+        class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
         :disabled="refreshing || importing"
         @click="chooseAndAddDir"
       >
@@ -562,15 +562,15 @@ onBeforeUnmount(() => {
       <div
         class="mb-4 rounded-md border border-dashed px-4 py-3 text-xs transition"
         :class="dragActive
-          ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-          : 'border-slate-200 bg-white text-slate-400'"
+          ? 'border-accent bg-accent-soft text-accent-text'
+          : 'border-default bg-surface text-muted'"
       >
         <div class="flex items-center gap-2">
           <UploadCloud :size="14" />
           <span class="font-medium">
             {{ dragActive ? t("page.library.dropActive") : t("page.library.dropHint") }}
           </span>
-          <span v-if="importing" class="ml-auto inline-flex items-center gap-1 text-slate-500">
+          <span v-if="importing" class="ml-auto inline-flex items-center gap-1 text-dim">
             <Loader2 :size="12" class="animate-spin" />
             {{ t("page.library.importing") }}
           </span>
@@ -587,28 +587,28 @@ onBeforeUnmount(() => {
         class="mb-4"
       />
 
-      <div v-if="errorMessage" class="mb-3 rounded-md border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+      <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm text-danger">
         {{ errorMessage }}
       </div>
 
-      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-sm text-success">
         {{ infoMessage }}
       </div>
 
-        <div class="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.library.emptyState.title") }}</div>
+        <div class="mb-3 flex items-center justify-between border-b border-default bg-surface px-4 py-2">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.library.emptyState.title") }}</div>
         <DocMindBadge tone="default">
           <FolderOpen class="mr-1" :size="13" />
           {{ explicitIndexDirCount }}
         </DocMindBadge>
       </div>
 
-      <div v-if="loading" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
+      <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
         {{ t("page.library.loading") }}
       </div>
 
-      <div v-else-if="dirs.length === 0" class="rounded-md border border-dashed border-slate-200 bg-white px-4 py-6 text-xs text-slate-400">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{{ t("page.library.emptyState.title") }}</div>
+      <div v-else-if="dirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.library.emptyState.title") }}</div>
         <div class="mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
       </div>
 

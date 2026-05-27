@@ -1,10 +1,129 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light;
+
+  --color-page-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f1f5f9;
+  --color-surface-active: #e2e8f0;
+  --color-border: #e2e8f0;
+  --color-border-light: #f1f5f9;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-dim: #64748b;
+  --color-text-muted: #94a3b8;
+  --color-accent: #4f46e5;
+  --color-accent-soft: #eef2ff;
+  --color-accent-text: #4338ca;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --color-danger: #ef4444;
+  --color-danger-soft: #fef2f2;
+  --color-emerald-soft: #ecfdf5;
+  --color-amber-soft: #fffbeb;
+  --color-rose-soft: #fff1f2;
+  --color-panel-bg: #f9fafb;
+  --color-search-bg: #ffffff;
+  --color-header-bg: #ffffff;
+  --color-sidebar-bg: #f1f5f9;
+  --color-statusbar-bg: #f1f5f9;
+  --color-input-bg: #ffffff;
+  --color-input-border: #e2e8f0;
+  --color-badge-bg: #f3f4f6;
+  --color-shadow: rgba(0, 0, 0, 0.05);
+  --color-shadow-md: rgba(0, 0, 0, 0.1);
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-indigo-soft: #eef2ff;
+  --color-scrollbar: #cbd5e1;
+  --color-highlight: #fde68a;
+  --color-highlight-text: #0f172a;
+}
+
+html.dark {
+  color-scheme: dark;
+
+  --color-page-bg: #0d1117;
+  --color-surface: #161b22;
+  --color-surface-hover: #1c2333;
+  --color-surface-active: #21262d;
+  --color-border: #30363d;
+  --color-border-light: #21262d;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+  --color-text-dim: #6e7681;
+  --color-text-muted: #484f58;
+  --color-accent: #58a6ff;
+  --color-accent-soft: #0d1117;
+  --color-accent-text: #79c0ff;
+  --color-success: #3fb950;
+  --color-warning: #d29922;
+  --color-danger: #f85149;
+  --color-danger-soft: #290a0a;
+  --color-emerald-soft: #0a1f14;
+  --color-amber-soft: #1f160a;
+  --color-rose-soft: #290a0f;
+  --color-panel-bg: #0d1117;
+  --color-search-bg: #0d1117;
+  --color-header-bg: #161b22;
+  --color-sidebar-bg: #0d1117;
+  --color-statusbar-bg: #161b22;
+  --color-input-bg: #0d1117;
+  --color-input-border: #30363d;
+  --color-badge-bg: #21262d;
+  --color-shadow: rgba(0, 0, 0, 0.3);
+  --color-shadow-md: rgba(0, 0, 0, 0.4);
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-indigo-soft: #0d1117;
+  --color-scrollbar: #30363d;
+  --color-highlight: #3d2e00;
+  --color-highlight-text: #e6edf3;
+}
+
+.bg-page { background-color: var(--color-page-bg); }
+.bg-surface { background-color: var(--color-surface); }
+.bg-surface-hover { background-color: var(--color-surface-hover); }
+.bg-panel { background-color: var(--color-panel-bg); }
+.bg-header { background-color: var(--color-header-bg); }
+.bg-sidebar { background-color: var(--color-sidebar-bg); }
+.bg-statusbar { background-color: var(--color-statusbar-bg); }
+.bg-accent { background-color: var(--color-accent); }
+.bg-accent-soft { background-color: var(--color-accent-soft); }
+.bg-input { background-color: var(--color-input-bg); }
+.bg-badge { background-color: var(--color-badge-bg); }
+.bg-danger-soft { background-color: var(--color-danger-soft); }
+.bg-emerald-soft { background-color: var(--color-emerald-soft); }
+.bg-amber-soft { background-color: var(--color-amber-soft); }
+.bg-rose-soft { background-color: var(--color-rose-soft); }
+.bg-indigo-soft { background-color: var(--color-indigo-soft); }
+.bg-highlight { background-color: var(--color-highlight); }
+.text-highlight-text { color: var(--color-highlight-text); }
+
+.text-primary { color: var(--color-text-primary); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-dim { color: var(--color-text-dim); }
+.text-muted { color: var(--color-text-muted); }
+.text-accent { color: var(--color-accent); }
+.text-accent-text { color: var(--color-accent-text); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-danger { color: var(--color-danger); }
+
+.border-default { border-color: var(--color-border); }
+.border-light { border-color: var(--color-border-light); }
+.border-accent { border-color: var(--color-accent); }
+.border-danger-soft { border-color: var(--color-danger-soft); }
+.border-emerald-soft { border-color: var(--color-emerald-soft); }
+.border-amber-soft { border-color: var(--color-amber-soft); }
+.border-rose-soft { border-color: var(--color-rose-soft); }
+
+.shadow-card { box-shadow: 0 1px 2px var(--color-shadow); }
+.shadow-card-hover { box-shadow: 0 2px 4px var(--color-shadow-md); }
+
+.font-base {
   font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
-  background: #f1f5f9;
-  color: #0f172a;
 }
 
 * {
@@ -20,6 +139,9 @@ body,
 
 body {
   min-height: 100vh;
+  background-color: var(--color-page-bg);
+  color: var(--color-text-primary);
+  font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
 }
 
 a {
@@ -37,6 +159,20 @@ input,
 select,
 button {
   outline: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: 3px;
 }
 
 .docmind-badge {
