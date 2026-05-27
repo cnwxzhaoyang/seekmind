@@ -2,8 +2,8 @@
   <div class="h-screen w-full overflow-hidden bg-page text-primary">
     <div class="flex h-full">
       <DocMindSidebar />
-      <div class="relative min-w-0 flex-1 bg-panel">
-        <RouterView />
+      <div class="flex min-w-0 flex-1 flex-col bg-panel">
+        <RouterView class="flex-1 min-h-0" />
         <DocMindLogPanel />
       </div>
     </div>

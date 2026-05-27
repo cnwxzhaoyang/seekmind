@@ -20,8 +20,9 @@
   --color-accent-text: #4338ca;
   --color-success: #22c55e;
   --color-warning: #eab308;
-  --color-danger: #ef4444;
-  --color-danger-soft: #fef2f2;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fff1f2;
+  --color-danger-border: #fecdd3;
   --color-emerald-soft: #ecfdf5;
   --color-amber-soft: #fffbeb;
   --color-rose-soft: #fff1f2;
@@ -62,6 +63,7 @@ html.dark {
   --color-warning: #d29922;
   --color-danger: #f85149;
   --color-danger-soft: #290a0a;
+  --color-danger-border: #4c1515;
   --color-emerald-soft: #0a1f14;
   --color-amber-soft: #1f160a;
   --color-rose-soft: #290a0f;
@@ -93,6 +95,8 @@ html.dark {
 .bg-accent-soft { background-color: var(--color-accent-soft); }
 .bg-input { background-color: var(--color-input-bg); }
 .bg-badge { background-color: var(--color-badge-bg); }
+.bg-border { background-color: var(--color-border); }
+.bg-danger { background-color: var(--color-danger); }
 .bg-danger-soft { background-color: var(--color-danger-soft); }
 .bg-emerald-soft { background-color: var(--color-emerald-soft); }
 .bg-amber-soft { background-color: var(--color-amber-soft); }
@@ -114,7 +118,7 @@ html.dark {
 .border-default { border-color: var(--color-border); }
 .border-light { border-color: var(--color-border-light); }
 .border-accent { border-color: var(--color-accent); }
-.border-danger-soft { border-color: var(--color-danger-soft); }
+.border-danger-soft { border-color: var(--color-danger-border); }
 .border-emerald-soft { border-color: var(--color-emerald-soft); }
 .border-amber-soft { border-color: var(--color-amber-soft); }
 .border-rose-soft { border-color: var(--color-rose-soft); }

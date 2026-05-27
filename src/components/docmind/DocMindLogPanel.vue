@@ -2,13 +2,19 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronDown, ChevronUp, RefreshCw, NotebookText, FileText, Database, Sparkles, Trash2 } from "lucide-vue-next";
+import { ChevronDown, ChevronUp, NotebookText, FileText, Database, Sparkles, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
-import { useSidebarState } from "../../composables/useSidebarState";
 import type { DocumentRefreshProgressView, IndexRefreshProgressView, SemanticRebuildProgressView } from "../../types/docmind";
 
+const HEADER_H = 28;
+const DIVIDER_H = 3;
+const HEIGHT_COLLAPSED = HEADER_H + DIVIDER_H;
+const HEIGHT_MIN = 120;
+const HEIGHT_MAX = 500;
+const HEIGHT_DEFAULT = 200;
+const STORAGE_KEY = "docmind.logPanel.height";
+
 const { t } = useI18n();
-const { sidebarWidth } = useSidebarState();
 
 type LogScope = "index" | "document" | "semantic";
 type LogLevel = "info" | "success" | "warning" | "error";
@@ -26,10 +32,29 @@ interface LogEntry {
 
 const expanded = ref(false);
 const entries = ref<LogEntry[]>([]);
+const panelHeight = ref(loadSavedHeight());
+const dragging = ref(false);
+const dragStartY = ref(0);
+const dragStartHeight = ref(0);
 const maxEntries = 120;
 let unlistenIndex: null | (() => void) = null;
 let unlistenDocument: null | (() => void) = null;
 let unlistenSemantic: null | (() => void) = null;
+
+function loadSavedHeight(): number {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const h = parseInt(saved, 10);
+      if (h >= HEIGHT_MIN && h <= HEIGHT_MAX) return h;
+    }
+  } catch {}
+  return HEIGHT_DEFAULT;
+}
+
+function saveHeight(h: number) {
+  try { localStorage.setItem(STORAGE_KEY, String(h)); } catch {}
+}
 
 const scopeMeta: Record<LogScope, { label: string; taskLabel: string; icon: typeof Database }> = {
   index: { label: "logPanel.scope.index", taskLabel: "logPanel.scopeLabel.index", icon: Database },
@@ -58,17 +83,14 @@ const formatTime = (timestamp: string) => {
 };
 
 const installListeners = async () => {
-  if (unlistenIndex || unlistenDocument || unlistenSemantic) {
-    return;
-  }
+  if (unlistenIndex || unlistenDocument || unlistenSemantic) return;
 
   unlistenIndex = await listen<IndexRefreshProgressView>("docmind:index-refresh-progress", (event) => {
     const payload = event.payload;
     const scope: LogScope = "index";
     const level: LogLevel = payload.state === "failed" ? "error" : payload.state === "completed" ? "success" : "info";
     pushLog({
-      scope,
-      level,
+      scope, level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
       details: payload.scope === "dir" && payload.path ? t("logPanel.details.dir", { path: payload.path }) : t("logPanel.details.fullIndex"),
@@ -79,16 +101,11 @@ const installListeners = async () => {
     const payload = event.payload;
     const scope: LogScope = "document";
     const level: LogLevel =
-      payload.state === "failed"
-        ? "error"
-        : payload.warning
-          ? "warning"
-          : payload.state === "completed"
-            ? "success"
-            : "info";
+      payload.state === "failed" ? "error"
+        : payload.warning ? "warning"
+          : payload.state === "completed" ? "success" : "info";
     pushLog({
-      scope,
-      level,
+      scope, level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
       details: `${payload.file_name} · ${payload.parser_source.toUpperCase()}`,
@@ -101,8 +118,7 @@ const installListeners = async () => {
     const scope: LogScope = "semantic";
     const level: LogLevel = payload.state === "failed" ? "error" : payload.state === "completed" ? "success" : "info";
     pushLog({
-      scope,
-      level,
+      scope, level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
       details: payload.current_document || t("logPanel.details.rebuilding"),
@@ -110,19 +126,48 @@ const installListeners = async () => {
   });
 };
 
-const clearLogs = () => {
-  entries.value = [];
+const clearLogs = () => { entries.value = []; };
+
+const toggleExpanded = () => { expanded.value = !expanded.value; };
+
+const onResizeStart = (event: MouseEvent) => {
+  dragging.value = true;
+  dragStartY.value = event.clientY;
+  dragStartHeight.value = panelHeight.value;
+  if (!expanded.value) {
+    expanded.value = true;
+    panelHeight.value = HEIGHT_DEFAULT;
+    dragStartHeight.value = HEIGHT_DEFAULT;
+  }
+  document.addEventListener("mousemove", onResizeMove);
+  document.addEventListener("mouseup", onResizeEnd);
 };
 
-const toggleExpanded = () => {
-  expanded.value = !expanded.value;
+const onResizeMove = (event: MouseEvent) => {
+  if (!dragging.value) return;
+  const delta = dragStartY.value - event.clientY;
+  const newHeight = Math.max(HEIGHT_MIN, Math.min(HEIGHT_MAX, dragStartHeight.value + delta));
+  panelHeight.value = newHeight;
 };
 
-const displayedEntries = computed(() => entries.value.slice(0, 20));
+const onResizeEnd = () => {
+  dragging.value = false;
+  saveHeight(panelHeight.value);
+  document.removeEventListener("mousemove", onResizeMove);
+  document.removeEventListener("mouseup", onResizeEnd);
+};
 
-onMounted(() => {
-  void installListeners();
+const panelStyle = computed(() => {
+  if (!expanded.value) return { height: `${HEIGHT_COLLAPSED}px` };
+  return { height: `${panelHeight.value}px` };
 });
+
+const contentStyle = computed(() => {
+  if (!expanded.value) return {};
+  return { height: `calc(100% - ${HEADER_H + DIVIDER_H}px)` };
+});
+
+onMounted(() => { void installListeners(); });
 
 onBeforeUnmount(() => {
   unlistenIndex?.();
@@ -135,60 +180,65 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pointer-events-none fixed bottom-0 right-0 z-50" :style="{ left: `${sidebarWidth}px` }">
+  <div
+    class="relative shrink-0 bg-panel"
+    :class="dragging ? 'select-none' : ''"
+    :style="panelStyle"
+  >
     <div
-      class="pointer-events-auto overflow-hidden border-t border-default bg-panel shadow-lg transition-all duration-200"
-      :class="expanded ? 'w-full max-h-[320px]' : 'w-full'"
-    >
-      <button
-        class="flex h-6 w-full items-center justify-between gap-3 px-3 text-left"
-        @click="toggleExpanded"
-      >
-        <div class="flex items-center gap-2">
-          <NotebookText class="text-dim" :size="14" />
-          <div class="text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
-          <div class="hidden text-[11px] text-dim sm:block">{{ t("logPanel.desc") }}</div>
-        </div>
-        <div class="flex items-center gap-3 text-[11px] text-muted">
-          <span>{{ t("logPanel.events", { count: entries.length }) }}</span>
-          <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
-        </div>
-      </button>
+      class="h-[3px] w-full cursor-ns-resize shrink-0 transition-colors"
+      :class="dragging ? 'bg-accent' : 'bg-border hover:bg-accent active:bg-accent'"
+      @mousedown.prevent="onResizeStart"
+    />
 
-      <div v-if="expanded" class="max-h-[460px] overflow-hidden">
-        <div class="flex items-center justify-between border-t border-light px-4 py-2 text-xs text-dim">
-          <div>{{ t("logPanel.events", { count: entries.length }) }}</div>
-          <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
-            <Trash2 :size="13" /> {{ t("logPanel.clear") }}
-          </button>
+    <button
+      class="flex h-7 w-full items-center justify-between gap-3 px-3 text-left"
+      @click="toggleExpanded"
+    >
+      <div class="flex items-center gap-2">
+        <NotebookText class="text-dim" :size="14" />
+        <div class="text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
+        <div class="hidden text-[11px] text-dim sm:block">{{ t("logPanel.desc") }}</div>
+      </div>
+      <div class="flex items-center gap-3 text-[11px] text-muted">
+        <span>{{ t("logPanel.events", { count: entries.length }) }}</span>
+        <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
+      </div>
+    </button>
+
+      <div v-if="expanded" class="flex flex-col" :style="contentStyle">
+      <div class="flex items-center justify-between border-t border-light px-4 py-2 text-xs text-dim shrink-0">
+        <div>{{ t("logPanel.events", { count: entries.length }) }}</div>
+        <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
+          <Trash2 :size="13" /> {{ t("logPanel.clear") }}
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-2">
+        <div v-if="entries.length === 0" class="rounded-2xl bg-panel px-4 py-6 text-sm text-dim">
+          {{ t("logPanel.empty") }}
         </div>
-        <div class="max-h-[400px] overflow-y-auto p-2">
-          <div v-if="entries.length === 0" class="rounded-2xl bg-panel px-4 py-6 text-sm text-dim">
-            {{ t("logPanel.empty") }}
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="entry in displayedEntries"
-              :key="entry.id"
-              class="rounded-2xl border border-light bg-panel px-3 py-2"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <DocMindBadge :tone="levelTone[entry.level]">{{ t(scopeMeta[entry.scope].label) }}</DocMindBadge>
-                    <div class="truncate text-sm font-medium text-primary">{{ entry.title }}</div>
-                  </div>
-                  <div class="mt-1 text-xs leading-5 text-secondary">{{ entry.message }}</div>
-                  <div class="mt-1 truncate text-[11px] text-muted">{{ entry.details }}</div>
-                  <div
-                    v-if="entry.warning"
-                    class="mt-1 rounded-xl border border-amber-soft bg-amber-soft px-2 py-1 text-[11px] leading-4 text-warning"
-                  >
-                    {{ entry.warning }}
-                  </div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="entry in entries"
+            :key="entry.id"
+            class="rounded-2xl border border-light bg-panel px-3 py-2"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <DocMindBadge :tone="levelTone[entry.level]">{{ t(scopeMeta[entry.scope].label) }}</DocMindBadge>
+                  <div class="truncate text-sm font-medium text-primary">{{ entry.title }}</div>
                 </div>
-                <div class="shrink-0 text-[11px] text-muted">{{ formatTime(entry.timestamp) }}</div>
+                <div class="mt-1 text-xs leading-5 text-secondary">{{ entry.message }}</div>
+                <div class="mt-1 truncate text-[11px] text-muted">{{ entry.details }}</div>
+                <div
+                  v-if="entry.warning"
+                  class="mt-1 rounded-xl border border-amber-soft bg-amber-soft px-2 py-1 text-[11px] leading-4 text-warning"
+                >
+                  {{ entry.warning }}
+                </div>
               </div>
+              <div class="shrink-0 text-[11px] text-muted">{{ formatTime(entry.timestamp) }}</div>
             </div>
           </div>
         </div>

@@ -709,8 +709,8 @@ watch(showDebugPanel, async (visible) => {
           <aside class="min-h-0 flex-1 overflow-y-auto bg-panel p-4">
             <div class="space-y-7">
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
-                  <History :size="13" />
+                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                  <History :size="14" />
                   {{ t("page.appSearch.section.recentSearch") }}
                 </div>
                 <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
@@ -729,8 +729,8 @@ watch(showDebugPanel, async (visible) => {
               </section>
 
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
-                  <FileText :size="13" />
+                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                  <FileText :size="14" />
                   {{ t("page.appSearch.section.recentOpen") }}
                 </div>
                 <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
@@ -750,8 +750,8 @@ watch(showDebugPanel, async (visible) => {
               </section>
 
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
-                  <Star :size="13" />
+                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                  <Star :size="14" />
                   {{ t("page.appSearch.section.favorites") }}
                 </div>
                 <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
@@ -771,8 +771,8 @@ watch(showDebugPanel, async (visible) => {
               </section>
 
               <section>
-                <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
-                  <FolderOpen :size="13" />
+                <div class="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dim">
+                  <FolderOpen :size="14" />
                   {{ t("page.appSearch.section.quickDirs") }}
                 </div>
                 <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">

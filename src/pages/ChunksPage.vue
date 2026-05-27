@@ -49,7 +49,7 @@ const docFilter = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
 const refreshJobPaths = new Map<string, string>();
-const version = "v1.0.2";
+
 let unlistenRefreshProgress: null | (() => void) = null;
 
 const {
@@ -931,17 +931,5 @@ watch(
       </SplitPane>
     </main>
 
-    <footer class="flex h-6 items-center justify-between border-t border-default bg-statusbar px-4 text-[11px] text-dim">
-      <div class="flex items-center gap-3">
-        <span>
-          <Cpu :size="12" class="mr-1 inline" />
-          {{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}
-        </span>
-        <span>SQLite + Tantivy</span>
-      </div>
-      <div class="flex items-center gap-3">
-        <span>{{ version }}</span>
-      </div>
-    </footer>
   </div>
 </template>
