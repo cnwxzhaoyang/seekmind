@@ -586,7 +586,7 @@ const isResultFavorited = (
 };
 
 const openLibrary = async () => {
-  await router.push({ path: "/library" });
+  await router.push({ path: "/status" });
 };
 
 const contextMenuRow = ref<VisibleIndexDirRow | null>(null);

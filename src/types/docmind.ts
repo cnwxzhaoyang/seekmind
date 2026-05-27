@@ -127,6 +127,7 @@ export interface CurrentTaskView {
   updated: number;
   skipped: number;
   deleted: number;
+  warning?: string | null;
   pause_requested: boolean;
 }
 

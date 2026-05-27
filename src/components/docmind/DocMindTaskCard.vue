@@ -57,6 +57,10 @@ const remainingCount = computed(() => {
       />
     </div>
 
+    <div v-if="props.task.warning" class="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+      {{ props.task.warning }}
+    </div>
+
     <div class="mt-2.5 grid gap-2 md:grid-cols-2 xl:grid-cols-6">
       <div class="rounded-md bg-slate-50 px-2.5 py-2">
         <div class="text-[11px] uppercase tracking-wide text-slate-500">{{ t("taskCard.currentDir") }}</div>

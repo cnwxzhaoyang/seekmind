@@ -141,6 +141,9 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
 
 <template>
   <div class="preview-block">
+    <div v-if="block.page" class="mb-2 flex items-center justify-end gap-2 text-[11px] text-slate-400">
+      <span class="rounded-full bg-slate-100 px-2 py-0.5">第 {{ block.page }} 页</span>
+    </div>
     <div v-if="block.block_type === 'heading'" class="preview-heading" :class="`preview-heading--${block.level || 1}`">
       <span class="inline-flex items-center gap-1 font-semibold" :class="headingSize">
         <span v-if="block.heading" class="text-[11px] font-normal text-slate-400">{{ block.heading }} ›</span>

@@ -319,6 +319,7 @@ async fn process_index_plan(
             plan.updated,
             plan.skipped,
             plan.deleted,
+            None,
             false,
         )
         .await?;
@@ -391,6 +392,7 @@ async fn process_index_plan(
                 plan.updated,
                 plan.skipped,
                 plan.deleted,
+                None,
                 false,
             )
             .await?;
@@ -468,6 +470,7 @@ async fn process_index_plan(
                 plan.updated,
                 plan.skipped,
                 plan.deleted,
+                None,
                 false,
             )
             .await?;
@@ -642,6 +645,7 @@ async fn pause_current_task(
             updated,
             skipped,
             deleted,
+            None,
             true,
         )
         .await?;
@@ -739,7 +743,11 @@ fn spawn_parser_progress_forwarder(
     let (tx, rx) = mpsc::channel::<ParserStreamEvent>();
 
     let handle = thread::spawn(move || {
+        let mut last_warning: Option<String> = None;
         while let Ok(event) = rx.recv() {
+            if let Some(warning) = event.warning.clone() {
+                last_warning = Some(warning);
+            }
             let details = parser_event_message(&event, &fallback_message);
             let progress = progress_with_stream(processed_before_current, total, event.percent);
             let database = database.clone();
@@ -749,6 +757,7 @@ fn spawn_parser_progress_forwarder(
             let current_dir = current_dir.clone();
             let path = path.clone();
             let details_for_task = details.clone();
+            let warning_for_task = last_warning.clone();
             let _ = tauri::async_runtime::block_on(async move {
                 let _ = database
                     .set_current_task(
@@ -765,6 +774,7 @@ fn spawn_parser_progress_forwarder(
                         updated,
                         skipped,
                         deleted,
+                        warning_for_task.as_deref(),
                         false,
                     )
                     .await;

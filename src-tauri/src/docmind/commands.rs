@@ -526,30 +526,59 @@ pub async fn refresh_document(
                         )
                         .await
                         {
-                            eprintln!(
-                                "[DocMind] semantic upsert failed for {path_string}: {error}"
-                            );
-                            if let Ok(semantic_status) =
-                                semantic_store::get_embedding_model_status(&database).await
+                            if error.contains("embedding 模型下载或加载超时")
+                                || error.contains("embedding_unavailable")
+                                || error.contains("timed out")
                             {
-                                let _ = emit_app.emit(
-                                    "docmind:semantic:rebuild-progress",
-                                    crate::docmind::models::SemanticRebuildProgressView {
-                                        job_id: task_job_id.clone(),
-                                        state: "failed".to_string(),
-                                        message: "单文档语义向量更新失败".to_string(),
-                                        source: "document".to_string(),
-                                        model: semantic_status.model,
-                                        total_chunks: semantic_status.sqlite_chunks,
-                                        processed_chunks: 0,
-                                        embedded_chunks: 0,
-                                        current_document: path_string.clone(),
-                                        current_chunk: String::new(),
-                                        percent: 0,
-                                        last_error: error,
-                                        updated_at: chrono::Utc::now().to_rfc3339(),
-                                    },
+                                if let Ok(semantic_status) =
+                                    semantic_store::get_embedding_model_status(&database).await
+                                {
+                                    let warning = format!("语义索引暂不可用：{error}");
+                                    let _ = emit_app.emit(
+                                        "docmind:semantic:rebuild-progress",
+                                        crate::docmind::models::SemanticRebuildProgressView {
+                                            job_id: task_job_id.clone(),
+                                            state: "failed".to_string(),
+                                            message: "单文档语义向量更新已跳过".to_string(),
+                                            source: "document".to_string(),
+                                            model: semantic_status.model,
+                                            total_chunks: semantic_status.sqlite_chunks,
+                                            processed_chunks: 0,
+                                            embedded_chunks: 0,
+                                            current_document: path_string.clone(),
+                                            current_chunk: String::new(),
+                                            percent: 0,
+                                            last_error: warning,
+                                            updated_at: chrono::Utc::now().to_rfc3339(),
+                                        },
+                                    );
+                                }
+                            } else {
+                                eprintln!(
+                                    "[DocMind] semantic upsert failed for {path_string}: {error}"
                                 );
+                                if let Ok(semantic_status) =
+                                    semantic_store::get_embedding_model_status(&database).await
+                                {
+                                    let _ = emit_app.emit(
+                                        "docmind:semantic:rebuild-progress",
+                                        crate::docmind::models::SemanticRebuildProgressView {
+                                            job_id: task_job_id.clone(),
+                                            state: "failed".to_string(),
+                                            message: "单文档语义向量更新失败".to_string(),
+                                            source: "document".to_string(),
+                                            model: semantic_status.model,
+                                            total_chunks: semantic_status.sqlite_chunks,
+                                            processed_chunks: 0,
+                                            embedded_chunks: 0,
+                                            current_document: path_string.clone(),
+                                            current_chunk: String::new(),
+                                            percent: 0,
+                                            last_error: error,
+                                            updated_at: chrono::Utc::now().to_rfc3339(),
+                                        },
+                                    );
+                                }
                             }
                         }
                     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronLeft, ChevronRight, Database, FolderOpen, Layers3, Search, Settings } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, Database, Layers3, Search, Settings } from "lucide-vue-next";
 import { useRoute } from "vue-router";
 import { useSidebarState } from "../../composables/useSidebarState";
 
@@ -12,7 +12,6 @@ const { sidebarCollapsed, toggleSidebar } = useSidebarState();
 const items = computed(() => [
   { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
   { key: "chunks", label: t("sidebar.chunks"), icon: Layers3, to: "/chunks" },
-  { key: "library", label: t("sidebar.library"), icon: FolderOpen, to: "/library" },
   { key: "status", label: t("sidebar.status"), icon: Database, to: "/status" },
   { key: "settings", label: t("sidebar.settings"), icon: Settings, to: "/settings" },
 ]);
@@ -20,7 +19,6 @@ const items = computed(() => [
 const activeKey = computed(() => {
   const path = route.path;
   if (path.startsWith("/chunks")) return "chunks";
-  if (path.startsWith("/library")) return "library";
   if (path.startsWith("/status")) return "status";
   if (path.startsWith("/settings")) return "settings";
   return "search";

@@ -130,6 +130,7 @@
         "copyPath": "复制路径",
         "copyTitlePath": "复制标题路径",
         "copyCitation": "复制引用",
+        "removeDir": "移除目录",
         "copiedPath": "已复制路径",
         "copiedTitlePath": "已复制标题路径",
         "copiedCitation": "已复制引用",
@@ -170,6 +171,7 @@
         "quickLookFailed": "Quick Look 打开失败",
         "copyPath": "复制路径",
         "copyCitation": "复制引用",
+        "removeDir": "移除目录",
         "copiedPath": "已复制路径",
         "copiedCitation": "已复制引用",
         "copyFailed": "复制失败"
@@ -210,6 +212,7 @@
         "quickLookFailed": "Quick Look 打开失败",
         "copyPath": "复制路径",
         "copyCitation": "复制引用",
+        "removeDir": "移除目录",
         "copiedPath": "已复制路径",
         "copiedCitation": "已复制引用"
       },
@@ -269,6 +272,7 @@
         "quickLookFailed": "Quick Look 打开失败",
         "copyPath": "复制路径",
         "copyCitation": "复制引用",
+        "removeDir": "移除目录",
         "copiedPath": "已复制路径",
         "copiedCitation": "已复制引用"
       },

@@ -21,7 +21,6 @@ use crate::docmind::models::{
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
-use crate::docmind::storage::indexer;
 use crate::docmind::storage::types::{
     ChunkRecord, DocumentState, ExtractedDocument, IndexSettings,
 };
@@ -260,6 +259,7 @@ struct CurrentTaskRow {
     updated: i64,
     skipped: i64,
     deleted: i64,
+    warning: Option<String>,
     pause_requested: i64,
 }
 
@@ -349,113 +349,7 @@ impl Database {
                 .map_err(|error| error.to_string())?;
         }
 
-        let skip_bootstrap_index = std::env::var("DOCMIND_SKIP_BOOTSTRAP_INDEX").is_ok();
-        if !skip_bootstrap_index {
-            database
-                .repair_fulltext_index_if_needed()
-                .await
-                .map_err(|error| error.to_string())?;
-        }
-
         Ok(database)
-    }
-
-    async fn repair_fulltext_index_if_needed(&self) -> Result<(), sqlx::Error> {
-        let indexed_docs = self.count_documents().await?;
-        let sqlite_chunks = self.count_chunks().await?;
-        let tantivy_chunks = self.search_index.doc_count() as i64;
-
-        if indexed_docs == 0 {
-            if tantivy_chunks != 0 {
-                eprintln!(
-                    "[DocMind] fulltext repair clearing stale Tantivy index sqlite_chunks=0 tantivy_docs={tantivy_chunks}"
-                );
-                self.search_index
-                    .clear_all()
-                    .map_err(sqlx::Error::Protocol)?;
-            }
-            let _ = indexer::rebuild_all(self, "bootstrap", Arc::new(|_| {})).await;
-            return Ok(());
-        }
-
-        if sqlite_chunks == tantivy_chunks {
-            return Ok(());
-        }
-
-        eprintln!(
-            "[DocMind] fulltext repair rebuilding Tantivy from SQLite sqlite_chunks={sqlite_chunks} tantivy_docs={tantivy_chunks}"
-        );
-        self.rebuild_fulltext_index_from_sqlite().await
-    }
-
-    async fn rebuild_fulltext_index_from_sqlite(&self) -> Result<(), sqlx::Error> {
-        self.search_index
-            .clear_all()
-            .map_err(sqlx::Error::Protocol)?;
-
-        let documents = sqlx::query_as::<_, FulltextDocumentRow>(
-            r#"
-            SELECT id, dir_path, path, file_name, ext, file_size, modified_at, content_hash, modified, content
-            FROM documents
-            ORDER BY path ASC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        for row in documents {
-            let chunks = self.fulltext_chunks_for_document(&row.id).await?;
-            if chunks.is_empty() {
-                continue;
-            }
-
-            let document = ExtractedDocument {
-                dir_path: row.dir_path,
-                path: row.path,
-                file_name: row.file_name,
-                ext: row.ext,
-                file_size: row.file_size,
-                modified_at: row.modified_at,
-                content_hash: row.content_hash,
-                modified: row.modified,
-                content: row.content,
-            };
-
-            self.search_index
-                .index_document(&row.id, &document, &chunks)
-                .map_err(sqlx::Error::Protocol)?;
-        }
-
-        Ok(())
-    }
-
-    async fn fulltext_chunks_for_document(
-        &self,
-        document_id: &str,
-    ) -> Result<Vec<ChunkRecord>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, FulltextChunkRow>(
-            r#"
-            SELECT heading, snippet, paragraph, page, score
-            FROM chunks
-            WHERE document_id = ?
-            ORDER BY CAST(substr(id, instr(id, ':') + 1) AS INTEGER) ASC
-            "#,
-        )
-        .bind(document_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| ChunkRecord {
-                heading: row.heading,
-                snippet: row.snippet,
-                paragraph: row.paragraph,
-                page: row.page,
-                score: row.score,
-                block_indexes: Vec::new(),
-            })
-            .collect())
     }
 
     pub async fn get_index_settings(&self) -> Result<IndexSettings, sqlx::Error> {
@@ -2129,13 +2023,14 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         updated: usize,
         skipped: usize,
         deleted: usize,
+        warning: Option<&str>,
         pause_requested: bool,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO current_task
-                (id, label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, pause_requested)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(label)
@@ -2151,6 +2046,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         .bind(updated as i64)
         .bind(skipped as i64)
         .bind(deleted as i64)
+        .bind(warning)
         .bind(pause_requested as i64)
         .execute(&self.pool)
         .await?;
@@ -2207,6 +2103,18 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             .clear_all()
             .map_err(sqlx::Error::Protocol)?;
 
+        sqlx::query("DELETE FROM index_checkpoint")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM current_task")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM index_run_summary")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM failed_files")
+            .execute(&self.pool)
+            .await?;
         sqlx::query("DELETE FROM chunk_embeddings")
             .execute(&self.pool)
             .await?;
@@ -2222,19 +2130,13 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query("DELETE FROM document_blocks")
+            .execute(&self.pool)
+            .await?;
         sqlx::query("DELETE FROM chunks")
             .execute(&self.pool)
             .await?;
         sqlx::query("DELETE FROM documents")
-            .execute(&self.pool)
-            .await?;
-        sqlx::query("DELETE FROM failed_files")
-            .execute(&self.pool)
-            .await?;
-        sqlx::query("DELETE FROM current_task")
-            .execute(&self.pool)
-            .await?;
-        sqlx::query("DELETE FROM index_run_summary")
             .execute(&self.pool)
             .await?;
         sqlx::query(
@@ -2419,6 +2321,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 updated INTEGER NOT NULL DEFAULT 0,
                 skipped INTEGER NOT NULL DEFAULT 0,
                 deleted INTEGER NOT NULL DEFAULT 0,
+                warning TEXT NOT NULL DEFAULT '',
                 pause_requested INTEGER NOT NULL DEFAULT 0
             )
             "#,
@@ -2658,6 +2561,10 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         if !columns.contains("deleted") {
             alter_statements
                 .push("ALTER TABLE current_task ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+        }
+        if !columns.contains("warning") {
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN warning TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("state") {
             alter_statements
@@ -3009,7 +2916,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
     async fn current_task(&self) -> Result<Option<CurrentTaskView>, sqlx::Error> {
         let row = sqlx::query_as::<_, CurrentTaskRow>(
             r#"
-            SELECT label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, pause_requested
+            SELECT label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested
             FROM current_task
             WHERE id = 1
             "#,
@@ -3031,6 +2938,10 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             updated: row.updated as usize,
             skipped: row.skipped as usize,
             deleted: row.deleted as usize,
+            warning: row.warning.and_then(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() { None } else { Some(trimmed) }
+            }),
             pause_requested: row.pause_requested != 0,
         }))
     }

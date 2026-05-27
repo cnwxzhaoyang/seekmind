@@ -401,7 +401,7 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
     { key: "divider1", label: "", divider: true, handler: () => {} },
     {
       key: "refresh",
-      label: t("page.library.action.refresh"),
+      label: t("common.reindex"),
       icon: RefreshCw,
       disabled: busyPath.value === row.dir.path || !row.dir.is_explicit,
       handler: () => refreshSingleDir(row.dir.path),
@@ -415,7 +415,7 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
     },
     {
       key: "remove",
-      label: t("common.clear"),
+      label: t("page.library.action.removeDir"),
       icon: X,
       disabled: busyPath.value === row.dir.path || !row.dir.is_explicit,
       danger: true,

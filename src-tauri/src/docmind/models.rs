@@ -145,6 +145,8 @@ pub struct CurrentTaskView {
     pub updated: usize,
     pub skipped: usize,
     pub deleted: usize,
+    #[serde(default)]
+    pub warning: Option<String>,
     pub pause_requested: bool,
 }
 

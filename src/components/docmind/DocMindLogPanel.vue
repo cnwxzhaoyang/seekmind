@@ -20,6 +20,7 @@ interface LogEntry {
   title: string;
   message: string;
   details: string;
+  warning?: string;
   timestamp: string;
 }
 
@@ -80,17 +81,18 @@ const installListeners = async () => {
     const level: LogLevel =
       payload.state === "failed"
         ? "error"
-        : payload.state === "completed"
-          ? payload.warning
-            ? "warning"
-            : "success"
-          : "info";
+        : payload.warning
+          ? "warning"
+          : payload.state === "completed"
+            ? "success"
+            : "info";
     pushLog({
       scope,
       level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: `${payload.file_name}${payload.warning ? ` · ${payload.parser_source.toUpperCase()} ${t("logPanel.details.fallback")}` : ` · ${payload.parser_source.toUpperCase()}`}`,
+      details: `${payload.file_name} · ${payload.parser_source.toUpperCase()}`,
+      warning: payload.warning || undefined,
     });
   });
 
@@ -178,6 +180,12 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="mt-1 text-xs leading-5 text-slate-600">{{ entry.message }}</div>
                   <div class="mt-1 truncate text-[11px] text-slate-400">{{ entry.details }}</div>
+                  <div
+                    v-if="entry.warning"
+                    class="mt-1 rounded-xl border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-4 text-amber-700"
+                  >
+                    {{ entry.warning }}
+                  </div>
                 </div>
                 <div class="shrink-0 text-[11px] text-slate-400">{{ formatTime(entry.timestamp) }}</div>
               </div>

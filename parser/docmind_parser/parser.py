@@ -922,7 +922,7 @@ def parse_document(
     elif ext == "docx":
         title, blocks = parse_docx(path)
     elif ext == "pdf":
-        title, blocks = parse_pdf(path)
+        title, blocks = parse_pdf(path, emit=emit, request_id=request_id)
     else:
         raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
 
@@ -1604,7 +1604,280 @@ def extract_doc_text_with_textutil(path: Path) -> str:
     return normalize_whitespace(result.stdout)
 
 
-def parse_pdf(path: Path) -> Tuple[Optional[str], List[Block]]:
+PDF_IMAGE_CACHE_ROOT = Path(tempfile.gettempdir()) / "docmind-pdf-media"
+
+
+
+def pdf_image_cache_dir(path: Path) -> Path:
+    digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+    return PDF_IMAGE_CACHE_ROOT / digest
+
+
+
+def pdf_image_extraction_enabled() -> bool:
+    return os.environ.get("DOCMIND_ENABLE_SYSTEM_PDF_IMAGES", "").strip() == "1"
+
+
+
+def pdf_ocr_enabled() -> bool:
+    return os.environ.get("DOCMIND_DISABLE_PDF_OCR", "").strip() != "1" and shutil.which("tesseract") is not None
+
+
+
+def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
+    if not pdf_ocr_enabled():
+        return None
+
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        output_dir = pdf_image_cache_dir(path) / "ocr"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        render_path = output_dir / f"page-{page_index}.png"
+        doc = fitz.open(str(path))
+        page = doc.load_page(page_index - 1)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        pixmap.save(str(render_path))
+    except Exception:
+        return None
+
+    langs = os.environ.get("DOCMIND_TESSERACT_LANGS", "chi_sim+eng").strip() or "chi_sim+eng"
+    candidates = [langs, "eng"] if langs != "eng" else ["eng"]
+    for lang in candidates:
+        try:
+            result = subprocess.run(
+                ["tesseract", str(render_path), "stdout", "-l", lang, "--psm", "6"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except Exception:
+            continue
+        if result.returncode != 0:
+            continue
+        text = normalize_whitespace(result.stdout)
+        if text:
+            return text
+    return None
+
+
+def render_pdf_page_preview_block(path: Path, heading: Optional[str], page_index: int) -> Optional[Block]:
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        return None
+
+    try:
+        output_dir = pdf_image_cache_dir(path) / "page-preview"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        preview_path = output_dir / f"page-{page_index}.png"
+        doc = fitz.open(str(path))
+        page = doc.load_page(page_index - 1)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        pixmap.save(str(preview_path))
+    except Exception:
+        return None
+
+    if not preview_path.exists() or preview_path.stat().st_size <= 0:
+        return None
+
+    label = f"PDF 页面 {page_index}"
+    caption = "PDF 页面预览"
+    return Block(
+        kind="image",
+        text=label,
+        heading=heading or path.stem,
+        page_no=page_index,
+        markdown=f"![{label}]({preview_path})",
+        html=build_img_html(str(preview_path), label, caption),
+        asset_path=str(preview_path),
+        alt_text=label,
+        caption=caption,
+        ocr_text=caption,
+    )
+
+
+
+def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Optional[int] = None) -> List[Block]:
+    image_blocks: List[Block] = []
+    output_dir = pdf_image_cache_dir(path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        fitz = None
+
+    if fitz is not None:
+        try:
+            doc = fitz.open(str(path))
+            pages = [(page_index, doc.load_page(page_index - 1))] if page_index is not None else list(enumerate(doc, start=1))
+            for page_index, page in pages:
+                for image_index, image in enumerate(page.get_images(full=True), start=1):
+                    xref = image[0]
+                    try:
+                        extracted = doc.extract_image(xref)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    image_bytes = extracted.get("image") if isinstance(extracted, dict) else None
+                    if not image_bytes:
+                        continue
+                    ext = normalize_extension(str(extracted.get("ext") or "png").lower().lstrip("."))
+                    image_path = output_dir / f"page-{page_index}-{image_index}.{ext}"
+                    try:
+                        image_path.write_bytes(image_bytes)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    label = f"PDF 图片 {page_index}-{image_index}"
+                    caption = "PDF 图片预览"
+                    image_blocks.append(
+                        Block(
+                            kind="image",
+                            text=label,
+                            heading=heading or path.stem,
+                            page_no=page_index,
+                            markdown=f"![{label}]({image_path})",
+                            html=build_img_html(str(image_path), label, caption),
+                            asset_path=str(image_path),
+                            alt_text=label,
+                            caption=caption,
+                            ocr_text=caption,
+                        )
+                    )
+            if image_blocks:
+                return image_blocks
+        except Exception:
+            image_blocks = []
+
+    if not pdf_image_extraction_enabled():
+        return image_blocks
+
+    total_pages = 0
+    try:
+        from pypdf import PdfReader  # type: ignore
+
+        reader = PdfReader(str(path))
+        total_pages = len(reader.pages)
+    except Exception:
+        total_pages = 0
+
+    if total_pages <= 0:
+        return image_blocks
+
+    page_indices = [page_index] if page_index is not None else list(range(1, total_pages + 1))
+    for page_index in page_indices:
+        page_prefix = output_dir / f"page-{page_index}"
+        for existing in output_dir.glob(f"{page_prefix.name}*"):
+            try:
+                existing.unlink()
+            except Exception:  # noqa: BLE001
+                pass
+
+        try:
+            result = subprocess.run(
+                [
+                    "pdfimages",
+                    "-png",
+                    "-p",
+                    "-f",
+                    str(page_index),
+                    "-l",
+                    str(page_index),
+                    "-print-filenames",
+                    str(path),
+                    str(page_prefix),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except FileNotFoundError:
+            return image_blocks
+        except subprocess.TimeoutExpired:
+            continue
+        except Exception:  # noqa: BLE001
+            continue
+
+        if result.returncode != 0:
+            continue
+
+        output_files: List[Path] = []
+        for raw_line in result.stdout.splitlines():
+            candidate = normalize_whitespace(raw_line)
+            if not candidate:
+                continue
+            candidate_path = Path(candidate)
+            if not candidate_path.is_absolute():
+                candidate_path = Path(candidate)
+            if candidate_path.exists():
+                output_files.append(candidate_path)
+
+        if not output_files:
+            output_files = sorted(
+                (item for item in output_dir.glob(f"{page_prefix.name}*") if item.is_file()),
+                key=lambda item: item.stat().st_mtime,
+            )
+
+        if not output_files:
+            continue
+
+        for image_index, image_path in enumerate(output_files, start=1):
+            if not image_path.exists() or image_path.stat().st_size <= 0:
+                continue
+            label = f"PDF 图片 {page_index}-{image_index}"
+            caption = "PDF 图片预览"
+            image_blocks.append(
+                Block(
+                    kind="image",
+                    text=label,
+                    heading=heading or path.stem,
+                    page_no=page_index,
+                    markdown=f"![{label}]({image_path})",
+                    html=build_img_html(str(image_path), label, caption),
+                    asset_path=str(image_path),
+                    alt_text=label,
+                    caption=caption,
+                    ocr_text=caption,
+                )
+            )
+
+    return image_blocks
+
+
+
+def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: str = "") -> Tuple[Optional[str], List[Block]]:
+    def progress(
+        stage: str,
+        message: str,
+        percent: int = 0,
+        current: str = "",
+        total: int = 0,
+        processed: int = 0,
+        warning: Optional[str] = None,
+    ) -> None:
+        if emit is None:
+            return
+        emit(
+            ParserStreamMessage(
+                request_id=request_id,
+                kind="event",
+                event="progress",
+                message=message,
+                stage=stage,
+                percent=percent,
+                current=current,
+                total=total,
+                processed=processed,
+                parser_source="python",
+                warning=warning,
+            ).to_dict()
+        )
+
     title: Optional[str] = None
     blocks: List[Block] = []
 
@@ -1612,27 +1885,72 @@ def parse_pdf(path: Path) -> Tuple[Optional[str], List[Block]]:
         from pypdf import PdfReader  # type: ignore
 
         reader = PdfReader(str(path))
+        total_pages = len(reader.pages)
+        progress("extract", f"正在解析 PDF，共 {total_pages} 页", 10, path.name, total_pages, 0)
         for page_index, page in enumerate(reader.pages, start=1):
             page_text = normalize_whitespace((page.extract_text() or "").replace("\x0c", "\n\n"))
-            if not page_text:
-                continue
-
-            page_paragraphs = split_paragraphs(page_text)
-            for paragraph in page_paragraphs:
-                if not paragraph:
-                    continue
-                if title is None:
-                    title = detect_title_like_line(paragraph) or path.stem
-                blocks.append(
-                    Block(
-                        kind="paragraph",
-                        text=paragraph,
-                        heading=title,
-                        page_no=page_index,
+            if page_text:
+                page_paragraphs = split_paragraphs(page_text)
+                for paragraph in page_paragraphs:
+                    if not paragraph:
+                        continue
+                    if title is None:
+                        title = detect_title_like_line(paragraph) or path.stem
+                    blocks.append(
+                        Block(
+                            kind="paragraph",
+                            text=paragraph,
+                            heading=title,
+                            page_no=page_index,
+                        )
                     )
-                )
+            else:
+                if pdf_ocr_enabled():
+                    progress(
+                        "ocr",
+                        f"正在识别第 {page_index} 页 PDF 图片文字",
+                        min(80, 20 + int(page_index / max(total_pages, 1) * 50)),
+                        path.name,
+                        total_pages,
+                        page_index,
+                    )
+                    ocr_text = ocr_pdf_page_text(path, page_index)
+                    if ocr_text:
+                        if title is None:
+                            title = detect_title_like_line(ocr_text) or path.stem
+                        blocks.append(
+                            Block(
+                                kind="paragraph",
+                                text=ocr_text,
+                                heading=title or path.stem,
+                                page_no=page_index,
+                                ocr_text="PDF OCR 识别结果",
+                            )
+                        )
+                else:
+                    progress(
+                        "ocr",
+                        f"第 {page_index} 页无文本，PDF OCR 未启用",
+                        min(60, 20 + int(page_index / max(total_pages, 1) * 30)),
+                        path.name,
+                        total_pages,
+                        page_index,
+                        warning="PDF OCR 未启用或不可用",
+                    )
+
+            page_image_blocks = extract_pdf_image_blocks(path, title or path.stem, page_index)
+            if page_image_blocks:
+                blocks.extend(page_image_blocks)
+            else:
+                page_preview = render_pdf_page_preview_block(path, title or path.stem, page_index)
+                if page_preview is not None:
+                    blocks.append(page_preview)
 
         if blocks:
+            image_count = sum(1 for block in blocks if block.kind == "image")
+            if image_count:
+                progress("image", f"已提取 {image_count} 个 PDF 图片", 85, path.name, image_count, image_count)
+            progress("done", f"PDF 解析完成：{path.name}", 100, path.name, total_pages, total_pages)
             return title or path.stem, blocks
     except Exception as exc:  # noqa: BLE001
         parse_error = exc
@@ -1642,7 +1960,44 @@ def parse_pdf(path: Path) -> Tuple[Optional[str], List[Block]]:
     pdftotext = _extract_pdf_with_pdftotext(path)
     if pdftotext is not None:
         title, blocks = pdftotext
+        image_blocks = extract_pdf_image_blocks(path, title or path.stem)
+        if image_blocks:
+            progress("image", f"已提取 {len(image_blocks)} 个 PDF 图片", 85, path.name, len(image_blocks), len(image_blocks))
+        else:
+            try:
+                from pypdf import PdfReader  # type: ignore
+                reader = PdfReader(str(path))
+                for page_index in range(1, len(reader.pages) + 1):
+                    page_preview = render_pdf_page_preview_block(path, title or path.stem, page_index)
+                    if page_preview is not None:
+                        image_blocks.append(page_preview)
+            except Exception:
+                pass
+        blocks.extend(image_blocks)
+        progress("done", f"PDF 解析完成：{path.name}", 100, path.name, len(blocks), len(blocks))
         return title or path.stem, blocks
+
+    image_blocks = extract_pdf_image_blocks(path, path.stem)
+    if image_blocks:
+        progress("image", f"已提取 {len(image_blocks)} 个 PDF 图片", 85, path.name, len(image_blocks), len(image_blocks))
+        progress("done", f"PDF 解析完成：{path.name}", 100, path.name, len(image_blocks), len(image_blocks))
+        return path.stem, image_blocks
+
+    page_preview_blocks: List[Block] = []
+    try:
+        from pypdf import PdfReader  # type: ignore
+        reader = PdfReader(str(path))
+        for page_index in range(1, len(reader.pages) + 1):
+            page_preview = render_pdf_page_preview_block(path, path.stem, page_index)
+            if page_preview is not None:
+                page_preview_blocks.append(page_preview)
+    except Exception:
+        page_preview_blocks = []
+
+    if page_preview_blocks:
+        progress("image", f"已生成 {len(page_preview_blocks)} 个 PDF 页面预览", 85, path.name, len(page_preview_blocks), len(page_preview_blocks))
+        progress("done", f"PDF 解析完成：{path.name}", 100, path.name, len(page_preview_blocks), len(page_preview_blocks))
+        return path.stem, page_preview_blocks
 
     if parse_error is not None:
         raise parser_error("parse_failed", "pdf extraction failed", details=str(parse_error))
@@ -1686,6 +2041,7 @@ def _extract_pdf_with_pdftotext(path: Path) -> Optional[Tuple[Optional[str], Lis
                     page_no=page_index,
                 )
             )
+        blocks.extend(extract_pdf_image_blocks(path, title or path.stem, page_index))
 
     if not blocks:
         return None

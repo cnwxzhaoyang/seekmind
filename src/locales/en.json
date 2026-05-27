@@ -130,6 +130,7 @@
         "copyPath": "Copy Path",
         "copyTitlePath": "Copy Title Path",
         "copyCitation": "Copy Citation",
+        "removeDir": "Remove Directory",
         "copiedPath": "Path copied",
         "copiedTitlePath": "Title path copied",
         "copiedCitation": "Citation copied",
@@ -170,6 +171,7 @@
         "quickLookFailed": "Quick Look failed to open",
         "copyPath": "Copy Path",
         "copyCitation": "Copy Citation",
+        "removeDir": "Remove Directory",
         "copiedPath": "Path copied",
         "copiedCitation": "Citation copied",
         "copyFailed": "Copy failed"
@@ -214,6 +216,7 @@
         "quickLookFailed": "Failed to open Quick Look",
         "copyPath": "Copy Path",
         "copyCitation": "Copy Citation",
+        "removeDir": "Remove Directory",
         "copiedPath": "Path copied",
         "copiedCitation": "Citation copied"
       },
@@ -273,6 +276,7 @@
         "quickLookFailed": "Failed to open Quick Look",
         "copyPath": "Copy Path",
         "copyCitation": "Copy Citation",
+        "removeDir": "Remove Directory",
         "copiedPath": "Path copied",
         "copiedCitation": "Citation copied"
       },
