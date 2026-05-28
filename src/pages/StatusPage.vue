@@ -168,6 +168,18 @@ const loadParserRuntime = async () => {
   }
 };
 
+const officeNotice = computed(() => {
+  if (!parserRuntime.value || parserRuntime.value.office_available) {
+    return null;
+  }
+
+  return {
+    title: t("common.office.warningTitle"),
+    desc: t("common.office.warningDesc"),
+    hint: t("common.office.warningHint"),
+  };
+});
+
 const refreshDashboard = async () => {
   if (dashboardRefreshing.value) {
     return;
@@ -839,6 +851,26 @@ onBeforeUnmount(() => {
       </DocMindBadge>
     </header>
 
+    <div
+      v-if="officeNotice"
+      class="border-b border-amber-soft bg-amber-soft px-5 py-3"
+    >
+      <div class="mx-auto flex max-w-400 items-start gap-3">
+        <AlertCircle :size="16" class="mt-0.5 shrink-0 text-warning" />
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-warning">
+            {{ officeNotice.title }}
+          </div>
+          <div class="mt-1 text-xs leading-5 text-secondary">
+            {{ officeNotice.desc }}
+          </div>
+          <div class="mt-1 text-xs leading-5 text-dim">
+            {{ officeNotice.hint }}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <main class="flex min-h-0 flex-1 overflow-hidden p-5">
       <div class="mx-auto grid h-full min-h-0 w-full max-w-400 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
         <!-- 左侧：索引服务控制中心 -->
@@ -1110,6 +1142,26 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="mt-1 text-sm font-semibold">
                   {{ parserRuntime.timeout_ms }} ms
+                </div>
+              </div>
+              <div class="col-span-2 rounded-lg border border-default bg-[#f7f9fc] px-3 py-2">
+                <div class="text-[10px] uppercase tracking-wide text-dim">
+                  {{ t("common.office.runtimeLabel") }}
+                </div>
+                <div class="mt-1 text-sm font-semibold">
+                  {{
+                    parserRuntime.office_available
+                      ? t("common.office.runtimeAvailable", {
+                          bin: parserRuntime.office_bin || t("common.available"),
+                        })
+                      : t("common.office.runtimeUnavailable")
+                  }}
+                </div>
+                <div class="mt-1 text-xs leading-5 text-dim">
+                  {{ t("common.office.runtimePlatform", { platform: parserRuntime.office_platform || t("common.unknown") }) }}
+                </div>
+                <div v-if="!parserRuntime.office_available" class="mt-1 text-xs leading-5 text-warning">
+                  {{ parserRuntime.office_message || t("common.office.warningHint") }}
                 </div>
               </div>
             </div>

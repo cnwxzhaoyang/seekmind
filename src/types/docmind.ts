@@ -191,6 +191,11 @@ export interface ParserRuntimeView {
   python_bin: string;
   script_path: string;
   timeout_ms: number;
+  office_enabled: boolean;
+  office_available: boolean;
+  office_bin: string;
+  office_message: string;
+  office_platform: string;
 }
 
 export interface SearchDebugView {

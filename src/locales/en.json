@@ -28,6 +28,15 @@
     "available": "Available",
     "unavailable": "Unavailable",
     "virtualDir": "Virtual Directory",
+    "office": {
+      "warningTitle": "Office parsing is not ready",
+      "warningDesc": "No soffice / libreoffice was detected. `.doc`, `.ppt`, and `.pptx` will fall back to plain-text extraction, so image and table previews may be missing.",
+      "warningHint": "Install LibreOffice or set `DOCMIND_OFFICE_BIN` to the executable path. The same detection logic applies on Windows and macOS.",
+      "runtimeLabel": "Office Converter",
+      "runtimeAvailable": "Detected {bin}",
+      "runtimeUnavailable": "No soffice / libreoffice detected",
+      "runtimePlatform": "Platform: {platform}"
+    },
     "of": "·"
   },
 
@@ -109,11 +118,17 @@
         "quickDirs": "Quick Dirs",
         "debugExpand": "Show debug details",
         "debugCollapse": "Hide debug details",
+        "remove": "Remove",
         "noHistory": "No history",
         "noRecent": "No recent documents",
         "noFavorites": "No favorites",
         "noDirs": "No index directories",
-        "dirStats": "{docs} docs · {chunks} chunks"
+        "dirStats": "{docs} docs · {chunks} chunks",
+        "recentOpenTip": "{title} · {path}",
+        "favoriteTip": "{title} · {path}",
+        "historyRemoved": "Search history removed",
+        "recentRemoved": "Recent document removed",
+        "favoriteRemoved": "Favorite removed"
       },
       "detail": {
         "hitParagraph": "Matched Paragraph",

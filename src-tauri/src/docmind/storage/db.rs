@@ -716,6 +716,18 @@ impl Database {
             .collect())
     }
 
+    pub async fn remove_search_history(&self, query: &str) -> Result<(), sqlx::Error> {
+        if query.trim().is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM search_history WHERE query = ?")
+            .bind(query)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn derive_history_terms(
         &self,
         current_terms: &[String],
@@ -810,6 +822,18 @@ impl Database {
             .collect())
     }
 
+    pub async fn remove_recent_document(&self, path: &str) -> Result<(), sqlx::Error> {
+        if path.trim().is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM recent_documents WHERE path = ?")
+            .bind(path)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn list_favorites(&self, limit: i64) -> Result<Vec<FavoriteView>, sqlx::Error> {
         let rows = sqlx::query_as::<_, FavoriteRow>(
             r#"
@@ -834,6 +858,18 @@ impl Database {
                 updated_at: format_unix_ts(row.updated_at),
             })
             .collect())
+    }
+
+    pub async fn remove_favorite(&self, target: &str) -> Result<(), sqlx::Error> {
+        if target.trim().is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM favorites WHERE target = ?")
+            .bind(target)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn default_embedding_model_available(&self) -> Result<bool, sqlx::Error> {

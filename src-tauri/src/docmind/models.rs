@@ -217,6 +217,11 @@ pub struct ParserRuntimeView {
     pub python_bin: String,
     pub script_path: String,
     pub timeout_ms: u64,
+    pub office_enabled: bool,
+    pub office_available: bool,
+    pub office_bin: String,
+    pub office_message: String,
+    pub office_platform: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

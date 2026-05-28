@@ -345,3 +345,69 @@ pub fn python_parser_config_json() -> serde_json::Value {
             .unwrap_or(30_000),
     })
 }
+
+fn office_converter_path() -> Option<String> {
+    let mut candidates = vec![
+        std::env::var("DOCMIND_OFFICE_BIN").ok(),
+    ];
+
+    if cfg!(target_os = "windows") {
+        candidates.extend([
+            Some("soffice.exe".to_string()),
+            Some("libreoffice.exe".to_string()),
+            std::env::var("PROGRAMFILES")
+                .ok()
+                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
+            std::env::var("PROGRAMFILES(X86)")
+                .ok()
+                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
+        ]);
+    } else if cfg!(target_os = "macos") {
+        candidates.extend([
+            Some("soffice".to_string()),
+            Some("libreoffice".to_string()),
+            Some("/Applications/LibreOffice.app/Contents/MacOS/soffice".to_string()),
+            Some("/Applications/LibreOffice.app/Contents/MacOS/libreoffice".to_string()),
+        ]);
+    } else {
+        candidates.extend([
+            Some("soffice".to_string()),
+            Some("libreoffice".to_string()),
+        ]);
+    }
+
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| office_converter_works(candidate))
+}
+
+fn office_converter_works(candidate: &str) -> bool {
+    if candidate.trim().is_empty() {
+        return false;
+    }
+
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+pub fn office_converter_config_json() -> serde_json::Value {
+    let bin = office_converter_path().unwrap_or_default();
+    let available = !bin.is_empty();
+    let message = if available {
+        "ready"
+    } else {
+        "LibreOffice / soffice not found"
+    };
+
+    json!({
+        "enabled": true,
+        "available": available,
+        "bin": bin,
+        "message": message,
+        "platform": std::env::consts::OS,
+    })
+}

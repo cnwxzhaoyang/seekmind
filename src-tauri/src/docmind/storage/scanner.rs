@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chrono::{DateTime, Utc};
@@ -17,7 +17,7 @@ use super::types::{
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "txt", "md", "markdown", "html", "htm", "doc", "docx", "pdf", "log", "toml", "json", "yaml",
-    "yml", "xml", "csv", "rs", "js", "ts", "tsx", "jsx", "py",
+    "yml", "xml", "csv", "rs", "js", "ts", "tsx", "jsx", "py", "ppt", "pptx",
 ];
 
 const SKIPPED_DIRECTORIES: &[&str] = &[
@@ -185,7 +185,7 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
         "txt" | "md" | "markdown" | "log" | "toml" | "json" | "yaml" | "yml" | "xml" | "csv"
         | "rs" | "js" | "ts" | "tsx" | "jsx" | "py" => read_text_file(path)?,
         "html" | "htm" => strip_html_tags(&read_text_file(path)?),
-        "doc" => extract_doc_text_with_textutil(path)?,
+        "doc" | "ppt" | "pptx" => extract_office_text(path)?,
         "docx" => extract_docx_text(path)?,
         "pdf" => {
             return Err("暂不支持 PDF 解析，请启用 Python 解析器或接入 PDF 文本提取".to_string());
@@ -377,7 +377,157 @@ fn extract_doc_text_with_textutil(path: &Path) -> Result<String, String> {
     }
 
     let text = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
-    Ok(normalize_whitespace(&text))
+    let normalized = normalize_whitespace(&text);
+    let stderr = normalize_whitespace(&String::from_utf8_lossy(&output.stderr));
+    if looks_like_textutil_error_output(&stderr) {
+        return Err(format!("textutil returned an error for {}: {}", path.to_string_lossy(), stderr));
+    }
+    if looks_like_textutil_error_output(&normalized) {
+        return Err(format!(
+            "textutil returned an error for {}: {}",
+            path.to_string_lossy(),
+            normalized
+        ));
+    }
+    if normalized.is_empty() {
+        return Err(format!(
+            "textutil produced empty document text for {}{}",
+            path.to_string_lossy(),
+            if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            }
+        ));
+    }
+
+    Ok(normalized)
+}
+
+fn looks_like_textutil_error_output(text: &str) -> bool {
+    let lowered = text.to_lowercase();
+    lowered.starts_with("error reading ")
+        || lowered.contains("the file isn’t in the correct format")
+        || lowered.contains("the file isn't in the correct format")
+}
+
+fn office_converter_path() -> Option<String> {
+    let mut candidates = vec![std::env::var("DOCMIND_OFFICE_BIN").ok()];
+    if cfg!(target_os = "windows") {
+        candidates.extend([
+            Some("soffice.exe".to_string()),
+            Some("libreoffice.exe".to_string()),
+            std::env::var("PROGRAMFILES")
+                .ok()
+                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
+            std::env::var("PROGRAMFILES(X86)")
+                .ok()
+                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
+        ]);
+    } else if cfg!(target_os = "macos") {
+        candidates.extend([
+            Some("soffice".to_string()),
+            Some("libreoffice".to_string()),
+            Some("/Applications/LibreOffice.app/Contents/MacOS/soffice".to_string()),
+            Some("/Applications/LibreOffice.app/Contents/MacOS/libreoffice".to_string()),
+        ]);
+    } else {
+        candidates.extend([Some("soffice".to_string()), Some("libreoffice".to_string())]);
+    }
+
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| office_converter_works(candidate))
+}
+
+fn office_converter_works(candidate: &str) -> bool {
+    if candidate.trim().is_empty() {
+        return false;
+    }
+
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn office_conversion_output_dir(path: &Path) -> PathBuf {
+    let digest = Sha256::digest(path.to_string_lossy().as_bytes());
+    let key = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let dir = std::env::temp_dir().join("docmind-office-convert").join(key);
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+fn convert_office_document(path: &Path, target_ext: &str) -> Option<PathBuf> {
+    let converter = office_converter_path()?;
+    let output_dir = office_conversion_output_dir(path);
+    let stem = path.file_stem()?.to_string_lossy().to_string();
+    let target_ext = target_ext.trim_start_matches('.').to_lowercase();
+    let expected_output = output_dir.join(format!("{stem}.{target_ext}"));
+
+    if expected_output.exists() && expected_output.metadata().ok()?.len() > 0 {
+        return Some(expected_output);
+    }
+
+    let status = Command::new(converter)
+        .arg("--headless")
+        .arg("--nologo")
+        .arg("--nofirststartwizard")
+        .arg("--convert-to")
+        .arg(&target_ext)
+        .arg("--outdir")
+        .arg(&output_dir)
+        .arg(path)
+        .status()
+        .ok()?;
+
+    if !status.success() {
+        return None;
+    }
+
+    if expected_output.exists() && expected_output.metadata().ok()?.len() > 0 {
+        return Some(expected_output);
+    }
+
+    fs::read_dir(&output_dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|item| item.path()))
+        .find(|candidate| candidate.extension().and_then(|value| value.to_str()) == Some(target_ext.as_str()))
+}
+
+fn extract_office_text(path: &Path) -> Result<String, String> {
+    if let Some(converted_txt) = convert_office_document(path, "txt") {
+        let text = fs::read_to_string(&converted_txt).map_err(|error| error.to_string())?;
+        if !text.trim().is_empty() {
+            return Ok(normalize_whitespace(&text));
+        }
+    }
+
+    if let Some(converted_html) = convert_office_document(path, "html") {
+        let text = fs::read_to_string(&converted_html).map_err(|error| error.to_string())?;
+        if !text.trim().is_empty() {
+            return Ok(normalize_whitespace(&strip_html_tags(&text)));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return extract_doc_text_with_textutil(path);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(format!(
+            "failed to extract office text for {}",
+            path.to_string_lossy()
+        ))
+    }
 }
 
 fn extract_xml_text_nodes(xml: &str) -> String {

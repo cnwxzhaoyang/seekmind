@@ -52,17 +52,21 @@ const activeKey = computed(() => {
         v-for="item in items"
         :key="item.key"
         :to="item.to"
-        class="group flex w-full items-center rounded-md py-2 text-sm transition"
+        class="group relative flex w-full items-center rounded-md py-2 text-sm transition"
         :class="[
           sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3',
           activeKey === item.key
-            ? 'bg-surface-active !text-accent font-medium'
+            ? 'bg-accent-soft !text-accent-text font-medium ring-1 ring-inset ring-accent/35 shadow-sm shadow-accent/10 after:absolute after:bottom-1 after:left-1 after:top-1 after:w-1 after:rounded-full after:bg-accent'
             : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
         :title="sidebarCollapsed ? item.label : undefined"
         :aria-label="item.label"
       >
-        <component :is="item.icon" :size="17" />
+        <component
+          :is="item.icon"
+          :size="17"
+          :class="activeKey === item.key ? 'text-accent' : 'text-current'"
+        />
         <span v-if="!sidebarCollapsed">{{ item.label }}</span>
       </RouterLink>
     </nav>

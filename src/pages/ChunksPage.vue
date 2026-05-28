@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { Copy, Cpu, Eye, ExternalLink, FileText, FolderOpen, RefreshCw } from "lucide-vue-next";
+import { AlertCircle, Copy, Cpu, Eye, ExternalLink, FileText, FolderOpen, RefreshCw } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
@@ -214,6 +214,18 @@ const loadDirs = async () => {
 const loadParserRuntime = async () => {
   parserRuntime.value = await docmindApi.getParserRuntime();
 };
+
+const officeNotice = computed(() => {
+  if (!parserRuntime.value || parserRuntime.value.office_available) {
+    return null;
+  }
+
+  return {
+    title: t("common.office.warningTitle"),
+    desc: t("common.office.warningDesc"),
+    hint: t("common.office.warningHint"),
+  };
+});
 
 const loadDocuments = async () => {
   if (!selectedDirPath.value) {
@@ -634,6 +646,26 @@ watch(
         </DocMindBadge>
       </div>
     </header>
+
+    <div
+      v-if="officeNotice"
+      class="border-b border-amber-soft bg-amber-soft px-5 py-3"
+    >
+      <div class="flex items-start gap-3">
+        <AlertCircle :size="16" class="mt-0.5 shrink-0 text-warning" />
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-warning">
+            {{ officeNotice.title }}
+          </div>
+          <div class="mt-1 text-xs leading-5 text-secondary">
+            {{ officeNotice.desc }}
+          </div>
+          <div class="mt-1 text-xs leading-5 text-dim">
+            {{ officeNotice.hint }}
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div v-if="errorMessage" class="mb-4 rounded-2xl border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
       {{ errorMessage }}

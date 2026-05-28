@@ -28,6 +28,15 @@
     "available": "可用",
     "unavailable": "不可用",
     "virtualDir": "虚拟目录",
+    "office": {
+      "warningTitle": "Office 解析未就绪",
+      "warningDesc": "未检测到 soffice / libreoffice。`.doc`、`.ppt`、`.pptx` 将降级为纯文本提取，图片和表格预览可能缺失。",
+      "warningHint": "请安装 LibreOffice，或设置 `DOCMIND_OFFICE_BIN` 指向可执行文件。Windows 和 macOS 都会使用同一套探测逻辑。",
+      "runtimeLabel": "Office 转换器",
+      "runtimeAvailable": "已检测到 {bin}",
+      "runtimeUnavailable": "未检测到 soffice / libreoffice",
+      "runtimePlatform": "当前平台：{platform}"
+    },
     "of": "·"
   },
 
@@ -109,11 +118,17 @@
         "quickDirs": "常用目录",
         "debugExpand": "展开调试信息",
         "debugCollapse": "收起调试信息",
+        "remove": "移除",
         "noHistory": "暂无历史",
         "noRecent": "暂无最近文档",
         "noFavorites": "暂无收藏",
         "noDirs": "暂无索引目录",
-        "dirStats": "{docs} 文档 · {chunks} 段落"
+        "dirStats": "{docs} 文档 · {chunks} 段落",
+        "recentOpenTip": "{title} · {path}",
+        "favoriteTip": "{title} · {path}",
+        "historyRemoved": "已移除搜索历史",
+        "recentRemoved": "已移除最近打开",
+        "favoriteRemoved": "已移除收藏"
       },
       "detail": {
         "hitParagraph": "命中段落",

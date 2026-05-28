@@ -3,7 +3,7 @@
 use super::models::{
     ImportPathsView, ImportedPathView, IndexStatusView, SearchDebugReportEventView, SearchDebugView,
 };
-use super::parser::python_parser_config_json;
+use super::parser::{office_converter_config_json, python_parser_config_json};
 use super::search::{normalize_query, normalize_search_text};
 use super::storage::types::IndexSettings;
 use super::storage::{indexer, scanner, Database};
@@ -677,6 +677,7 @@ pub async fn get_index_status(
 #[tauri::command]
 pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, String> {
     let config = python_parser_config_json();
+    let office_config = office_converter_config_json();
     let enabled = config
         .get("enabled")
         .and_then(|value| value.as_bool())
@@ -710,6 +711,29 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
             .get("timeout_ms")
             .and_then(|value| value.as_u64())
             .unwrap_or(30_000),
+        office_enabled: office_config
+            .get("enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        office_available: office_config
+            .get("available")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        office_bin: office_config
+            .get("bin")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string(),
+        office_message: office_config
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string(),
+        office_platform: office_config
+            .get("platform")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string(),
     })
 }
 
@@ -739,6 +763,17 @@ pub async fn list_search_history(
 }
 
 #[tauri::command]
+pub async fn remove_search_history(
+    query: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .remove_search_history(&query)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn list_recent_documents(
     limit: usize,
     state: tauri::State<'_, Database>,
@@ -750,12 +785,34 @@ pub async fn list_recent_documents(
 }
 
 #[tauri::command]
+pub async fn remove_recent_document(
+    path: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .remove_recent_document(&path)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn list_favorites(
     limit: usize,
     state: tauri::State<'_, Database>,
 ) -> Result<Vec<super::models::FavoriteView>, String> {
     state
         .list_favorites(limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_favorite(
+    target: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .remove_favorite(&target)
         .await
         .map_err(|error| error.to_string())
 }

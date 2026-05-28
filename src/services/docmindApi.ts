@@ -51,10 +51,16 @@ export const docmindApi = {
     invoke<DocumentRefreshStartView>("refresh_document", { path, dirPath }),
   listSearchHistory: (limit = 12) =>
     invoke<SearchHistoryView[]>("list_search_history", { limit }),
+  removeSearchHistory: (query: string) =>
+    invoke<void>("remove_search_history", { query }),
   listRecentDocuments: (limit = 8) =>
     invoke<RecentDocumentView[]>("list_recent_documents", { limit }),
+  removeRecentDocument: (path: string) =>
+    invoke<void>("remove_recent_document", { path }),
   listFavorites: (limit = 12) =>
     invoke<FavoriteView[]>("list_favorites", { limit }),
+  removeFavorite: (target: string) =>
+    invoke<void>("remove_favorite", { target }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>

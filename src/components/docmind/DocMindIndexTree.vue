@@ -97,7 +97,7 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
       </div>
 
       <div class="flex shrink-0 items-center gap-2 text-[10px] text-muted">
-        <span v-if="row.isVirtual" class="rounded bg-badge px-1 py-[1px] text-[10px] text-accent-text">
+        <span v-if="row.isVirtual" class="rounded bg-badge px-1 py-px text-[10px] text-accent-text">
           {{ virtualLabel || "Virtual" }}
         </span>
         <slot name="meta" :row="row">

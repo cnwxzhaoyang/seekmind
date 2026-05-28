@@ -28,7 +28,7 @@ from .models import (
     ParserOptions,
 )
 
-SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "doc", "docx", "pdf"}
+SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "doc", "docx", "ppt", "pptx", "pdf"}
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
 EMBEDDING_DIMENSION_HINTS = {
     "BAAI/bge-small-zh-v1.5": 512,
@@ -43,6 +43,12 @@ DOCX_NAMESPACES = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
     "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+}
+
+PPTX_NAMESPACES = {
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
 
 
@@ -282,6 +288,145 @@ def docx_media_output_path(document_path: Path, source_name: str, fallback_ext: 
     return docx_media_cache_dir(document_path) / safe_name
 
 
+def pptx_media_cache_dir(document_path: Path) -> Path:
+    digest = hashlib.sha1(str(document_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    cache_dir = Path(tempfile.gettempdir()) / "docmind-pptx-media" / digest
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def pptx_media_output_path(document_path: Path, source_name: str, fallback_ext: str = "") -> Path:
+    base_name = Path(source_name).name or "image"
+    suffix = Path(base_name).suffix or fallback_ext
+    stem = Path(base_name).stem or "image"
+    digest = hashlib.sha1(source_name.encode("utf-8")).hexdigest()[:10]
+    safe_name = f"{stem}-{digest}{suffix}"
+    return pptx_media_cache_dir(document_path) / safe_name
+
+
+def store_pptx_media_bytes(document_path: Path, source_name: str, data: bytes) -> str:
+    output_path = pptx_media_output_path(document_path, source_name)
+    if not output_path.exists():
+        output_path.write_bytes(data)
+    return str(output_path)
+
+
+@lru_cache(maxsize=1)
+def office_converter_path() -> Optional[str]:
+    candidates: list[Optional[str]] = [os.environ.get("DOCMIND_OFFICE_BIN")]
+    if sys.platform.startswith("win"):
+        candidates.extend(
+            [
+                shutil.which("soffice.exe"),
+                shutil.which("libreoffice.exe"),
+                os.environ.get("PROGRAMFILES") and str(Path(os.environ["PROGRAMFILES"]) / "LibreOffice" / "program" / "soffice.exe"),
+                os.environ.get("PROGRAMFILES(X86)") and str(
+                    Path(os.environ["PROGRAMFILES(X86)"]) / "LibreOffice" / "program" / "soffice.exe"
+                ),
+            ]
+        )
+    elif sys.platform == "darwin":
+        candidates.extend(
+            [
+                shutil.which("soffice"),
+                shutil.which("libreoffice"),
+                "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+                "/Applications/LibreOffice.app/Contents/MacOS/libreoffice",
+            ]
+        )
+    else:
+        candidates.extend([shutil.which("soffice"), shutil.which("libreoffice")])
+
+    for candidate in candidates:
+        if candidate and office_converter_works(candidate):
+            return candidate
+    return None
+
+
+@lru_cache(maxsize=16)
+def office_converter_works(candidate: str) -> bool:
+    if not candidate.strip():
+        return False
+    try:
+        result = subprocess.run(
+            [candidate, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return result.returncode == 0
+
+
+def office_conversion_cache_dir(document_path: Path) -> Path:
+    try:
+        metadata = document_path.stat()
+        cache_key = f"{document_path.resolve()}::{metadata.st_mtime_ns}::{metadata.st_size}"
+    except Exception:  # noqa: BLE001
+        cache_key = str(document_path.resolve())
+    digest = hashlib.sha1(cache_key.encode("utf-8")).hexdigest()[:16]
+    cache_dir = Path(tempfile.gettempdir()) / "docmind-office-convert" / digest
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def office_conversion_output_path(document_path: Path, target_ext: str) -> Path:
+    stem = document_path.stem or "document"
+    suffix = f".{target_ext.lstrip('.').lower()}"
+    return office_conversion_cache_dir(document_path) / f"{stem}{suffix}"
+
+
+def convert_document_with_office(document_path: Path, target_ext: str) -> Optional[Path]:
+    converter = office_converter_path()
+    if not converter:
+        return None
+
+    target_ext = target_ext.lstrip(".").lower()
+    output_path = office_conversion_output_path(document_path, target_ext)
+    if output_path.exists() and output_path.stat().st_size > 0:
+        return output_path
+
+    try:
+        result = subprocess.run(
+            [
+                converter,
+                "--headless",
+                "--nologo",
+                "--nofirststartwizard",
+                "--convert-to",
+                target_ext,
+                "--outdir",
+                str(output_path.parent),
+                str(document_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    if output_path.exists() and output_path.stat().st_size > 0:
+        return output_path
+
+    candidates = sorted(
+        (path for path in output_path.parent.glob(f"*.{target_ext}") if path.is_file() and path.stat().st_size > 0),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
 def normalize_docx_media_target(target: str) -> str:
     cleaned = normalize_whitespace(target).replace("\\", "/")
     cleaned = cleaned.lstrip("/")
@@ -347,16 +492,7 @@ def is_docx_vector_image_source(source_name: str, content_type: Optional[str] = 
 
 
 def docx_vector_image_converter_path() -> Optional[str]:
-    candidates = [
-        shutil.which("soffice"),
-        shutil.which("libreoffice"),
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-        "/Applications/LibreOffice.app/Contents/MacOS/libreoffice",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return candidate
-    return None
+    return office_converter_path()
 
 
 
@@ -922,6 +1058,10 @@ def parse_document(
         title, blocks = parse_doc(path)
     elif ext == "docx":
         title, blocks = parse_docx(path)
+    elif ext == "pptx":
+        title, blocks = parse_pptx(path)
+    elif ext == "ppt":
+        title, blocks = parse_ppt(path, emit=emit, request_id=request_id)
     elif ext == "pdf":
         title, blocks = parse_pdf(path, emit=emit, request_id=request_id)
     else:
@@ -1444,9 +1584,46 @@ def parse_docx(path: Path) -> Tuple[Optional[str], List[Block]]:
 
 
 def parse_doc(path: Path) -> Tuple[Optional[str], List[Block]]:
+    converted_docx = convert_document_with_office(path, "docx")
+    if converted_docx is not None:
+        try:
+            title, blocks = parse_docx(converted_docx)
+            if blocks:
+                return title, blocks
+        except Exception:  # noqa: BLE001
+            pass
+
+    converted_html = convert_document_with_office(path, "html")
+    if converted_html is not None:
+        try:
+            title, blocks = parse_html(converted_html)
+            if blocks:
+                return title, blocks
+        except Exception:  # noqa: BLE001
+            pass
+
     text = extract_doc_text_with_textutil(path)
     blocks = [Block(kind="paragraph", text=paragraph) for paragraph in split_paragraphs(text)]
     return None, blocks
+
+
+def parse_ppt(path: Path, emit: Optional[ProgressEmitter] = None, request_id: str = "") -> Tuple[Optional[str], List[Block]]:
+    converted_pdf = convert_document_with_office(path, "pdf")
+    if converted_pdf is None:
+        raise parser_error(
+            "parse_failed",
+            "office conversion failed for ppt/pptx",
+            details=f"failed to convert {path} to pdf via LibreOffice",
+        )
+
+    try:
+        return parse_pdf(converted_pdf, emit=emit, request_id=request_id)
+    except Exception as exc:  # noqa: BLE001
+        raise parser_error(
+            "parse_failed",
+            "ppt/pptx pdf parsing failed",
+            details=str(exc),
+        ) from exc
 
 
 def parse_docx_with_python_docx(path: Path) -> Optional[Tuple[Optional[str], List[Block]]]:
@@ -1602,7 +1779,35 @@ def extract_doc_text_with_textutil(path: Path) -> str:
         message = result.stderr.strip() or result.stdout.strip() or str(path)
         raise parser_error("parse_failed", f"textutil failed: {message}")
 
-    return normalize_whitespace(result.stdout)
+    stderr_text = normalize_whitespace(result.stderr)
+    if stderr_text and looks_like_textutil_error_output(stderr_text):
+        raise parser_error(
+            "parse_failed",
+            "textutil returned an error instead of document text",
+            details=stderr_text,
+        )
+
+    text = normalize_whitespace(result.stdout)
+    if looks_like_textutil_error_output(text):
+        raise parser_error(
+            "parse_failed",
+            "textutil returned an error instead of document text",
+            details=text,
+        )
+    if not text:
+        details = stderr_text or f"textutil produced empty output for {path}"
+        raise parser_error(
+            "parse_failed",
+            "textutil produced empty document text",
+            details=details,
+        )
+
+    return text
+
+
+def looks_like_textutil_error_output(text: str) -> bool:
+    lowered = normalize_whitespace(text).lower()
+    return lowered.startswith("error reading ") or "the file isn’t in the correct format" in lowered or "the file isn't in the correct format" in lowered
 
 
 PDF_IMAGE_CACHE_ROOT = Path(tempfile.gettempdir()) / "docmind-pdf-media"
@@ -2459,6 +2664,311 @@ def extract_docx_table_rows(table: ElementTree.Element, ns: dict[str, str]) -> L
         if row_text and not looks_like_docx_xml_noise(row_text):
             rows.append(cells)
     return rows
+
+
+def normalize_pptx_target(target: str) -> str:
+    cleaned = normalize_whitespace(target).replace("\\", "/")
+    cleaned = cleaned.lstrip("/")
+    while cleaned.startswith("../"):
+        cleaned = cleaned[3:]
+    if cleaned.startswith("ppt/"):
+        return cleaned
+    if cleaned:
+        return f"ppt/{cleaned}"
+    return ""
+
+
+def load_pptx_relationship_targets(archive: zipfile.ZipFile, rel_path: str) -> dict[str, str]:
+    try:
+        rel_xml = archive.read(rel_path)
+    except KeyError:
+        return {}
+
+    try:
+        root = ElementTree.fromstring(rel_xml)
+    except Exception:  # noqa: BLE001
+        return {}
+
+    targets: dict[str, str] = {}
+    for rel in root:
+        if strip_ns(rel.tag) != "Relationship":
+            continue
+        rel_id = rel.attrib.get("Id", "").strip()
+        target = rel.attrib.get("Target", "").strip()
+        if not rel_id or not target:
+            continue
+        if rel.attrib.get("TargetMode", "").lower() == "external":
+            continue
+        targets[rel_id] = target
+    return targets
+
+
+def load_pptx_slide_paths(archive: zipfile.ZipFile) -> List[str]:
+    try:
+        presentation_xml = archive.read("ppt/presentation.xml")
+        presentation_root = ElementTree.fromstring(presentation_xml)
+    except Exception:  # noqa: BLE001
+        presentation_root = None
+
+    rel_targets = load_pptx_relationship_targets(archive, "ppt/_rels/presentation.xml.rels")
+    if presentation_root is not None:
+        slide_paths: List[str] = []
+        for slide_id in presentation_root.findall(".//p:sldId", PPTX_NAMESPACES):
+            rel_id = slide_id.attrib.get(f"{{{PPTX_NAMESPACES['r']}}}id", "").strip()
+            target = rel_targets.get(rel_id, "")
+            archive_path = normalize_pptx_target(target)
+            if archive_path:
+                slide_paths.append(archive_path)
+        if slide_paths:
+            return slide_paths
+
+    candidates = sorted(
+        (
+            Path(name)
+            for name in archive.namelist()
+            if name.startswith("ppt/slides/slide") and name.endswith(".xml") and "/_rels/" not in name
+        ),
+        key=lambda item: int(re.search(r"slide(\d+)\.xml$", item.name).group(1)) if re.search(r"slide(\d+)\.xml$", item.name) else 0,
+    )
+    return [str(path) for path in candidates]
+
+
+def pptx_shape_placeholder_type(shape: ElementTree.Element) -> str:
+    placeholder = shape.find("./p:nvSpPr/p:nvPr/p:ph", PPTX_NAMESPACES)
+    if placeholder is None:
+        return ""
+    return normalize_whitespace(placeholder.attrib.get("type", ""))
+
+
+def extract_pptx_text_paragraphs(container: ElementTree.Element) -> List[str]:
+    paragraphs: List[str] = []
+    for paragraph in container.findall(".//a:p", PPTX_NAMESPACES):
+        parts: List[str] = []
+        for node in paragraph.iter():
+            tag = strip_ns(node.tag)
+            if tag == "t":
+                parts.append(node.text or "")
+            elif tag == "tab":
+                parts.append("\t")
+            elif tag == "br":
+                parts.append("\n")
+        text = clean_docx_text("".join(parts))
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+
+def extract_pptx_table_rows(table: ElementTree.Element) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for row in table.findall("./a:tr", PPTX_NAMESPACES):
+        cells: List[str] = []
+        for cell in row.findall("./a:tc", PPTX_NAMESPACES):
+            text = " ".join(extract_pptx_text_paragraphs(cell))
+            text = normalize_whitespace(text)
+            text = clean_docx_text(text)
+            if text:
+                cells.append(text)
+        row_text = normalize_whitespace(" | ".join(cells))
+        if row_text:
+            rows.append(cells)
+    return rows
+
+
+def resolve_pptx_image_asset_path(
+    document_path: Path,
+    source_name: str,
+    data: bytes,
+    content_type: Optional[str] = None,
+) -> tuple[str, Optional[str]]:
+    stored_path = Path(store_pptx_media_bytes(document_path, source_name, data))
+    if is_docx_vector_image_source(source_name, content_type):
+        converted_path = try_convert_docx_vector_image_to_png(document_path, stored_path)
+        if converted_path is not None:
+            return str(converted_path), None
+        return str(stored_path), docx_vector_image_note(source_name, content_type)
+    return str(stored_path), None
+
+
+def build_pptx_image_block(
+    asset_path: str,
+    slide_index: int,
+    alt_text: Optional[str] = None,
+    caption: Optional[str] = None,
+    preview_note: Optional[str] = None,
+) -> Block:
+    label = normalize_whitespace(alt_text or caption or image_label_from_path(asset_path) or "image")
+    note = normalize_whitespace(preview_note or "")
+    final_caption = caption or (note if note else None)
+    return Block(
+        kind="image",
+        text=label,
+        heading=f"Slide {slide_index}",
+        page_no=slide_index,
+        section="body",
+        markdown=f"![{label}]({asset_path})",
+        html=build_img_html(asset_path, alt_text or label, final_caption or ""),
+        asset_path=asset_path or None,
+        alt_text=alt_text or None,
+        caption=final_caption,
+        ocr_text=note or None,
+    )
+
+
+def extract_pptx_slide_blocks(
+    archive: zipfile.ZipFile,
+    slide_path: str,
+    document_path: Path,
+    slide_index: int,
+) -> Tuple[Optional[str], List[Block]]:
+    blocks: List[Block] = []
+    title: Optional[str] = None
+    heading = f"Slide {slide_index}"
+    slide_rels = load_pptx_relationship_targets(archive, f"{Path(slide_path).parent}/_rels/{Path(slide_path).name}.rels")
+
+    try:
+        slide_xml = archive.read(slide_path)
+        root = ElementTree.fromstring(slide_xml)
+    except Exception:  # noqa: BLE001
+        return None, blocks
+
+    def emit_text_blocks(container: ElementTree.Element) -> None:
+        nonlocal title
+        placeholder_type = pptx_shape_placeholder_type(container)
+        paragraphs = extract_pptx_text_paragraphs(container)
+        if not paragraphs:
+            return
+
+        is_title_shape = placeholder_type in {"title", "ctrTitle", "titleTx"}
+        for index, paragraph_text in enumerate(paragraphs):
+            if is_title_shape and index == 0:
+                blocks.append(
+                    Block(
+                        kind="heading",
+                        text=paragraph_text,
+                        heading=heading,
+                        page_no=slide_index,
+                        section="body",
+                        level=1,
+                    )
+                )
+                title = paragraph_text
+                continue
+            blocks.append(
+                Block(
+                    kind="paragraph",
+                    text=paragraph_text,
+                    heading=heading,
+                    page_no=slide_index,
+                    section="body",
+                    markdown=paragraph_text,
+                )
+            )
+            if title is None:
+                title = paragraph_text
+
+    for child in root.findall("./p:cSld/p:spTree/*", PPTX_NAMESPACES):
+        tag = strip_ns(child.tag)
+        if tag == "nvGrpSpPr" or tag == "grpSpPr":
+            continue
+        if tag == "sp":
+            emit_text_blocks(child)
+            continue
+        if tag == "pic":
+            rel_id = ""
+            blip = child.find(".//a:blip", PPTX_NAMESPACES)
+            if blip is not None:
+                rel_id = blip.attrib.get(f"{{{PPTX_NAMESPACES['r']}}}embed") or blip.attrib.get(
+                    f"{{{PPTX_NAMESPACES['r']}}}link", ""
+                )
+            if not rel_id:
+                continue
+            target = slide_rels.get(rel_id, "")
+            archive_path = normalize_pptx_target(target)
+            if not archive_path:
+                continue
+            try:
+                data = archive.read(archive_path)
+            except KeyError:
+                continue
+            content_type = ""
+            image_path = Path(archive_path)
+            suffix = image_path.suffix.lower()
+            if suffix:
+                content_type = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".gif": "image/gif",
+                    ".bmp": "image/bmp",
+                    ".emf": "image/emf",
+                    ".wmf": "image/wmf",
+                    ".svg": "image/svg+xml",
+                }.get(suffix, "")
+            c_nv_pr = child.find("./p:nvPicPr/p:cNvPr", PPTX_NAMESPACES)
+            alt_text = normalize_whitespace(c_nv_pr.attrib.get("descr", "")) if c_nv_pr is not None else ""
+            caption = normalize_whitespace(c_nv_pr.attrib.get("name", "")) if c_nv_pr is not None else ""
+            asset_path, preview_note = resolve_pptx_image_asset_path(
+                document_path,
+                archive_path,
+                data,
+                content_type or None,
+            )
+            blocks.append(
+                build_pptx_image_block(
+                    asset_path,
+                    slide_index,
+                    alt_text=alt_text or None,
+                    caption=caption or None,
+                    preview_note=preview_note,
+                )
+            )
+            continue
+        if tag == "graphicFrame":
+            table = child.find(".//a:tbl", PPTX_NAMESPACES)
+            if table is None:
+                continue
+            rows = extract_pptx_table_rows(table)
+            if rows:
+                text, markdown, html_table = table_rows_to_formats(rows)
+                if text:
+                    blocks.append(
+                        Block(
+                            kind="table",
+                            text=text,
+                            heading=heading,
+                            page_no=slide_index,
+                            section="body",
+                            markdown=markdown,
+                            html=html_table,
+                        )
+                    )
+                    if title is None:
+                        title = text
+            continue
+        if tag in {"cxnSp", "grpSp"} and child.findall(".//a:t", PPTX_NAMESPACES):
+            emit_text_blocks(child)
+
+    return title, blocks
+
+
+def parse_pptx(path: Path) -> Tuple[Optional[str], List[Block]]:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            slide_paths = load_pptx_slide_paths(archive)
+            blocks: List[Block] = []
+            title: Optional[str] = None
+            for index, slide_path in enumerate(slide_paths, start=1):
+                slide_title, slide_blocks = extract_pptx_slide_blocks(archive, slide_path, path, index)
+                if title is None and slide_title:
+                    title = slide_title
+                blocks.extend(slide_blocks)
+    except Exception as exc:  # noqa: BLE001
+        raise parser_error("parse_failed", "pptx parsing failed", details=str(exc)) from exc
+
+    if not blocks:
+        raise parser_error("parse_failed", "pptx parsing produced no content", details=str(path))
+
+    return title or path.stem, blocks
 
 
 def table_rows_to_formats(rows: Sequence[Sequence[str]]) -> Tuple[str, str, str]:
