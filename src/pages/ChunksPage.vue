@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, Copy, Cpu, Eye, ExternalLink, FileText, FolderOpen, RefreshCw } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, RefreshCw, SquareArrowOutUpRight } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
@@ -49,6 +51,10 @@ const docFilter = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
 const refreshJobPaths = new Map<string, string>();
+
+const contextMenuDoc = ref<DocumentView | null>(null);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuVisible = ref(false);
 
 let unlistenRefreshProgress: null | (() => void) = null;
 
@@ -600,6 +606,51 @@ const refreshOutcomeTone = (path?: string) => {
   return "default" as const;
 };
 
+const chunkContextMenuItems = computed<ContextMenuItem[]>(() => {
+  const doc = contextMenuDoc.value;
+  if (!doc) return [];
+
+  const resliceLabel = refreshOutcomes.value[doc.path] === "failed"
+    ? t("page.chunks.btn.retrySlice")
+    : t("page.chunks.btn.reslice");
+
+  return [
+    {
+      key: "reslice",
+      label: resliceLabel,
+      icon: RefreshCw,
+      disabled: isDocRefreshBusy(doc.path),
+      handler: () => refreshDocument(doc),
+    },
+    { key: "divider-actions", label: "", divider: true },
+    {
+      key: "quickLook",
+      label: t("page.chunks.action.quickLook"),
+      icon: Eye,
+      handler: () => quickLookCurrentDocument(),
+    },
+    {
+      key: "openFile",
+      label: t("common.openFile"),
+      icon: SquareArrowOutUpRight,
+      handler: () => openCurrentDocument(),
+    },
+    {
+      key: "copyPath",
+      label: t("page.chunks.action.copyPath"),
+      icon: ClipboardCopy,
+      handler: () => copyCurrentDocumentPath(),
+    },
+  ];
+});
+
+const handleDocContextMenu = (doc: DocumentView, event: MouseEvent) => {
+  selectedDocPath.value = doc.path;
+  contextMenuDoc.value = doc;
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY };
+  contextMenuVisible.value = true;
+};
+
 onMounted(() => {
   void installRefreshProgressListener();
 });
@@ -748,6 +799,7 @@ watch(
                   role="button"
                   tabindex="0"
                   @click="selectDoc(doc.path)"
+                  @contextmenu.prevent="handleDocContextMenu(doc, $event)"
                 >
                   <div class="flex items-start gap-3">
                     <DocMindFileIcon :ext="doc.ext" />
@@ -778,14 +830,6 @@ watch(
                         {{ refreshOutcomeLabel(doc.path) }}
                       </div>
                     </div>
-                    <button
-                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-default bg-surface px-2 py-1 text-xs text-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
-                      :disabled="loadingDocs || isDocRefreshBusy(doc.path)"
-                      @click.stop="void refreshDocument(doc)"
-                    >
-                      <RefreshCw :size="13" :class="isDocRefreshing(doc.path) ? 'animate-spin' : ''" />
-                      {{ refreshStateLabel(doc.path) }}
-                    </button>
                   </div>
                 </div>
               </div>
@@ -842,40 +886,7 @@ watch(
                   <DocMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</DocMindBadge>
                   <DocMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</DocMindBadge>
                 </div>
-                <div class="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
-                    :disabled="!currentDocument"
-                    @click="quickLookCurrentDocument"
-                  >
-                    <Eye :size="14" />
-                    {{ t("page.chunks.action.quickLook") }}
-                  </button>
-                  <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
-                    :disabled="!currentDocument"
-                    @click="openCurrentDocument"
-                  >
-                    <ExternalLink :size="14" />
-                    {{ t("common.openFile") }}
-                  </button>
-                  <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
-                    :disabled="!currentDocument"
-                    @click="copyCurrentDocumentPath"
-                  >
-                    <Copy :size="14" />
-                    {{ t("page.chunks.action.copyPath") }}
-                  </button>
-                  <button
-                    class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
-                    :disabled="!currentDocument"
-                    @click="copyText(currentDocumentCitation, t('page.chunks.action.copiedCitation'))"
-                  >
-                    <FileText :size="14" />
-                    {{ t("page.chunks.action.copyCitation") }}
-                  </button>
-                </div>
+<!-- action buttons moved to context menu -->
                 <div
                   v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
                   class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
@@ -963,5 +974,12 @@ watch(
       </SplitPane>
     </main>
 
+    <DocMindContextMenu
+      v-if="contextMenuVisible"
+      :items="chunkContextMenuItems"
+      :x="contextMenuPosition.x"
+      :y="contextMenuPosition.y"
+      @close="contextMenuVisible = false"
+    />
   </div>
 </template>
