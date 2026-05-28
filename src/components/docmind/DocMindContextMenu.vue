@@ -76,9 +76,11 @@ onBeforeUnmount(() => {
         <div v-if="item.divider" class="my-1 border-t border-light" />
         <button
           v-else
-          class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition"
+          class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition focus-visible:outline-none"
           :class="[
-            item.danger ? 'text-danger hover:bg-danger-soft' : 'text-secondary hover:bg-surface-hover',
+            item.danger
+              ? 'text-danger hover:bg-danger-soft active:bg-danger-soft focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-danger-soft'
+              : 'text-secondary hover:bg-surface-hover active:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-soft',
             item.disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
           ]"
           :disabled="item.disabled"

@@ -2130,8 +2130,8 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
         progress("extract", f"正在解析 PDF，共 {total_pages} 页", 10, path.name, total_pages, 0)
         for page_index, page in enumerate(reader.pages, start=1):
             page_text = normalize_whitespace((page.extract_text() or "").replace("\x0c", "\n\n"))
-            pdf_debug_log(f"page={page_index} text_len={len(page_text)}")
-            if page_text:
+            pdf_debug_log(f"page={page_index} text_len={len(page_text)} meanningful={is_meaningful_text(page_text)}")
+            if page_text and is_meaningful_text(page_text):
                 page_paragraphs = split_paragraphs(page_text)
                 for paragraph in page_paragraphs:
                     if not paragraph:
@@ -2266,8 +2266,8 @@ def _extract_pdf_with_pdftotext(path: Path) -> Optional[Tuple[Optional[str], Lis
     if result.returncode != 0:
         return None
 
-    raw_text = result.stdout.replace("\r\n", "\n")
-    if not raw_text.strip():
+    raw_text = result.stdout.replace("\r\n", "\n").strip()
+    if not raw_text or not is_meaningful_text(raw_text):
         return None
 
     blocks: List[Block] = []
@@ -2277,6 +2277,8 @@ def _extract_pdf_with_pdftotext(path: Path) -> Optional[Tuple[Optional[str], Lis
         paragraphs = split_paragraphs(page_text.replace("\x0c", "\n\n"))
         for paragraph in paragraphs:
             if not paragraph:
+                continue
+            if not is_meaningful_text(paragraph):
                 continue
             if title is None:
                 title = detect_title_like_line(paragraph) or path.stem
@@ -3117,6 +3119,37 @@ def normalize_extension(ext: str) -> str:
 
 def normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def is_meaningful_text(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+
+    total = len(stripped)
+    alpha = sum(1 for c in stripped if c.isalpha())
+    cjk = sum(1 for c in stripped if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+    meaningful = alpha + cjk
+    if meaningful == 0:
+        return False
+
+    words = stripped.split()
+    if not words:
+        return False
+
+    avg_word_len = sum(len(w) for w in words) / len(words)
+    if avg_word_len > 25 and cjk == 0:
+        return False
+
+    meaningful_ratio = meaningful / total
+    if meaningful_ratio < 0.25:
+        return False
+
+    vowel_words = sum(1 for w in words if len(w) > 1 and any(v in w.lower() for v in "aeiou"))
+    if len(words) >= 3 and vowel_words / len(words) < 0.15 and cjk == 0:
+        return False
+
+    return True
 
 
 def strip_ns(tag: str) -> str:

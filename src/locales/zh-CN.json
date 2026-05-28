@@ -37,7 +37,8 @@
       "runtimeUnavailable": "未检测到 soffice / libreoffice",
       "runtimePlatform": "当前平台：{platform}"
     },
-    "of": "·"
+    "of": "·",
+    "delete": "删除"
   },
 
   "status": {
@@ -191,7 +192,9 @@
         "removeDir": "移除目录",
         "copiedPath": "已复制路径",
         "copiedCitation": "已复制引用",
-        "copyFailed": "复制失败"
+        "copyFailed": "复制失败",
+        "deleted": "已删除文档",
+        "deleteFailed": "删除文档失败"
       },
       "btn": {
         "refresh": "刷新",

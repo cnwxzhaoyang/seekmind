@@ -37,7 +37,8 @@
       "runtimeUnavailable": "No soffice / libreoffice detected",
       "runtimePlatform": "Platform: {platform}"
     },
-    "of": "·"
+    "of": "·",
+    "delete": "Delete"
   },
 
   "status": {
@@ -191,7 +192,9 @@
         "removeDir": "Remove Directory",
         "copiedPath": "Path copied",
         "copiedCitation": "Citation copied",
-        "copyFailed": "Copy failed"
+        "copyFailed": "Copy failed",
+        "deleted": "Document deleted",
+        "deleteFailed": "Delete document failed"
       },
       "btn": {
         "refresh": "Refresh",

@@ -77,6 +77,7 @@ pub fn run() {
             crate::docmind::commands::set_index_dir_enabled,
             crate::docmind::commands::save_index_settings,
             crate::docmind::commands::retry_failed_file,
+            crate::docmind::commands::delete_document,
             crate::docmind::commands::clear_all_indexes,
             crate::docmind::commands::pause_indexing,
             crate::docmind::commands::resume_indexing,

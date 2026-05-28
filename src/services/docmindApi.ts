@@ -103,4 +103,5 @@ export const docmindApi = {
   resumeIndexing: () => invoke<IndexStatusView>("resume_indexing"),
   openFile: (path: string) => invoke<void>("open_file", { path }),
   quickLookFile: (path: string) => invoke<void>("quick_look_file", { path }),
+  deleteDocument: (path: string) => invoke<void>("delete_document", { path }),
 };

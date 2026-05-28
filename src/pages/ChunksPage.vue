@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, RefreshCw, SquareArrowOutUpRight } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, RefreshCw, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -44,6 +44,7 @@ const refreshWarnings = ref<Record<string, string>>({});
 const refreshOutcomes = ref<Record<string, "python" | "rust" | "failed">>({});
 const refreshStates = ref<Record<string, "idle" | "queued" | "running" | "completed" | "failed">>({});
 const refreshActiveSources = ref<Record<string, "python" | "rust">>({});
+const refreshErrors = ref<Record<string, string>>({});
 const errorMessage = ref("");
 const actionMessage = ref("");
 const actionErrorMessage = ref("");
@@ -102,6 +103,9 @@ const clearRefreshResult = (path: string) => {
 
   const { [path]: _outcome, ...restOutcomes } = refreshOutcomes.value;
   refreshOutcomes.value = restOutcomes;
+
+  const { [path]: _error, ...restErrors } = refreshErrors.value;
+  refreshErrors.value = restErrors;
 };
 
 const clearActiveRefreshSource = (path: string) => {
@@ -454,10 +458,12 @@ const processRefreshQueue = async () => {
             ...refreshStates.value,
             [doc.path]: "failed",
           };
-          errorMessage.value = formatDocmindError(
+          const errorMsg = formatDocmindError(
             refreshResult.message,
             `${t("page.chunks.btn.reslice")}：${doc.file_name}`,
           );
+          errorMessage.value = errorMsg;
+          refreshErrors.value = { ...refreshErrors.value, [doc.path]: errorMsg };
         }
       } catch (error) {
         refreshStates.value = {
@@ -471,7 +477,9 @@ const processRefreshQueue = async () => {
         clearActiveRefreshSource(doc.path);
         const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
         refreshWarnings.value = rest;
-        errorMessage.value = formatDocmindError(error, `${t("page.chunks.btn.reslice")}：${doc.file_name}`);
+        const errorMsg = formatDocmindError(error, `${t("page.chunks.btn.reslice")}：${doc.file_name}`);
+        errorMessage.value = errorMsg;
+        refreshErrors.value = { ...refreshErrors.value, [doc.path]: errorMsg };
         console.error("[DocMind] refreshDocument failed", error);
       }
     }
@@ -641,6 +649,14 @@ const chunkContextMenuItems = computed<ContextMenuItem[]>(() => {
       icon: ClipboardCopy,
       handler: () => copyCurrentDocumentPath(),
     },
+    { key: "divider-delete", label: "", divider: true },
+    {
+      key: "delete",
+      label: t("common.delete"),
+      icon: Trash2,
+      danger: true,
+      handler: () => deleteCurrentDocument(),
+    },
   ];
 });
 
@@ -649,6 +665,24 @@ const handleDocContextMenu = (doc: DocumentView, event: MouseEvent) => {
   contextMenuDoc.value = doc;
   contextMenuPosition.value = { x: event.clientX, y: event.clientY };
   contextMenuVisible.value = true;
+};
+
+const deleteCurrentDocument = async () => {
+  const doc = contextMenuDoc.value;
+  if (!doc) return;
+
+  try {
+    await docmindApi.deleteDocument(doc.path);
+    refreshErrors.value = { ...refreshErrors.value, [doc.path]: "" };
+    if (selectedDocPath.value === doc.path) {
+      selectedDocPath.value = "";
+      chunks.value = [];
+    }
+    await loadDocuments();
+    setActionMessage(t("page.chunks.action.deleted"));
+  } catch (error) {
+    setActionError(formatDocmindError(error, t("page.chunks.action.deleteFailed")));
+  }
 };
 
 onMounted(() => {
@@ -828,6 +862,12 @@ watch(
                           : 'border border-amber-soft bg-amber-soft text-warning'"
                       >
                         {{ refreshOutcomeLabel(doc.path) }}
+                      </div>
+                      <div
+                        v-if="refreshErrors[doc.path]"
+                        class="mt-2 rounded-md border border-danger-soft bg-danger-soft px-2 py-1.5 text-[11px] leading-5 text-danger"
+                      >
+                        {{ refreshErrors[doc.path] }}
                       </div>
                     </div>
                   </div>

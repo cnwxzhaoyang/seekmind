@@ -108,7 +108,9 @@ const installListeners = async () => {
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: `${payload.file_name} · ${payload.parser_source.toUpperCase()}`,
+      details: payload.state === "failed"
+        ? `${payload.file_name} · ${payload.parser_source.toUpperCase()} · ${payload.message}`
+        : `${payload.file_name} · ${payload.parser_source.toUpperCase()}`,
       warning: payload.warning || undefined,
     });
   });

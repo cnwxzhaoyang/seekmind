@@ -1252,3 +1252,66 @@ pub async fn save_index_settings(
         .await
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+pub async fn delete_document(
+    path: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    let path = path.trim();
+
+    // First clean up tables that reference the document
+    sqlx::query(
+        r#"
+        DELETE FROM document_blocks
+        WHERE document_id IN (
+            SELECT id
+            FROM documents
+            WHERE path = ?
+        )
+        "#,
+    )
+    .bind(path)
+    .execute(state.pool())
+    .await
+    .map_err(|error| format!("清除文档块失败: {error}"))?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM chunks
+        WHERE document_id IN (
+            SELECT id
+            FROM documents
+            WHERE path = ?
+        )
+        "#,
+    )
+    .bind(path)
+    .execute(state.pool())
+    .await
+    .map_err(|error| format!("清除切片失败: {error}"))?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM failed_files
+        WHERE file = ?
+        "#,
+    )
+    .bind(path)
+    .execute(state.pool())
+    .await
+    .map_err(|error| format!("清除失败记录失败: {error}"))?;
+
+    state
+        .remove_recent_document(path)
+        .await
+        .map_err(|error| format!("清除最近文档失败: {error}"))?;
+
+    // Clean up search index, chunk_embeddings, and document record
+    state
+        .clear_document_by_path(path)
+        .await
+        .map_err(|error| format!("清除文档数据失败: {error}"))?;
+
+    Ok(())
+}
