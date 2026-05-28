@@ -1838,6 +1838,35 @@ def pdf_ocr_enabled() -> bool:
     return os.environ.get("DOCMIND_DISABLE_PDF_OCR", "").strip() != "1" and shutil.which("tesseract") is not None
 
 
+@lru_cache(maxsize=1)
+def tesseract_languages() -> set[str]:
+    try:
+        result = subprocess.run(
+            ["tesseract", "--list-langs"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        return set()
+
+    if result.returncode != 0:
+        return set()
+
+    langs: set[str] = set()
+    for line in result.stdout.splitlines():
+        cleaned = line.strip()
+        if not cleaned or cleaned.lower().startswith("list of available languages"):
+            continue
+        langs.add(cleaned)
+    return langs
+
+
+def contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= c <= "\u9fff" or "\u3400" <= c <= "\u4dbf" for c in text)
+
+
 
 def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
     if not pdf_ocr_enabled():
@@ -1865,7 +1894,15 @@ def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
 
     langs = os.environ.get("DOCMIND_TESSERACT_LANGS", "chi_sim+eng").strip() or "chi_sim+eng"
     candidates = [langs, "eng"] if langs != "eng" else ["eng"]
+    prefer_cjk = any(part.strip().startswith("chi") for part in langs.split("+"))
+    available_langs = tesseract_languages()
     for lang in candidates:
+        requested_parts = [part.strip() for part in lang.split("+") if part.strip()]
+        if requested_parts and not all(part in available_langs for part in requested_parts):
+            pdf_debug_log(
+                f"page={page_index} OCR language skipped: lang={lang} available={sorted(available_langs)}"
+            )
+            continue
         try:
             result = subprocess.run(
                 ["tesseract", str(render_path), "stdout", "-l", lang, "--psm", "6"],
@@ -1880,7 +1917,15 @@ def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
             pdf_debug_log(f"pdfimages failed page={page_index} code={result.returncode} stderr={normalize_whitespace(result.stderr)[:240]}")
             continue
         text = normalize_whitespace(result.stdout)
-        if text:
+        if not text:
+            continue
+        if looks_like_pdf_text_layer_noise(text):
+            pdf_debug_log(f"page={page_index} OCR output rejected as noise")
+            continue
+        if prefer_cjk and not contains_cjk(text):
+            pdf_debug_log(f"page={page_index} OCR output rejected: missing CJK characters")
+            continue
+        if is_meaningful_text(text):
             return text
     return None
 
@@ -2128,10 +2173,18 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
         total_pages = len(reader.pages)
         pdf_debug_log(f"pdf reader opened path={path.name} pages={total_pages}")
         progress("extract", f"正在解析 PDF，共 {total_pages} 页", 10, path.name, total_pages, 0)
+        ocr_pages = 0
+        text_pages = 0
+        skipped_pages = 0
         for page_index, page in enumerate(reader.pages, start=1):
             page_text = normalize_whitespace((page.extract_text() or "").replace("\x0c", "\n\n"))
-            pdf_debug_log(f"page={page_index} text_len={len(page_text)} meanningful={is_meaningful_text(page_text)}")
-            if page_text and is_meaningful_text(page_text):
+            meaningful = is_meaningful_text(page_text)
+            noisy_text_layer = looks_like_pdf_text_layer_noise(page_text)
+            pdf_debug_log(
+                f"page={page_index} text_len={len(page_text)} meaningful={meaningful} noisy={noisy_text_layer}"
+            )
+            if page_text and meaningful and not noisy_text_layer:
+                text_pages += 1
                 page_paragraphs = split_paragraphs(page_text)
                 for paragraph in page_paragraphs:
                     if not paragraph:
@@ -2147,6 +2200,20 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                         )
                     )
             else:
+                if not page_text:
+                    progress("extract", f"第 {page_index} 页无文本层（扫描件），尝试 OCR", 15, path.name, total_pages, page_index)
+                elif noisy_text_layer:
+                    progress(
+                        "extract",
+                        f"第 {page_index} 页文本层疑似乱码，改用 OCR",
+                        15,
+                        path.name,
+                        total_pages,
+                        page_index,
+                        warning="PDF 文本层疑似噪声",
+                    )
+                elif not meaningful:
+                    progress("extract", f"第 {page_index} 页文本为乱码（{len(page_text)} 字符），尝试 OCR", 15, path.name, total_pages, page_index, warning="pypdf 提取文本不可用")
                 if pdf_ocr_enabled():
                     progress(
                         "ocr",
@@ -2158,6 +2225,8 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                     )
                     ocr_text = ocr_pdf_page_text(path, page_index)
                     if ocr_text:
+                        ocr_pages += 1
+                        progress("ocr", f"第 {page_index} 页 OCR 识别成功", 25, path.name, total_pages, page_index)
                         if title is None:
                             title = detect_title_like_line(ocr_text) or path.stem
                         blocks.append(
@@ -2169,15 +2238,20 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                                 ocr_text="PDF OCR 识别结果",
                             )
                         )
+                    else:
+                        skipped_pages += 1
+                        progress("ocr", f"第 {page_index} 页 OCR 识别无结果", 20, path.name, total_pages, page_index, warning="OCR 返回空")
                 else:
+                    skipped_pages += 1
+                    ocr_reason = "tesseract 未安装" if shutil.which("tesseract") is None else "DOCMIND_DISABLE_PDF_OCR=1"
                     progress(
                         "ocr",
-                        f"第 {page_index} 页无文本，PDF OCR 未启用",
+                        f"第 {page_index} 页无文本，OCR 跳过（{ocr_reason}）",
                         min(60, 20 + int(page_index / max(total_pages, 1) * 30)),
                         path.name,
                         total_pages,
                         page_index,
-                        warning="PDF OCR 未启用或不可用",
+                        warning=f"PDF OCR 未启用（{ocr_reason}）",
                     )
 
             page_image_blocks = extract_pdf_image_blocks(path, title or path.stem, page_index)
@@ -2194,10 +2268,18 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
 
         if blocks:
             image_count = sum(1 for block in blocks if block.kind == "image")
-            pdf_debug_log(f"parse done path={path.name} blocks={len(blocks)} images={image_count}")
+            ocr_block_count = sum(1 for block in blocks if block.ocr_text)
+            pdf_debug_log(f"parse done path={path.name} blocks={len(blocks)} images={image_count} ocr_blocks={ocr_block_count}")
+            summary = f"共 {total_pages} 页：pypdf 文本 {text_pages} 页"
+            if ocr_pages:
+                summary += f"，OCR {ocr_pages} 页"
+            if skipped_pages:
+                summary += f"，跳过 {skipped_pages} 页"
+            if image_count:
+                summary += f"，图片 {image_count} 个"
+            progress("done", summary, 100, path.name, total_pages, total_pages)
             if image_count:
                 progress("image", f"已提取 {image_count} 个 PDF 图片", 85, path.name, image_count, image_count)
-            progress("done", f"PDF 解析完成：{path.name}", 100, path.name, total_pages, total_pages)
             return title or path.stem, blocks
     except Exception as exc:  # noqa: BLE001
         parse_error = exc
@@ -2267,7 +2349,7 @@ def _extract_pdf_with_pdftotext(path: Path) -> Optional[Tuple[Optional[str], Lis
         return None
 
     raw_text = result.stdout.replace("\r\n", "\n").strip()
-    if not raw_text or not is_meaningful_text(raw_text):
+    if not raw_text or not is_meaningful_text(raw_text) or looks_like_pdf_text_layer_noise(raw_text):
         return None
 
     blocks: List[Block] = []
@@ -3150,6 +3232,39 @@ def is_meaningful_text(text: str) -> bool:
         return False
 
     return True
+
+
+def looks_like_pdf_text_layer_noise(text: str) -> bool:
+    cleaned = normalize_whitespace(text)
+    if not cleaned:
+        return False
+
+    cjk = sum(1 for c in cleaned if "\u4e00" <= c <= "\u9fff" or "\u3400" <= c <= "\u4dbf")
+    if cjk > 0:
+        return False
+
+    tokens = [token for token in re.split(r"\s+", cleaned) if token]
+    if len(tokens) < 8:
+        return False
+
+    alpha_tokens = [token for token in tokens if re.search(r"[A-Za-z]", token)]
+    if not alpha_tokens:
+        return False
+
+    normalized_letters = [re.sub(r"[^A-Za-z]", "", token) for token in alpha_tokens]
+    pure_letters = [token for token in normalized_letters if token]
+    if not pure_letters:
+        return False
+
+    short_alpha_ratio = sum(1 for token in pure_letters if len(token) <= 4) / len(pure_letters)
+    uppercase_ratio = sum(1 for token in pure_letters if token.isupper() and len(token) >= 3) / len(pure_letters)
+    lowercase_ratio = sum(1 for token in pure_letters if token.islower() and len(token) >= 4) / len(pure_letters)
+    mixed_shape_ratio = sum(1 for token in alpha_tokens if not re.fullmatch(r"[A-Za-z]+", token)) / len(alpha_tokens)
+
+    if short_alpha_ratio >= 0.7 and uppercase_ratio >= 0.35 and lowercase_ratio <= 0.2 and mixed_shape_ratio >= 0.25:
+        return True
+
+    return False
 
 
 def strip_ns(tag: str) -> str:

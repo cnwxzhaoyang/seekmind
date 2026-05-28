@@ -180,6 +180,21 @@ const officeNotice = computed(() => {
   };
 });
 
+const chineseOcrNotice = computed(() => {
+  if (!parserRuntime.value?.chinese_ocr_warning) {
+    return null;
+  }
+
+  return {
+    title: t("common.ocr.warningTitle"),
+    desc: t("common.ocr.warningDesc"),
+    hint: t("common.ocr.warningHint"),
+    languages: parserRuntime.value.tesseract_languages.length
+      ? parserRuntime.value.tesseract_languages.join(", ")
+      : t("common.unknown"),
+  };
+});
+
 const refreshDashboard = async () => {
   if (dashboardRefreshing.value) {
     return;
@@ -1144,6 +1159,32 @@ onBeforeUnmount(() => {
                   {{ parserRuntime.timeout_ms }} ms
                 </div>
               </div>
+              <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
+                <div class="text-[10px] uppercase tracking-wide text-dim">
+                  {{ t("page.status.parser.systemLanguage") }}
+                </div>
+                <div class="mt-1 text-sm font-semibold">
+                  {{ parserRuntime.system_locale || t("common.unknown") }}
+                </div>
+                <div class="mt-1 text-xs text-dim">
+                  {{ t("page.status.parser.systemLanguageHint", { language: parserRuntime.system_language }) }}
+                </div>
+              </div>
+              <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
+                <div class="text-[10px] uppercase tracking-wide text-dim">
+                  {{ t("page.status.parser.ocrLanguages") }}
+                </div>
+                <div class="mt-1 text-sm font-semibold">
+                  {{
+                    parserRuntime.tesseract_languages.length
+                      ? parserRuntime.tesseract_languages.join(", ")
+                      : t("common.none")
+                  }}
+                </div>
+                <div class="mt-1 text-xs text-dim">
+                  {{ t("page.status.parser.ocrAvailability", { status: parserRuntime.chinese_ocr_available ? t("common.available") : t("common.unavailable") }) }}
+                </div>
+              </div>
               <div class="col-span-2 rounded-lg border border-default bg-[#f7f9fc] px-3 py-2">
                 <div class="text-[10px] uppercase tracking-wide text-dim">
                   {{ t("common.office.runtimeLabel") }}
@@ -1162,6 +1203,23 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="!parserRuntime.office_available" class="mt-1 text-xs leading-5 text-warning">
                   {{ parserRuntime.office_message || t("common.office.warningHint") }}
+                </div>
+              </div>
+              <div
+                v-if="chineseOcrNotice"
+                class="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+              >
+                <div class="text-[10px] uppercase tracking-wide text-amber-700">
+                  {{ chineseOcrNotice.title }}
+                </div>
+                <div class="mt-1 text-sm font-semibold text-amber-900">
+                  {{ chineseOcrNotice.desc }}
+                </div>
+                <div class="mt-1 text-xs leading-5 text-amber-800">
+                  {{ t("page.status.parser.ocrInstalled", { languages: chineseOcrNotice.languages }) }}
+                </div>
+                <div class="mt-1 text-xs leading-5 text-amber-700">
+                  {{ chineseOcrNotice.hint }}
                 </div>
               </div>
             </div>

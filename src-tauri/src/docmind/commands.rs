@@ -9,8 +9,11 @@ use super::storage::types::IndexSettings;
 use super::storage::{indexer, scanner, Database};
 use crate::docmind::semantic::store as semantic_store;
 use std::collections::HashSet;
+use std::env;
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tauri::Emitter;
 
 const VIRTUAL_IMPORT_DIR: &str = "virtual://临时导入";
@@ -678,6 +681,15 @@ pub async fn get_index_status(
 pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, String> {
     let config = python_parser_config_json();
     let office_config = office_converter_config_json();
+    let system_locale = detect_system_locale();
+    let system_language = detect_system_language(&system_locale);
+    let tesseract_languages = available_tesseract_languages();
+    let chinese_ocr_available = has_chinese_tesseract_language(&tesseract_languages);
+    let chinese_ocr_warning = if system_language == "zh" && !chinese_ocr_available {
+        Some("当前系统语言为中文，但未检测到中文 OCR 语言包（chi_sim / chi_tra）。扫描件中文识别可能失效，请安装 Tesseract 中文语言包。".to_string())
+    } else {
+        None
+    };
     let enabled = config
         .get("enabled")
         .and_then(|value| value.as_bool())
@@ -697,6 +709,11 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
         enabled,
         available,
         active,
+        system_locale,
+        system_language,
+        tesseract_languages,
+        chinese_ocr_available,
+        chinese_ocr_warning,
         python_bin: config
             .get("bin")
             .and_then(|value| value.as_str())
@@ -734,6 +751,98 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
             .and_then(|value| value.as_str())
             .unwrap_or("")
             .to_string(),
+    })
+}
+
+fn detect_system_locale() -> String {
+    for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(value) = env::var(key) {
+            let normalized = normalize_locale_value(&value);
+            if !normalized.is_empty() {
+                return normalized;
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = Command::new("defaults")
+            .args(["read", "-g", "AppleLanguages"])
+            .output()
+        {
+            if output.status.success() {
+                let raw = String::from_utf8_lossy(&output.stdout);
+                let normalized = normalize_locale_value(&raw);
+                if !normalized.is_empty() {
+                    return normalized;
+                }
+            }
+        }
+    }
+
+    String::new()
+}
+
+fn detect_system_language(locale: &str) -> String {
+    let lowered = locale.to_lowercase();
+    if lowered.starts_with("zh") || lowered.contains("chinese") {
+        "zh".to_string()
+    } else if lowered.is_empty() {
+        "unknown".to_string()
+    } else {
+        lowered
+    }
+}
+
+fn normalize_locale_value(value: &str) -> String {
+    let cleaned = value.trim().trim_matches(['"', '\'']);
+    if cleaned.is_empty() {
+        return String::new();
+    }
+
+    if cleaned.contains("zh") || cleaned.contains("Chinese") {
+        return cleaned.to_string();
+    }
+
+    cleaned
+        .split(|ch: char| matches!(ch, ',' | '[' | ']' | ' ' | '\n' | '\t'))
+        .find(|part| {
+            let part = part.trim_matches(['"', '\'']);
+            !part.is_empty()
+        })
+        .unwrap_or(cleaned)
+        .trim_matches(['"', '\''])
+        .to_string()
+}
+
+fn available_tesseract_languages() -> Vec<String> {
+    static CACHE: OnceLock<Vec<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let output = Command::new("tesseract").arg("--list-langs").output();
+            let Ok(output) = output else {
+                return Vec::new();
+            };
+            if !output.status.success() {
+                return Vec::new();
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            stdout
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .filter(|line| !line.to_lowercase().starts_with("list of available languages"))
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .clone()
+}
+
+fn has_chinese_tesseract_language(languages: &[String]) -> bool {
+    languages.iter().any(|lang| {
+        let lowered = lang.to_lowercase();
+        lowered == "chi_sim" || lowered == "chi_tra" || lowered.starts_with("chi_")
     })
 }
 

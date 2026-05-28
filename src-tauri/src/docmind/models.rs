@@ -214,6 +214,12 @@ pub struct ParserRuntimeView {
     pub enabled: bool,
     pub available: bool,
     pub active: String,
+    pub system_locale: String,
+    pub system_language: String,
+    pub tesseract_languages: Vec<String>,
+    pub chinese_ocr_available: bool,
+    #[serde(default)]
+    pub chinese_ocr_warning: Option<String>,
     pub python_bin: String,
     pub script_path: String,
     pub timeout_ms: u64,

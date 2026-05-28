@@ -188,6 +188,11 @@ export interface ParserRuntimeView {
   enabled: boolean;
   available: boolean;
   active: "python" | "rust";
+  system_locale: string;
+  system_language: string;
+  tesseract_languages: string[];
+  chinese_ocr_available: boolean;
+  chinese_ocr_warning?: string | null;
   python_bin: string;
   script_path: string;
   timeout_ms: number;

@@ -37,6 +37,12 @@
       "runtimeUnavailable": "No soffice / libreoffice detected",
       "runtimePlatform": "Platform: {platform}"
     },
+    "ocr": {
+      "warningTitle": "Chinese OCR language pack missing",
+      "warningDesc": "The system language is Chinese, but Tesseract Chinese language packs were not detected.",
+      "warningHint": "Install `chi_sim` or `chi_tra`, otherwise Chinese text in scanned PDFs may be recognized as garbage.",
+      "runtimeLabel": "OCR Languages"
+    },
     "of": "·",
     "delete": "Delete"
   },
@@ -330,6 +336,11 @@
         "available": "Python Available",
         "pythonBin": "Python Binary",
         "timeout": "Timeout",
+        "systemLanguage": "System Language",
+        "systemLanguageHint": "Locale tag: {language}",
+        "ocrLanguages": "OCR Languages",
+        "ocrAvailability": "Chinese OCR availability: {status}",
+        "ocrInstalled": "Detected: {languages}",
         "script": "Script: {path}"
       },
       "failed": {

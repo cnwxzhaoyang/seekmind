@@ -37,6 +37,12 @@
       "runtimeUnavailable": "未检测到 soffice / libreoffice",
       "runtimePlatform": "当前平台：{platform}"
     },
+    "ocr": {
+      "warningTitle": "中文 OCR 语言包缺失",
+      "warningDesc": "当前系统语言为中文，但未检测到 Tesseract 中文语言包。",
+      "warningHint": "请安装 `chi_sim` 或 `chi_tra`，否则扫描件中的中文可能会被识别成乱码。",
+      "runtimeLabel": "OCR 语言包"
+    },
     "of": "·",
     "delete": "删除"
   },
@@ -326,6 +332,11 @@
         "available": "Python 可用",
         "pythonBin": "Python Bin",
         "timeout": "超时",
+        "systemLanguage": "系统语言",
+        "systemLanguageHint": "语言标识：{language}",
+        "ocrLanguages": "OCR 语言包",
+        "ocrAvailability": "中文 OCR 可用性：{status}",
+        "ocrInstalled": "已检测到：{languages}",
         "script": "Script: {path}"
       },
       "failed": {
