@@ -47,6 +47,8 @@ const errorMessage = ref("");
 const actionMessage = ref("");
 const actionErrorMessage = ref("");
 const docFilter = ref("");
+const routeSyncReady = ref(false);
+const lastRoutePath = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
 const refreshJobPaths = new Map<string, string>();
@@ -261,6 +263,47 @@ const loadChunks = async () => {
     chunks.value = [];
   } finally {
     loadingChunks.value = false;
+  }
+};
+
+const getRouteTargetPath = () => (typeof route.query.path === "string" ? route.query.path : "");
+
+const syncSelection = async (forceReload = false) => {
+  errorMessage.value = "";
+
+  try {
+    const targetPath = getRouteTargetPath();
+    const routeChanged = targetPath !== lastRoutePath.value;
+    const targetDir = resolveDirFromPath(targetPath);
+    const fallbackDir = dirs.value.find((dir) => dir.enabled)?.path || dirs.value[0]?.path || "";
+    const nextDir = targetDir || fallbackDir;
+    const dirChanged = nextDir !== selectedDirPath.value;
+    const needsDocsReload = forceReload || dirChanged || documents.value.length === 0;
+
+    if (needsDocsReload) {
+      selectedDirPath.value = nextDir;
+      if (!selectedDirPath.value) {
+        documents.value = [];
+        selectedDocPath.value = "";
+        chunks.value = [];
+        return;
+      }
+
+      await loadDocuments();
+    }
+
+    const matchedDoc = documents.value.find((doc) => doc.path === targetPath);
+    const nextDocPath = matchedDoc?.path ?? documents.value[0]?.path ?? "";
+    selectedDocPath.value = nextDocPath;
+
+    if (routeChanged || forceReload || dirChanged || chunks.value.length === 0) {
+      await loadChunks();
+    }
+
+    lastRoutePath.value = targetPath;
+  } catch (error) {
+    errorMessage.value = formatDocmindError(error, t("page.chunks.title"));
+    console.error("[DocMind] chunks syncSelection failed", error);
   }
 };
 
@@ -495,38 +538,7 @@ const refreshDocument = async (doc: DocumentView) => {
   void processRefreshQueue();
 };
 
-const syncSelection = async () => {
-  loading.value = true;
-  errorMessage.value = "";
-
-  try {
-    await loadParserRuntime();
-    await loadDirs();
-    const routePath = resolveDirFromPath(route.query.path);
-    selectedDirPath.value =
-      routePath || dirs.value.find((dir) => dir.enabled)?.path || dirs.value[0]?.path || "";
-
-    await loadDocuments();
-
-    const targetPath = typeof route.query.path === "string" ? route.query.path : "";
-    const matchedDoc = documents.value.find((doc) => doc.path === targetPath);
-    selectedDocPath.value = matchedDoc?.path ?? documents.value[0]?.path ?? "";
-
-    await loadChunks();
-  } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.chunks.title"));
-    console.error("[DocMind] chunks syncSelection failed", error);
-  } finally {
-    loading.value = false;
-  }
-};
-
 const selectDoc = async (path: string) => {
-  selectedDocPath.value = path;
-  await loadChunks();
-  if (!refreshWarnings.value[path]) {
-    errorMessage.value = "";
-  }
   void router.replace({ query: { ...route.query, path } });
 };
 
@@ -658,6 +670,17 @@ const deleteCurrentDocument = async () => {
 };
 
 onMounted(() => {
+  loading.value = true;
+  void (async () => {
+    try {
+      await loadParserRuntime();
+      await loadDirs();
+      await syncSelection(true);
+      routeSyncReady.value = true;
+    } finally {
+      loading.value = false;
+    }
+  })();
   void installRefreshProgressListener();
 });
 
@@ -673,9 +696,12 @@ onBeforeUnmount(() => {
 watch(
   () => route.query.path,
   () => {
+    if (!routeSyncReady.value) {
+      return;
+    }
+
     void syncSelection();
   },
-  { immediate: true },
 );
 </script>
 

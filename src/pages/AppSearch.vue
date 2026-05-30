@@ -1,4 +1,8 @@
 <script setup lang="ts">
+defineOptions({
+  name: "AppSearchPage",
+});
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
