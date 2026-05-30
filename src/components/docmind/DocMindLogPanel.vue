@@ -4,7 +4,14 @@ import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { ChevronDown, ChevronUp, NotebookText, FileText, Database, Sparkles, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
-import type { DocumentRefreshProgressView, IndexRefreshProgressView, SemanticRebuildProgressView } from "../../types/docmind";
+import { docmindApi } from "../../services/docmindApi";
+import type {
+  DocumentRefreshProgressView,
+  IndexRefreshProgressView,
+  IndexSettingsView,
+  IndexStatusView,
+  SemanticRebuildProgressView,
+} from "../../types/docmind";
 
 const HEADER_H = 28;
 const DIVIDER_H = 3;
@@ -36,6 +43,8 @@ const panelHeight = ref(loadSavedHeight());
 const dragging = ref(false);
 const dragStartY = ref(0);
 const dragStartHeight = ref(0);
+const indexStatus = ref<IndexStatusView | null>(null);
+const indexSettings = ref<IndexSettingsView | null>(null);
 const maxEntries = 120;
 let unlistenIndex: null | (() => void) = null;
 let unlistenDocument: null | (() => void) = null;
@@ -82,11 +91,25 @@ const formatTime = (timestamp: string) => {
   return date.toLocaleTimeString([], { hour12: false });
 };
 
+const loadMetrics = async () => {
+  const [status, settings] = await Promise.all([
+    docmindApi.getIndexStatus(),
+    docmindApi.getIndexSettings(),
+  ]);
+  indexStatus.value = status;
+  indexSettings.value = settings;
+};
+
+const semanticWeightLabel = computed(() => Math.round((indexSettings.value?.semantic_weight ?? 0.25) * 100));
+const sqliteLabel = computed(() => `SQLite: ${indexStatus.value?.indexed_docs ?? 0}/${indexStatus.value?.scanned_docs ?? 0}`);
+const tantivyLabel = computed(() => `Tantivy: ${indexStatus.value?.indexed_chunks ?? 0}`);
+
 const installListeners = async () => {
   if (unlistenIndex || unlistenDocument || unlistenSemantic) return;
 
   unlistenIndex = await listen<IndexRefreshProgressView>("docmind:index-refresh-progress", (event) => {
     const payload = event.payload;
+    indexStatus.value = payload.status;
     const scope: LogScope = "index";
     const level: LogLevel = payload.state === "failed" ? "error" : payload.state === "completed" ? "success" : "info";
     pushLog({
@@ -169,7 +192,10 @@ const contentStyle = computed(() => {
   return { height: `calc(100% - ${HEADER_H + DIVIDER_H}px)` };
 });
 
-onMounted(() => { void installListeners(); });
+onMounted(() => {
+  void installListeners();
+  void loadMetrics();
+});
 
 onBeforeUnmount(() => {
   unlistenIndex?.();
@@ -202,15 +228,17 @@ onBeforeUnmount(() => {
         <div class="text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
         <div class="hidden text-[11px] text-dim sm:block">{{ t("logPanel.desc") }}</div>
       </div>
-      <div class="flex items-center gap-3 text-[11px] text-muted">
-        <span>{{ t("logPanel.events", { count: entries.length }) }}</span>
+      <div class="flex items-center gap-2 text-[11px] text-muted">
+        <DocMindBadge tone="success">{{ sqliteLabel }}</DocMindBadge>
+        <DocMindBadge tone="default">{{ tantivyLabel }}</DocMindBadge>
+        <DocMindBadge tone="default">{{ t("page.appSearch.semanticWeight", { weight: semanticWeightLabel }) }}</DocMindBadge>
+        <span class="ml-1">{{ t("logPanel.events", { count: entries.length }) }}</span>
         <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
       </div>
     </button>
 
       <div v-if="expanded" class="flex flex-col" :style="contentStyle">
-      <div class="flex items-center justify-between border-t border-light px-4 py-2 text-xs text-dim shrink-0">
-        <div>{{ t("logPanel.events", { count: entries.length }) }}</div>
+      <div class="flex items-center justify-end border-t border-light px-4 py-2 text-xs text-dim shrink-0">
         <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
           <Trash2 :size="13" /> {{ t("logPanel.clear") }}
         </button>

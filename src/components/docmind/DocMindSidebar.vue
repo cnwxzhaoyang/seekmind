@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { ChevronLeft, ChevronRight, Database, Layers3, Search, Settings } from "lucide-vue-next";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
+import { ChevronLeft, ChevronRight, Database, FileText, FolderOpen, History, Layers3, Search, Settings, Star, Trash2 } from "lucide-vue-next";
+import DocMindIndexTree from "./DocMindIndexTree.vue";
+import { useIndexDirTree } from "../../composables/useIndexDirTree";
+import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
+import { docmindApi } from "../../services/docmindApi";
 
 const { t } = useI18n();
 const route = useRoute();
+const router = useRouter();
 const { sidebarCollapsed, toggleSidebar } = useSidebarState();
+const { quickDirs, searchHistory, recentDocuments, favorites, loadQuickAccessData } = useQuickAccessData();
+const { visibleRows: visibleQuickDirRows, setExpanded: setQuickDirExpanded } = useIndexDirTree(quickDirs);
+const panelActionTarget = ref("");
 
 const items = computed(() => [
   { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
@@ -24,12 +32,78 @@ const activeKey = computed(() => {
   return "search";
 });
 
+const favoriteResults = computed(() => favorites.value.filter((favorite) => favorite.favorite_type === "result"));
+const selectedIndexDirPath = computed(() => {
+  if (route.path !== "/chunks") {
+    return "";
+  }
+
+  const targetPath = typeof route.query.path === "string" ? route.query.path : "";
+  const candidate = quickDirs.value
+    .map((dir) => dir.path)
+    .filter((dirPath) => targetPath.startsWith(dirPath))
+    .sort((a, b) => b.length - a.length)[0];
+
+  return candidate ?? "";
+});
+
+const openSearchQuery = async (query: string) => {
+  await router.push({ path: "/", query: { q: query } });
+};
+
+const openIndexDir = async (path: string) => {
+  await router.push({ path: "/chunks", query: { path } });
+};
+
+const openRecentDocument = async (path: string) => {
+  await docmindApi.openFile(path);
+  await loadQuickAccessData();
+};
+
+const openFavoriteDocument = async (path: string) => {
+  await docmindApi.openFile(path);
+  await loadQuickAccessData();
+};
+
+const removeSearchHistory = async (query: string) => {
+  panelActionTarget.value = `history:${query}`;
+  try {
+    await docmindApi.removeSearchHistory(query);
+    await loadQuickAccessData();
+  } finally {
+    panelActionTarget.value = "";
+  }
+};
+
+const removeRecentDocument = async (path: string) => {
+  panelActionTarget.value = `recent:${path}`;
+  try {
+    await docmindApi.removeRecentDocument(path);
+    await loadQuickAccessData();
+  } finally {
+    panelActionTarget.value = "";
+  }
+};
+
+const removeFavorite = async (target: string) => {
+  panelActionTarget.value = `favorite:${target}`;
+  try {
+    await docmindApi.removeFavorite(target);
+    await loadQuickAccessData();
+  } finally {
+    panelActionTarget.value = "";
+  }
+};
+
+onMounted(() => {
+  void loadQuickAccessData();
+});
 </script>
 
 <template>
   <aside
     class="flex h-full flex-col overflow-hidden border-r border-default bg-sidebar p-2 transition-[width] duration-200"
-    :class="sidebarCollapsed ? 'w-[68px]' : 'w-[200px]'"
+    :class="sidebarCollapsed ? 'w-[68px]' : 'w-[240px]'"
   >
     <div class="mb-4 flex items-center justify-between gap-2 px-2 py-2">
       <div class="flex h-6 w-6 items-center justify-center rounded bg-accent text-xs font-bold text-white shadow-card">dm</div>
@@ -71,10 +145,150 @@ const activeKey = computed(() => {
       </RouterLink>
     </nav>
 
-    <div v-if="!sidebarCollapsed" class="mt-auto rounded-lg border border-accent-soft bg-accent-soft p-3 text-[10px] leading-snug text-muted">
-      <div class="mb-1 font-semibold text-accent-text">{{ t("sidebar.localFirst") }}</div>
-      {{ t("sidebar.localFirstDesc") }}
+    <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden">
+      <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_auto] gap-3 overflow-hidden pr-1">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
+          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+            <History :size="13" />
+            {{ t("page.appSearch.section.recentSearch") }}
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
+              {{ t("page.appSearch.section.noHistory") }}
+            </div>
+            <div v-else class="space-y-1">
+              <div
+                v-for="item in searchHistory"
+                :key="item.query"
+                class="group flex items-center gap-1"
+              >
+                <button
+                  class="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
+                  :title="item.query"
+                  @click="openSearchQuery(item.query)"
+                >
+                  <div class="truncate text-[11px] font-medium leading-4 text-primary">{{ item.query }}</div>
+                  <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.last_hit_at }}</div>
+                </button>
+                <button
+                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
+                  :title="t('page.appSearch.section.remove')"
+                  :disabled="panelActionTarget === `history:${item.query}`"
+                  @click.stop="removeSearchHistory(item.query)"
+                >
+                  <Trash2 :size="13" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
+          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+            <FileText :size="13" />
+            {{ t("page.appSearch.section.recentOpen") }}
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
+              {{ t("page.appSearch.section.noRecent") }}
+            </div>
+            <div v-else class="space-y-1">
+              <div
+                v-for="item in recentDocuments"
+                :key="item.path"
+                class="group flex items-start gap-1"
+              >
+                <button
+                  class="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
+                  :title="t('page.appSearch.section.recentOpenTip', { title: item.title, path: item.path })"
+                  @click="openRecentDocument(item.path)"
+                >
+                  <div class="truncate text-[11px] font-medium leading-4 text-primary">{{ item.title }}</div>
+                  <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.path }}</div>
+                </button>
+                <button
+                  class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
+                  :title="t('page.appSearch.section.remove')"
+                  :disabled="panelActionTarget === `recent:${item.path}`"
+                  @click.stop="removeRecentDocument(item.path)"
+                >
+                  <Trash2 :size="13" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
+          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+            <Star :size="13" />
+            {{ t("page.appSearch.section.favorites") }}
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
+              {{ t("page.appSearch.section.noFavorites") }}
+            </div>
+            <div v-else class="space-y-1">
+              <div
+                v-for="item in favoriteResults"
+                :key="item.target"
+                class="group flex items-start gap-1"
+              >
+                <button
+                  class="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
+                  :title="t('page.appSearch.section.favoriteTip', { title: item.title, path: item.path })"
+                  @click="openFavoriteDocument(item.path)"
+                >
+                  <div class="truncate text-[11px] font-medium leading-4 text-primary">{{ item.title }}</div>
+                  <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.path }}</div>
+                </button>
+                <button
+                  class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
+                  :title="t('page.appSearch.section.remove')"
+                  :disabled="panelActionTarget === `favorite:${item.target}`"
+                  @click.stop="removeFavorite(item.target)"
+                >
+                  <Trash2 :size="13" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
+          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+            <FolderOpen :size="13" />
+            {{ t("sidebar.indexDirs") }}
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
+              {{ t("page.appSearch.section.noDirs") }}
+            </div>
+            <DocMindIndexTree
+              v-else
+              :rows="visibleQuickDirRows"
+              :selected-path="selectedIndexDirPath"
+              :selectable="true"
+              :path-tooltip="true"
+              :virtual-label="t('common.virtualDir')"
+              :expand-title="t('sidebar.expand')"
+              :collapse-title="t('sidebar.collapse')"
+              :node-padding-base="0"
+              :node-padding-step="12"
+              density="compact"
+              @node-select="openIndexDir"
+              @toggle="setQuickDirExpanded"
+            />
+          </div>
+        </section>
+
+        <div class="flex-none rounded-lg border border-accent-soft bg-accent-soft p-3 text-[10px] leading-snug text-muted">
+          <div class="mb-1 font-semibold text-accent-text">{{ t("sidebar.localFirst") }}</div>
+          {{ t("sidebar.localFirstDesc") }}
+        </div>
+      </div>
     </div>
+
     <div
       v-else
       class="mt-auto flex items-center justify-center rounded-lg border border-accent-soft bg-accent-soft p-2 text-accent-text"

@@ -73,6 +73,7 @@
     "library": "文档目录",
     "status": "索引状态",
     "settings": "设置",
+    "indexDirs": "索引目录",
     "expand": "展开侧栏",
     "collapse": "收起侧栏",
     "localFirst": "本地优先",

@@ -2,38 +2,32 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderOpen, History, Link2, Search, SquareArrowOutUpRight, Star, Trash2 } from "lucide-vue-next";
+import { useRoute, useRouter } from "vue-router";
+import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, Link2, Search, SquareArrowOutUpRight } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
-import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
-import { useIndexDirTree } from "../composables/useIndexDirTree";
-import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
 import SplitPane from "../components/SplitPane.vue";
+import { useQuickAccessData } from "../composables/useQuickAccessData";
 import { docmindApi } from "../services/docmindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
 const { t } = useI18n();
 import type {
   ChunkView,
-  FavoriteView,
-  IndexDirView,
-  IndexSettingsView,
-  IndexStatusView,
   ParserRuntimeView,
-  RecentDocumentView,
   SearchDebugReportEventView,
   SearchDebugView,
-  SearchHistoryView,
   SearchResultView,
 } from "../types/docmind";
 
+const route = useRoute();
 const router = useRouter();
-const query = ref("");
+const routeSearchQuery = computed(() => (typeof route.query.q === "string" ? route.query.q : ""));
+const query = ref(routeSearchQuery.value);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const selectedId = ref<string>("");
 const results = ref<SearchResultView[]>([]);
@@ -42,29 +36,19 @@ const showDebugPanel = ref(false);
 const debugReportLoading = ref(false);
 const debugReportError = ref("");
 const activeDebugRequestId = ref("");
-const status = ref<IndexStatusView | null>(null);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
-const indexSettings = ref<IndexSettingsView | null>(null);
-const quickDirs = ref<IndexDirView[]>([]);
-const searchHistory = ref<SearchHistoryView[]>([]);
-const recentDocuments = ref<RecentDocumentView[]>([]);
-const favorites = ref<FavoriteView[]>([]);
 const selectedChunkCount = ref<number | null>(null);
 const selectedDocumentChunks = ref<ChunkView[]>([]);
 const selectedChunkIndex = ref<number>(-1);
 const actionMessage = ref("");
 const actionErrorMessage = ref("");
-const panelActionTarget = ref("");
 const loading = ref(false);
 const errorMessage = ref("");
 const expandedGroups = ref<Record<string, boolean>>({});
+const routeSyncReady = ref(false);
 let selectedContextRequestId = 0;
 let unlistenSearchDebugReport: null | (() => void) = null;
-
-const {
-  visibleRows: visibleQuickDirRows,
-  setExpanded: setQuickDirExpanded,
-} = useIndexDirTree(quickDirs);
+const { favorites, loadQuickAccessData } = useQuickAccessData();
 
 interface SearchResultGroup {
   path: string;
@@ -176,7 +160,6 @@ const groupedResults = computed<SearchResultGroup[]>(() => {
 
 const splitPanels = computed(() => {
   const items: { key: string; initialSize?: number; minSize: number; flex?: boolean }[] = [
-    { key: "left", initialSize: 240, minSize: 160 },
     { key: "center", minSize: 300, flex: true },
   ];
   if (selected.value) {
@@ -212,10 +195,6 @@ const setActionMessage = (message: string) => {
 const setActionError = (message: string) => {
   actionMessage.value = "";
   actionErrorMessage.value = message;
-};
-
-const clearPanelActionTarget = () => {
-  panelActionTarget.value = "";
 };
 
 const copyText = async (text: string, successMessage: string) => {
@@ -274,10 +253,6 @@ const toggleGroup = (path: string) => {
   };
 };
 
-const loadStatus = async () => {
-  status.value = await docmindApi.getIndexStatus();
-};
-
 const loadParserRuntime = async () => {
   parserRuntime.value = await docmindApi.getParserRuntime();
 };
@@ -293,72 +268,6 @@ const officeNotice = computed(() => {
     hint: t("common.office.warningHint"),
   };
 });
-
-const loadIndexSettings = async () => {
-  indexSettings.value = await docmindApi.getIndexSettings();
-};
-
-const loadQuickPanels = async () => {
-  const [dirs, history, recent, favoriteList] = await Promise.all([
-    docmindApi.listIndexDirs(),
-    docmindApi.listSearchHistory(10),
-    docmindApi.listRecentDocuments(8),
-    docmindApi.listFavorites(12),
-  ]);
-
-  quickDirs.value = dirs.filter((dir) => dir.enabled);
-  searchHistory.value = history;
-  recentDocuments.value = recent;
-  favorites.value = favoriteList;
-};
-
-const removeSearchHistory = async (query: string) => {
-  panelActionTarget.value = `history:${query}`;
-  actionMessage.value = "";
-  actionErrorMessage.value = "";
-
-  try {
-    await docmindApi.removeSearchHistory(query);
-    await loadQuickPanels();
-    setActionMessage(t("page.appSearch.section.historyRemoved"));
-  } catch (error) {
-    setActionError(error instanceof Error ? error.message : t("page.appSearch.searchFailed"));
-  } finally {
-    clearPanelActionTarget();
-  }
-};
-
-const removeRecentDocument = async (path: string) => {
-  panelActionTarget.value = `recent:${path}`;
-  actionMessage.value = "";
-  actionErrorMessage.value = "";
-
-  try {
-    await docmindApi.removeRecentDocument(path);
-    await loadQuickPanels();
-    setActionMessage(t("page.appSearch.section.recentRemoved"));
-  } catch (error) {
-    setActionError(error instanceof Error ? error.message : t("page.appSearch.searchFailed"));
-  } finally {
-    clearPanelActionTarget();
-  }
-};
-
-const removeFavorite = async (target: string) => {
-  panelActionTarget.value = `favorite:${target}`;
-  actionMessage.value = "";
-  actionErrorMessage.value = "";
-
-  try {
-    await docmindApi.removeFavorite(target);
-    await loadQuickPanels();
-    setActionMessage(t("page.appSearch.section.favoriteRemoved"));
-  } catch (error) {
-    setActionError(error instanceof Error ? error.message : t("page.appSearch.searchFailed"));
-  } finally {
-    clearPanelActionTarget();
-  }
-};
 
 const createSearchDebugRequestId = () => {
   if (globalThis.crypto?.randomUUID) {
@@ -558,8 +467,7 @@ const runSearch = async () => {
     } else {
       clearSearchDebugReport();
     }
-    await loadQuickPanels();
-    await loadIndexSettings();
+    await loadQuickAccessData();
   } catch (error) {
     results.value = [];
     selectedId.value = "";
@@ -570,8 +478,7 @@ const runSearch = async () => {
     } else {
       clearSearchDebugReport();
     }
-    await loadQuickPanels();
-    await loadIndexSettings();
+    await loadQuickAccessData();
   } finally {
     loading.value = false;
   }
@@ -580,7 +487,7 @@ const runSearch = async () => {
 const openSelectedFile = async () => {
   if (!selected.value) return;
   await docmindApi.openFile(selected.value.path);
-  await loadQuickPanels();
+  await loadQuickAccessData();
 };
 
 const quickLookSelectedFile = async () => {
@@ -614,21 +521,6 @@ const viewChunks = async () => {
   await router.push({ path: "/chunks", query: { path: selected.value.path } });
 };
 
-const runQueryFromHistory = async (item: SearchHistoryView) => {
-  query.value = item.query;
-  await runSearch();
-};
-
-const openRecentDocument = async (item: RecentDocumentView) => {
-  await docmindApi.openFile(item.path);
-  await loadQuickPanels();
-};
-
-const openFavoriteDocument = async (path: string) => {
-  await docmindApi.openFile(path);
-  await loadQuickPanels();
-};
-
 const toggleFavoriteResult = async (item: SearchResultView) => {
   await docmindApi.toggleResultFavorite(
     item.path,
@@ -637,7 +529,7 @@ const toggleFavoriteResult = async (item: SearchResultView) => {
     item.page ?? null,
     item.fileName,
   );
-  await loadQuickPanels();
+  await loadQuickAccessData();
 };
 
 const isResultFavorited = (
@@ -650,28 +542,8 @@ const isResultFavorited = (
   return favoriteTargetSet.value.has(key);
 };
 
-const openLibrary = async () => {
-  await router.push({ path: "/status" });
-};
-
-const contextMenuRow = ref<VisibleIndexDirRow | null>(null);
-const contextMenuPosition = ref({ x: 0, y: 0 });
-const contextMenuVisible = ref(false);
 const resultMenuPosition = ref({ x: 0, y: 0 });
 const resultMenuVisible = ref(false);
-
-const contextMenuItems = computed<ContextMenuItem[]>(() => {
-  const row = contextMenuRow.value;
-  if (!row) return [];
-  return [
-    {
-      key: "openLibrary",
-      label: t("common.open"),
-      icon: FolderOpen,
-      handler: () => openLibrary(),
-    },
-  ];
-});
 
 const resultContextMenuItems = computed<ContextMenuItem[]>(() => {
   if (!selected.value) {
@@ -719,12 +591,6 @@ const resultContextMenuItems = computed<ContextMenuItem[]>(() => {
   ];
 });
 
-const handleTreeContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
-  contextMenuRow.value = row;
-  contextMenuPosition.value = { x: event.clientX, y: event.clientY };
-  contextMenuVisible.value = true;
-};
-
 const handleResultContextMenu = (event: MouseEvent) => {
   if (!selected.value) {
     return;
@@ -737,7 +603,8 @@ const handleResultContextMenu = (event: MouseEvent) => {
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
   await installSearchDebugReportListener();
-  await Promise.all([loadStatus(), loadParserRuntime(), loadIndexSettings(), loadQuickPanels()]);
+  await Promise.all([loadParserRuntime(), loadQuickAccessData()]);
+  query.value = routeSearchQuery.value;
   if (query.value.trim()) {
     await runSearch();
   } else {
@@ -746,6 +613,7 @@ onMounted(async () => {
     expandedGroups.value = {};
     clearSearchDebugReport();
   }
+  routeSyncReady.value = true;
 });
 
 onBeforeUnmount(() => {
@@ -764,6 +632,30 @@ watch(query, () => {
     selectedDocumentChunks.value = [];
     selectedChunkIndex.value = -1;
   }
+});
+
+watch(routeSearchQuery, async (next) => {
+  if (!routeSyncReady.value) {
+    return;
+  }
+
+  if (next === query.value) {
+    return;
+  }
+
+  query.value = next;
+  if (query.value.trim()) {
+    await runSearch();
+    return;
+  }
+
+  results.value = [];
+  selectedId.value = "";
+  expandedGroups.value = {};
+  clearSearchDebugReport();
+  selectedChunkCount.value = null;
+  selectedDocumentChunks.value = [];
+  selectedChunkIndex.value = -1;
 });
 
 watch(
@@ -798,166 +690,11 @@ watch(showDebugPanel, async (visible) => {
   <div class="flex h-full min-h-0 flex-col bg-page text-primary">
     <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
-        <template #left>
-          <aside class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
-            <div class="grid min-h-0 flex-1 grid-rows-[minmax(0,0.8fr)_minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
-              <section class="flex min-h-0 flex-col overflow-hidden">
-                <div class="flex items-center justify-between gap-3 border-b border-default px-2.5 py-2">
-                  <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
-                    <History :size="14" />
-                    {{ t("page.appSearch.section.recentSearch") }}
-                  </div>
-                </div>
-                <div class="min-h-0 flex-1 overflow-y-auto pr-1 pt-2">
-                  <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
-                    {{ t("page.appSearch.section.noHistory") }}
-                  </div>
-                  <div v-else class="space-y-1">
-                    <div
-                      v-for="item in searchHistory"
-                      :key="item.query"
-                      class="group flex items-center gap-1"
-                    >
-                      <button
-                        class="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
-                        :title="item.query"
-                        @click="runQueryFromHistory(item)"
-                      >
-                        <div class="truncate text-[11px] font-medium leading-4 text-primary">{{ item.query }}</div>
-                        <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.last_hit_at }}</div>
-                      </button>
-                      <button
-                        class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
-                        :title="t('page.appSearch.section.remove')"
-                        :disabled="panelActionTarget === `history:${item.query}`"
-                        @click.stop="removeSearchHistory(item.query)"
-                      >
-                        <Trash2 :size="13" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="flex min-h-0 flex-col overflow-hidden">
-                <div class="flex items-center justify-between gap-3 border-b border-default px-2.5 py-2">
-                  <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
-                    <FileText :size="14" />
-                    {{ t("page.appSearch.section.recentOpen") }}
-                  </div>
-                </div>
-                <div class="min-h-0 flex-1 overflow-y-auto pr-1 pt-2">
-                  <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
-                    {{ t("page.appSearch.section.noRecent") }}
-                  </div>
-                  <div v-else class="space-y-1">
-                    <div
-                      v-for="item in recentDocuments"
-                      :key="item.path"
-                      class="group flex items-start gap-1"
-                    >
-                      <button
-                        class="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
-                        :title="t('page.appSearch.section.recentOpenTip', { title: item.title, path: item.path })"
-                        @click="openRecentDocument(item)"
-                      >
-                        <div class="truncate text-[11px] font-medium leading-4 text-primary">{{ item.title }}</div>
-                        <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.path }}</div>
-                      </button>
-                      <button
-                        class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
-                        :title="t('page.appSearch.section.remove')"
-                        :disabled="panelActionTarget === `recent:${item.path}`"
-                        @click.stop="removeRecentDocument(item.path)"
-                      >
-                        <Trash2 :size="13" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="flex min-h-0 flex-col overflow-hidden">
-                <div class="flex items-center justify-between gap-3 border-b border-default px-2.5 py-2">
-                  <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
-                    <Star :size="14" />
-                    {{ t("page.appSearch.section.favorites") }}
-                  </div>
-                </div>
-                <div class="min-h-0 flex-1 overflow-y-auto pr-1 pt-2">
-                  <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
-                    {{ t("page.appSearch.section.noFavorites") }}
-                  </div>
-                  <div v-else class="space-y-1">
-                    <div
-                      v-for="item in favoriteResults"
-                      :key="item.target"
-                      class="group flex items-start gap-1"
-                    >
-                      <button
-                        class="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
-                        :title="t('page.appSearch.section.favoriteTip', { title: item.title, path: item.path })"
-                        @click="openFavoriteDocument(item.path)"
-                      >
-                        <div class="truncate text-[11px] font-medium leading-4 text-primary">{{ item.title }}</div>
-                        <div class="mt-0.5 truncate text-[10px] leading-4 text-muted">{{ item.path }}</div>
-                      </button>
-                      <button
-                        class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
-                        :title="t('page.appSearch.section.remove')"
-                        :disabled="panelActionTarget === `favorite:${item.target}`"
-                        @click.stop="removeFavorite(item.target)"
-                      >
-                        <Trash2 :size="13" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="flex min-h-0 flex-col overflow-hidden">
-                <div class="flex items-center justify-between gap-3 border-b border-default px-2.5 py-2">
-                  <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dim">
-                    <FolderOpen :size="14" />
-                    {{ t("page.appSearch.section.quickDirs") }}
-                  </div>
-                </div>
-                <div class="min-h-0 flex-1 overflow-y-auto pr-1 pt-2">
-                  <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
-                    {{ t("page.appSearch.section.noDirs") }}
-                  </div>
-                  <DocMindIndexTree
-                    v-else
-                    :rows="visibleQuickDirRows"
-                    :selectable="false"
-                    :path-tooltip="true"
-                    :virtual-label="t('common.virtualDir')"
-                    :expand-title="t('sidebar.expand')"
-                    :collapse-title="t('sidebar.collapse')"
-                    :node-padding-base="0"
-                    :node-padding-step="12"
-                    density="compact"
-                    @contextmenu="handleTreeContextMenu"
-                    @toggle="setQuickDirExpanded"
-                  />
-                </div>
-              </section>
-            </div>
-            <DocMindContextMenu
-              v-if="contextMenuVisible"
-              :items="contextMenuItems"
-              :x="contextMenuPosition.x"
-              :y="contextMenuPosition.y"
-              @close="contextMenuVisible = false"
-            />
-          </aside>
-        </template>
-
         <template #center>
           <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/70">
-            <div class="flex items-center justify-between gap-4 border-b border-default bg-surface px-4 py-3">
+            <div class="border-b border-default bg-surface px-4 py-3">
               <form
-                class="flex h-9 min-w-0 max-w-[760px] flex-1 items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
+                class="mx-auto flex h-9 w-full max-w-none items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
                 @submit.prevent="runSearch"
               >
                 <Search :size="15" class="shrink-0 text-muted" />
@@ -969,18 +706,6 @@ watch(showDebugPanel, async (visible) => {
                 />
                 <span class="hidden text-xs text-muted sm:inline">Cmd+K</span>
               </form>
-
-              <div class="hidden shrink-0 items-center gap-2 text-xs lg:flex">
-                <DocMindBadge tone="success">
-                  SQLite: {{ status?.indexed_docs ?? 0 }}/{{ status?.scanned_docs ?? 0 }}
-                </DocMindBadge>
-                <DocMindBadge tone="default">
-                  Tantivy: {{ status?.indexed_chunks ?? 0 }}
-                </DocMindBadge>
-                <DocMindBadge tone="default">
-                  {{ t("page.appSearch.semanticWeight", { weight: Math.round((indexSettings?.semantic_weight ?? 0.25) * 100) }) }}
-                </DocMindBadge>
-              </div>
             </div>
 
             <div

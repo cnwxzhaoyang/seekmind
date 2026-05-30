@@ -8,12 +8,10 @@ import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
-import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
 import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
 import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
-import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   ChunkView,
@@ -59,12 +57,6 @@ const contextMenuVisible = ref(false);
 
 let unlistenRefreshProgress: null | (() => void) = null;
 
-const {
-  visibleRows: visibleDirRows,
-  expandAncestors: expandDirAncestors,
-  setExpanded: setDirExpanded,
-} = useIndexDirTree(dirs);
-
 const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_explicit).length);
 
 const currentDocument = computed(
@@ -72,7 +64,6 @@ const currentDocument = computed(
 );
 
 const splitPanels = computed(() => [
-  { key: "left", initialSize: 240, minSize: 160 },
   { key: "center", minSize: 320, flex: true },
   { key: "right", minSize: 380, flex: true },
 ]);
@@ -515,8 +506,6 @@ const syncSelection = async () => {
     selectedDirPath.value =
       routePath || dirs.value.find((dir) => dir.enabled)?.path || dirs.value[0]?.path || "";
 
-    expandDirAncestors(selectedDirPath.value);
-
     await loadDocuments();
 
     const targetPath = typeof route.query.path === "string" ? route.query.path : "";
@@ -529,23 +518,6 @@ const syncSelection = async () => {
     console.error("[DocMind] chunks syncSelection failed", error);
   } finally {
     loading.value = false;
-  }
-};
-
-const selectDir = async (path: string) => {
-  selectedDirPath.value = path;
-  expandDirAncestors(path);
-  selectedDocPath.value = "";
-  chunks.value = [];
-  docFilter.value = "";
-  await loadDocuments();
-  selectedDocPath.value = documents.value[0]?.path ?? "";
-  await loadChunks();
-  if (selectedDocPath.value) {
-    void router.replace({ query: { ...route.query, path: selectedDocPath.value } });
-  } else {
-    const { path: _path, ...nextQuery } = route.query;
-    void router.replace({ query: nextQuery });
   }
 };
 
@@ -713,7 +685,6 @@ watch(
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.chunks.title") }}</h1>
-          <span class="rounded-md bg-surface-hover px-2 py-0.5 text-[10px] text-dim">{{ t("page.chunks.section.indexDirs") }}</span>
         </div>
         <p class="mt-0.5 text-xs text-dim">
           {{ t("page.chunks.subtitle") }}
@@ -756,42 +727,8 @@ watch(
       {{ errorMessage }}
     </div>
 
-    <main class="flex min-h-0 flex-1 overflow-hidden">
+  <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
-        <template #left>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
-            <div class="shrink-0 mb-3 flex items-center justify-between">
-              <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ t("page.chunks.section.indexDirs") }}</div>
-              <DocMindBadge tone="default">
-                <FolderOpen class="mr-1" :size="13" />
-                {{ explicitIndexDirCount }}
-              </DocMindBadge>
-            </div>
-
-            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-              <div v-if="loading && dirs.length === 0" class="text-sm text-dim">{{ t("page.chunks.empty.dirs") }}</div>
-
-              <div v-else-if="visibleDirRows.length === 0" class="rounded-md bg-panel px-4 py-6 text-sm text-dim">
-                {{ t("page.chunks.empty.dirs") }}
-              </div>
-
-          <DocMindIndexTree
-            v-else
-            :rows="visibleDirRows"
-            :selected-path="selectedDirPath"
-            :empty-text="t('page.chunks.empty.dirs')"
-            :path-tooltip="true"
-            :virtual-label="t('common.virtualDir')"
-            :expand-title="t('sidebar.expand')"
-            :collapse-title="t('sidebar.collapse')"
-            density="normal"
-            @node-select="selectDir"
-            @toggle="setDirExpanded"
-          />
-            </div>
-          </section>
-        </template>
-
         <template #center>
           <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/60 px-3 py-3">
             <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
