@@ -74,8 +74,14 @@ export const docmindApi = {
     invoke<QaSettingsView>("save_qa_settings", { settings }),
   cancelQaQuestion: (jobId: string) =>
     invoke<void>("cancel_qa_question", { jobId }),
-  askQuestion: (question: string, scopePaths: string[] = [], limit = 6, sessionId?: string) =>
-    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit, sessionId }),
+  askQuestion: (
+    question: string,
+    scopePaths: string[] = [],
+    limit = 6,
+    sessionId?: string,
+    recentQuestions: string[] = [],
+  ) =>
+    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit, sessionId, recentQuestions }),
   testQaConnection: (settings: QaSettingsView) =>
     invoke<QaConnectionTestView>("test_qa_connection", { settings }),
   listQaHistory: (limit = 12) =>
@@ -92,6 +98,8 @@ export const docmindApi = {
     invoke<void>("remove_qa_session", { sessionId }),
   updateQaSessionTitle: (sessionId: string, title: string) =>
     invoke<void>("update_qa_session_title", { sessionId, title }),
+  exportQaSessionMarkdown: (path: string, markdown: string) =>
+    invoke<string>("export_qa_session_markdown", { path, markdown }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>

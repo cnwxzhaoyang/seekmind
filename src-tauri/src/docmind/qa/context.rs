@@ -59,6 +59,35 @@ fn build_prompt_block(
     lines.join("\n")
 }
 
+fn source_term_overlap(source: &crate::docmind::models::SearchResultView, terms: &[String]) -> usize {
+    if terms.is_empty() {
+        return 0;
+    }
+
+    let title_haystack = format!("{} {} {}", source.file_name, source.title_path, source.heading).to_lowercase();
+    let body_haystack = format!(
+        "{} {} {} {} {}",
+        source.file_name, source.title_path, source.heading, source.path, source.snippet
+    )
+    .to_lowercase();
+
+    terms
+        .iter()
+        .map(|term| {
+            let term = term.trim().to_lowercase();
+            if term.len() < 2 {
+                0
+            } else if title_haystack.contains(&term) {
+                3
+            } else if body_haystack.contains(&term) {
+                1
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
 pub async fn build_qa_context(
     database: &Database,
     question: &str,
@@ -83,7 +112,16 @@ pub async fn build_qa_context(
     let semantic_enabled = debug.semantic_enabled;
     let semantic_fallback = debug.semantic_fallback;
     let semantic_fallback_reason = debug.semantic_fallback_reason;
-    let hits = debug.hits;
+    let mut hits = debug.hits;
+    if !session_terms.is_empty() {
+        hits.sort_by(|left, right| {
+            let right_overlap = source_term_overlap(right, session_terms);
+            let left_overlap = source_term_overlap(left, session_terms);
+            right_overlap
+                .cmp(&left_overlap)
+                .then_with(|| right.score.total_cmp(&left.score))
+        });
+    }
 
     let mut seen_chunk_ids = HashSet::<String>::new();
     let mut selected_hits = Vec::new();

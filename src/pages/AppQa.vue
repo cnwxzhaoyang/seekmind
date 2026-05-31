@@ -3,22 +3,27 @@ defineOptions({
   name: "AppQaPage",
 });
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import {
   Plus,
   X,
-  MessageSquareText,
   RefreshCw,
   ArrowUp,
+  ClipboardCopy,
+  FileDown,
+  Pencil,
   SlidersHorizontal,
   Trash2,
   ChevronDown,
   ChevronRight,
 } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
@@ -52,7 +57,13 @@ const qaErrorMessage = ref("");
 const qaInfoMessage = ref("");
 const qaActiveJobId = ref("");
 const expandedMessages = ref<Record<string, boolean>>({});
+const editingSessionId = ref("");
+const editingSessionTitle = ref("");
+const sessionMenuVisible = ref(false);
+const sessionMenuPosition = ref({ x: 0, y: 0 });
+const sessionMenuTarget = ref<QaSessionView | null>(null);
 const loading = ref(false);
+const qaQuestionInput = ref<HTMLTextAreaElement | null>(null);
 let unlistenQaProgress: null | (() => void) = null;
 
 const emptyMarkdownBlock: PreviewBlockView = {
@@ -65,6 +76,40 @@ const emptyMarkdownBlock: PreviewBlockView = {
   language: "",
   markdown: "",
   html: "",
+};
+
+const qaUiStateStorageKey = "docmind.qa.uiState";
+
+interface QaUiState {
+  sessionId: string;
+  answerId: string;
+  selectedSourceId: string;
+  expandedMessages: Record<string, boolean>;
+  sessionFilter: string;
+  question: string;
+}
+
+const loadSavedQaUiState = (): Partial<QaUiState> => {
+  try {
+    const raw = sessionStorage.getItem(qaUiStateStorageKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<QaUiState>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveQaUiState = () => {
+  const state: QaUiState = {
+    sessionId: qaSessionId.value,
+    answerId: qaAnswer.value?.id ?? "",
+    selectedSourceId: qaSelectedSourceId.value,
+    expandedMessages: expandedMessages.value,
+    sessionFilter: qaSessionFilter.value,
+    question: qaQuestion.value,
+  };
+  sessionStorage.setItem(qaUiStateStorageKey, JSON.stringify(state));
 };
 
 const currentSession = computed(
@@ -87,6 +132,55 @@ const filteredSessions = computed(() => {
     return haystack.includes(queryText);
   });
 });
+
+const sessionContextMenuItems = computed<ContextMenuItem[]>(() => [
+  {
+    key: "rename",
+    label: t("page.appQa.renameSession"),
+    icon: Pencil,
+    disabled: !sessionMenuTarget.value,
+    handler: () => {
+      if (sessionMenuTarget.value) {
+        renameSession(sessionMenuTarget.value);
+      }
+    },
+  },
+  {
+    key: "copyMarkdown",
+    label: t("page.appQa.copySession"),
+    icon: ClipboardCopy,
+    disabled: !sessionMenuTarget.value,
+    handler: () => {
+      if (sessionMenuTarget.value) {
+        void copySessionMarkdown(sessionMenuTarget.value);
+      }
+    },
+  },
+  {
+    key: "exportMarkdown",
+    label: t("page.appQa.exportSession"),
+    icon: FileDown,
+    disabled: !sessionMenuTarget.value,
+    handler: () => {
+      if (sessionMenuTarget.value) {
+        void exportSessionMarkdown(sessionMenuTarget.value);
+      }
+    },
+  },
+  { key: "divider-delete", label: "", divider: true },
+  {
+    key: "delete",
+    label: t("page.appQa.deleteSession"),
+    icon: Trash2,
+    danger: true,
+    disabled: !sessionMenuTarget.value,
+    handler: () => {
+      if (sessionMenuTarget.value) {
+        void deleteSession(sessionMenuTarget.value.id);
+      }
+    },
+  },
+]);
 
 const selectedSource = computed(() => {
   const message = qaAnswer.value;
@@ -152,7 +246,10 @@ const loadQaSettings = async () => {
   }
 };
 
-const setCurrentSession = async (sessionId: string) => {
+const setCurrentSession = async (
+  sessionId: string,
+  uiState: Partial<Pick<QaUiState, "answerId" | "selectedSourceId" | "expandedMessages">> = {},
+) => {
   qaSessionId.value = sessionId;
   qaSessionTitle.value = qaSessions.value.find((item) => item.id === sessionId)?.title ?? "";
 
@@ -167,10 +264,13 @@ const setCurrentSession = async (sessionId: string) => {
 
   const messages = await docmindApi.listQaMessages(sessionId, 100);
   qaMessages.value = messages;
-  qaAnswer.value = messages[messages.length - 1] ?? null;
-  qaSelectedSourceId.value = qaAnswer.value?.sources[0]?.source_id ?? "";
+  qaAnswer.value = messages.find((item) => item.id === uiState.answerId) ?? messages[messages.length - 1] ?? null;
+  qaSelectedSourceId.value =
+    qaAnswer.value?.sources.find((item) => item.source_id === uiState.selectedSourceId)?.source_id ??
+    qaAnswer.value?.sources[0]?.source_id ??
+    "";
   qaSessionTitle.value = qaSessions.value.find((item) => item.id === sessionId)?.title ?? qaSessionTitle.value;
-  expandedMessages.value = {};
+  expandedMessages.value = uiState.expandedMessages ?? {};
 };
 
 const syncRouteSession = async (sessionId: string) => {
@@ -210,16 +310,23 @@ const deleteSession = async (sessionId: string) => {
   const deletingCurrent = qaSessionId.value === sessionId;
   await docmindApi.removeQaSession(sessionId);
   if (deletingCurrent) {
-    await newSession();
+    resetCurrentSessionState();
+    await syncRouteSession("");
   }
-  await refreshSessions(deletingCurrent);
-  if (routeSessionId.value === sessionId) {
+  await refreshSessions(false);
+  if (!deletingCurrent && routeSessionId.value === sessionId) {
     await syncRouteSession("");
   }
 };
 
 const clearSessionFilter = () => {
   qaSessionFilter.value = "";
+};
+
+const openSessionContextMenu = (session: QaSessionView, event: MouseEvent) => {
+  sessionMenuTarget.value = session;
+  sessionMenuPosition.value = { x: event.clientX, y: event.clientY };
+  sessionMenuVisible.value = true;
 };
 
 const closeSelectedSource = () => {
@@ -243,13 +350,24 @@ const resetCurrentSessionState = () => {
 const loadInitialData = async () => {
   loading.value = true;
   try {
+    const savedUiState = loadSavedQaUiState();
+    qaSessionFilter.value = savedUiState.sessionFilter ?? qaSessionFilter.value;
+    qaQuestion.value = savedUiState.question ?? qaQuestion.value;
     await loadQaSettings();
-    await refreshSessions(true);
-    if (routeSessionId.value) {
-      const target = qaSessions.value.find((item) => item.id === routeSessionId.value);
+    await refreshSessions(false);
+    const initialSessionId = routeSessionId.value || savedUiState.sessionId || "";
+    if (initialSessionId) {
+      const target = qaSessions.value.find((item) => item.id === initialSessionId);
       if (target) {
-        await setCurrentSession(target.id);
+        await setCurrentSession(target.id, {
+          answerId: savedUiState.answerId,
+          selectedSourceId: savedUiState.selectedSourceId,
+          expandedMessages: savedUiState.expandedMessages,
+        });
       }
+    } else if (qaSessions.value[0]) {
+      await setCurrentSession(qaSessions.value[0].id);
+      await syncRouteSession(qaSessions.value[0].id);
     }
   } catch (error) {
     console.error("[DocMind] loadInitialData failed", error);
@@ -349,31 +467,44 @@ const newSession = async () => {
     return;
   }
 
-  const session = await docmindApi.createQaSession(sessionDraftTitle());
-  qaSessions.value = [session, ...qaSessions.value.filter((item) => item.id !== session.id)];
-  qaSessionId.value = session.id;
-  qaSessionTitle.value = session.title;
   qaSessionFilter.value = "";
   resetCurrentSessionState();
-  qaSessionId.value = session.id;
-  qaSessionTitle.value = session.title;
-  await syncRouteSession(session.id);
+  await syncRouteSession("");
+  await nextTick();
+  qaQuestionInput.value?.focus();
 };
 
 const renameSession = async (session: QaSessionView) => {
-  if (qaLoading.value || qaCancelling.value) {
+  editingSessionId.value = session.id;
+  editingSessionTitle.value = session.title;
+};
+
+const cancelRenameSession = () => {
+  editingSessionId.value = "";
+  editingSessionTitle.value = "";
+};
+
+const saveRenamedSession = async (session: QaSessionView) => {
+  if (editingSessionId.value !== session.id) {
     return;
   }
 
-  const nextTitle = window.prompt(t("page.appQa.renamePrompt"), session.title)?.trim();
+  const nextTitle = editingSessionTitle.value.trim();
+  cancelRenameSession();
   if (!nextTitle || nextTitle === session.title) {
     return;
   }
 
-  await docmindApi.updateQaSessionTitle(session.id, nextTitle);
-  await refreshSessions(true);
-  if (qaSessionId.value === session.id) {
-    qaSessionTitle.value = nextTitle;
+  try {
+    await docmindApi.updateQaSessionTitle(session.id, nextTitle);
+    qaSessions.value = qaSessions.value.map((item) =>
+      item.id === session.id ? { ...item, title: nextTitle } : item,
+    );
+    if (qaSessionId.value === session.id) {
+      qaSessionTitle.value = nextTitle;
+    }
+  } catch (error) {
+    qaErrorMessage.value = formatDocmindError(error, t("page.appQa.renameFailed"));
   }
 };
 
@@ -400,7 +531,11 @@ const runQa = async () => {
 
     const sessionId = await ensureSession(question);
     qaActiveSessionId.value = sessionId;
-    const started: QaAskStartView = await docmindApi.askQuestion(question, [], 6, sessionId);
+    const recentQuestions = qaMessages.value
+      .map((message) => message.question.trim())
+      .filter(Boolean)
+      .slice(-6);
+    const started: QaAskStartView = await docmindApi.askQuestion(question, [], 6, sessionId, recentQuestions);
     qaActiveJobId.value = started.job_id;
     const startedMessage: QaMessageView = {
       ...started.status,
@@ -504,16 +639,15 @@ const copySelectedQaCitation = async () => {
   await navigator.clipboard.writeText(selectedSourceCitation.value);
 };
 
-const buildSessionMarkdown = () => {
-  const title = qaSessionTitle.value || currentSession.value?.title || t("page.appQa.defaultSessionTitle");
+const buildSessionMarkdown = (title: string, messages: QaMessageView[]) => {
   const lines = [`# ${title}`, ""];
 
-  if (qaMessages.value.length === 0) {
+  if (messages.length === 0) {
     lines.push(t("page.appQa.noAnswer"));
     return lines.join("\n");
   }
 
-  qaMessages.value.forEach((message, index) => {
+  messages.forEach((message, index) => {
     lines.push(`## ${index + 1}. ${message.question}`);
     lines.push("");
     lines.push(message.answer || t("page.appQa.noAnswer"));
@@ -538,32 +672,53 @@ const buildSessionMarkdown = () => {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
 };
 
-const exportCurrentSession = async () => {
-  if (qaMessages.value.length === 0) {
-    return;
-  }
+const getSessionMarkdownPayload = async (session: QaSessionView | null = currentSession.value) => {
+  const title = session?.title || qaSessionTitle.value || t("page.appQa.defaultSessionTitle");
+  const messages =
+    session && session.id !== qaSessionId.value
+      ? await docmindApi.listQaMessages(session.id, 50)
+      : qaMessages.value;
 
-  const markdown = buildSessionMarkdown();
-  const title = qaSessionTitle.value || currentSession.value?.title || t("page.appQa.defaultSessionTitle");
-  const safeName = title.replace(/[\\/:*?"<>|]+/g, "-").trim() || "qa-session";
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  document.body.appendChild(link);
-  link.href = url;
-  link.download = `${safeName}.md`;
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  qaInfoMessage.value = t("page.appQa.exportedMarkdown");
+  return {
+    title,
+    messages,
+    markdown: buildSessionMarkdown(title, messages),
+  };
 };
 
-const copyCurrentSessionMarkdown = async () => {
-  if (qaMessages.value.length === 0) {
+const exportSessionMarkdown = async (session: QaSessionView | null = currentSession.value) => {
+  const { title, messages, markdown } = await getSessionMarkdownPayload(session);
+  if (messages.length === 0) {
     return;
   }
 
-  await navigator.clipboard.writeText(buildSessionMarkdown());
+  const safeName = title.replace(/[\\/:*?"<>|]+/g, "-").trim() || "qa-session";
+  qaErrorMessage.value = "";
+
+  try {
+    const targetPath = await save({
+      defaultPath: `${safeName}.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+
+    if (!targetPath) {
+      return;
+    }
+
+    const savedPath = await docmindApi.exportQaSessionMarkdown(targetPath, markdown);
+    qaInfoMessage.value = t("page.appQa.exportedMarkdown", { path: savedPath });
+  } catch (error) {
+    qaErrorMessage.value = formatDocmindError(error, t("page.appQa.exportFailed"));
+  }
+};
+
+const copySessionMarkdown = async (session: QaSessionView | null = currentSession.value) => {
+  const { messages, markdown } = await getSessionMarkdownPayload(session);
+  if (messages.length === 0) {
+    return;
+  }
+
+  await navigator.clipboard.writeText(markdown);
   qaInfoMessage.value = t("page.appQa.copiedMarkdown");
 };
 
@@ -578,6 +733,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  saveQaUiState();
   unlistenQaProgress?.();
   unlistenQaProgress = null;
 });
@@ -588,7 +744,17 @@ watch(qaMessages, () => {
   }
 });
 
+watch(
+  [qaSessionId, qaAnswer, qaSelectedSourceId, expandedMessages, qaSessionFilter, qaQuestion],
+  saveQaUiState,
+  { deep: true },
+);
+
 watch(routeSessionId, async (next, previous) => {
+  if (route.path !== "/qa") {
+    return;
+  }
+
   if (next === previous) {
     return;
   }
@@ -672,30 +838,32 @@ watch(routeSessionId, async (next, previous) => {
                 :key="session.id"
                 class="w-full rounded-lg border px-3 py-2 text-left transition"
                 :class="qaSessionId === session.id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
+                @contextmenu.prevent="openSessionContextMenu(session, $event)"
               >
                 <div class="flex items-start justify-between gap-2">
-                  <button class="min-w-0 flex-1 text-left" @click="selectSession(session)">
-                    <div class="truncate text-sm font-medium text-primary">{{ session.title }}</div>
+                  <div
+                    class="min-w-0 flex-1 text-left"
+                    role="button"
+                    tabindex="0"
+                    @click="editingSessionId !== session.id && selectSession(session)"
+                    @keydown.enter.prevent="editingSessionId !== session.id && selectSession(session)"
+                  >
+                    <input
+                      v-if="editingSessionId === session.id"
+                      v-model="editingSessionTitle"
+                      class="w-full rounded-md border border-accent bg-input px-2 py-1 text-sm font-medium text-primary outline-none"
+                      type="text"
+                      autofocus
+                      @click.stop
+                      @keydown.enter.prevent="saveRenamedSession(session)"
+                      @keydown.esc.prevent="cancelRenameSession"
+                      @blur="saveRenamedSession(session)"
+                    />
+                    <div v-else class="truncate text-sm font-medium text-primary">{{ session.title }}</div>
                     <div class="mt-1 flex items-center gap-2 text-[11px] text-muted">
                       <DocMindBadge tone="default">{{ t("page.appQa.messageCount", { count: session.message_count }) }}</DocMindBadge>
                       <span class="truncate">{{ session.updated_at }}</span>
                     </div>
-                  </button>
-                  <div class="flex shrink-0 items-center gap-1">
-                    <button
-                      class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary"
-                      :title="t('page.appQa.renameSession')"
-                      @click.stop="renameSession(session)"
-                    >
-                      <MessageSquareText :size="13" />
-                    </button>
-                    <button
-                      class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-danger"
-                      :title="t('page.appQa.deleteSession')"
-                      @click.stop="deleteSession(session.id)"
-                    >
-                      <Trash2 :size="13" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -706,31 +874,17 @@ watch(routeSessionId, async (next, previous) => {
 
       <template #center>
         <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-panel/70">
-          <div class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
+          <div
+            class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2"
+          >
             <div class="text-xs font-medium text-dim">
               {{ currentSession ? currentSession.title : t("page.appQa.currentSessionEmpty") }}
             </div>
-          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2">
               <DocMindBadge tone="default">{{ qaMessages.length }}</DocMindBadge>
               <DocMindBadge :tone="isQaConfigured(qaSettings) ? 'success' : 'default'">
                 {{ isQaConfigured(qaSettings) ? t("page.appQa.enabled") : t("page.appQa.disabled") }}
               </DocMindBadge>
-              <button
-                class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-                type="button"
-                :disabled="qaMessages.length === 0"
-                @click="exportCurrentSession"
-              >
-                {{ t("page.appQa.exportSession") }}
-              </button>
-              <button
-                class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-                type="button"
-                :disabled="qaMessages.length === 0"
-                @click="copyCurrentSessionMarkdown"
-              >
-                {{ t("page.appQa.copySession") }}
-              </button>
             </div>
           </div>
 
@@ -751,7 +905,6 @@ watch(routeSessionId, async (next, previous) => {
                 :class="[
                   'relative',
                   index < qaMessages.length - 1 ? 'pb-6' : '',
-                  qaAnswer?.id === message.id ? 'ring-1 ring-accent-soft' : '',
                 ]"
                 @click="selectMessage(message)"
               >
@@ -806,26 +959,43 @@ watch(routeSessionId, async (next, previous) => {
                         class="mt-4 rounded-xl border border-default bg-panel/40 p-3"
                       >
                         <div class="docmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
-                        <div class="mt-3 space-y-2">
-                          <button
-                            v-for="source in message.sources"
-                            :key="source.source_id"
-                            class="w-full rounded-lg border px-3 py-2.5 text-left transition"
-                            :class="qaSelectedSourceId === source.source_id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent hover:bg-surface-hover'"
-                            @click.stop="selectSource(source.source_id)"
-                          >
-                            <div class="flex items-start gap-3">
-                              <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
-                              <div class="min-w-0 flex-1">
-                                <div class="flex min-w-0 items-center gap-2">
-                                  <span class="truncate text-sm font-medium text-primary">{{ source.file_name }}</span>
-                                  <DocMindBadge tone="default">{{ Math.round(source.score * 100) }}%</DocMindBadge>
-                                </div>
-                                <div class="mt-1 truncate text-xs text-muted">{{ source.title_path || source.heading || source.path }}</div>
-                                <div class="mt-1 truncate text-[11px] text-dim">{{ source.rank_reason }}</div>
-                              </div>
-                            </div>
-                          </button>
+                        <div class="mt-3 overflow-x-auto rounded-lg border border-default bg-surface">
+                          <table class="w-full min-w-[720px] table-fixed text-left text-xs">
+                            <thead class="border-b border-default bg-panel/70 text-[11px] uppercase tracking-wide text-muted">
+                              <tr>
+                                <th class="w-16 px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnId") }}</th>
+                                <th class="w-[28%] px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnFile") }}</th>
+                                <th class="px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnLocation") }}</th>
+                                <th class="w-24 px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnScore") }}</th>
+                                <th class="w-[22%] px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnReason") }}</th>
+                              </tr>
+                            </thead>
+                            <tbody class="divide-y divide-light">
+                              <tr
+                                v-for="source in message.sources"
+                                :key="source.source_id"
+                                class="cursor-pointer transition"
+                                :class="qaSelectedSourceId === source.source_id ? 'bg-accent-soft' : 'hover:bg-surface-hover'"
+                                @click.stop="selectSource(source.source_id)"
+                              >
+                                <td class="px-3 py-2 align-top">
+                                  <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
+                                </td>
+                                <td class="truncate px-3 py-2 align-top font-medium text-primary">
+                                  {{ source.file_name }}
+                                </td>
+                                <td class="truncate px-3 py-2 align-top text-secondary">
+                                  {{ source.title_path || source.heading || source.path }}
+                                </td>
+                                <td class="px-3 py-2 align-top text-secondary">
+                                  {{ Math.round(source.score * 100) }}%
+                                </td>
+                                <td class="truncate px-3 py-2 align-top text-dim">
+                                  {{ source.rank_reason }}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
@@ -841,6 +1011,7 @@ watch(routeSessionId, async (next, previous) => {
           <div class="px-4 py-3">
             <div class="rounded-2xl border border-default bg-input px-3 py-2 shadow-sm">
               <textarea
+                ref="qaQuestionInput"
                 v-model="qaQuestion"
                 rows="2"
                 class="min-h-[44px] w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 text-primary outline-none placeholder:text-muted"
@@ -898,15 +1069,17 @@ watch(routeSessionId, async (next, previous) => {
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-            <div class="rounded-lg border border-default bg-surface p-4">
-              <div class="docmind-section-label">{{ t("page.appQa.sourceMeta") }}</div>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <DocMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</DocMindBadge>
-                <DocMindBadge tone="default">
-                  {{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}
-                </DocMindBadge>
+            <div class="rounded-lg border border-default bg-surface px-3 py-2.5">
+              <div class="flex items-center justify-between gap-3">
+                <div class="docmind-section-label">{{ t("page.appQa.sourceMeta") }}</div>
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <DocMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</DocMindBadge>
+                  <DocMindBadge tone="default">
+                    {{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}
+                  </DocMindBadge>
+                </div>
               </div>
-              <div class="mt-3 rounded-md bg-panel/70 px-3 py-2 text-xs leading-6 text-secondary">
+              <div class="mt-2 truncate rounded-md bg-panel/70 px-2.5 py-1.5 text-xs leading-5 text-secondary" :title="selectedSourceCitation">
                 {{ selectedSourceCitation || t("common.none") }}
               </div>
             </div>
@@ -943,5 +1116,12 @@ watch(routeSessionId, async (next, previous) => {
         </aside>
       </template>
     </SplitPane>
+    <DocMindContextMenu
+      v-if="sessionMenuVisible"
+      :items="sessionContextMenuItems"
+      :x="sessionMenuPosition.x"
+      :y="sessionMenuPosition.y"
+      @close="sessionMenuVisible = false"
+    />
   </section>
 </template>

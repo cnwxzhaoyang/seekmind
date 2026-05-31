@@ -11,7 +11,10 @@ use super::client::{ask_model, ask_model_stream};
 use super::context::build_qa_context;
 use super::models::QaContext;
 use futures_util::future::{AbortHandle, Abortable};
-use std::sync::{Arc, Mutex};
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+};
 use tauri::Emitter;
 
 fn qa_settings_to_view(settings: &QaSettings) -> QaSettingsView {
@@ -55,7 +58,8 @@ fn build_system_prompt(context: &QaContext, session_context: Option<&str>) -> St
         "输出要求：\n\
 1. 只输出最终答案正文，不要输出 JSON。\n\
 2. 不要列出你没有使用的来源。\n\
-3. 如果无法回答，直接说明证据不足，并说明建议补充哪些文档类型或关键词。\n",
+3. 如果当前问题包含“这两者”“二者”“它们”“关系”等指代，必须先依据最近对话确定指代对象；不要把新检索到但不属于这些对象的来源当作比较对象。\n\
+4. 如果无法回答，直接说明证据不足，并说明建议补充哪些文档类型或关键词。\n",
     );
 
     prompt
@@ -67,6 +71,18 @@ fn truncate_prompt_text(text: &str, max_chars: usize) -> String {
 
 fn build_session_context(messages: &[QaMessageView]) -> String {
     let mut lines = Vec::new();
+    let recent_questions = messages
+        .iter()
+        .rev()
+        .take(3)
+        .rev()
+        .map(|message| truncate_prompt_text(message.question.trim(), 80))
+        .filter(|question| !question.is_empty())
+        .collect::<Vec<_>>();
+    if !recent_questions.is_empty() {
+        lines.push(format!("最近用户问题: {}", recent_questions.join(" -> ")));
+    }
+
     for message in messages.iter().rev().take(3).rev() {
         let question = truncate_prompt_text(message.question.trim(), 80);
         let answer = truncate_prompt_text(message.answer.trim(), 140);
@@ -81,6 +97,20 @@ fn build_session_context(messages: &[QaMessageView]) -> String {
     }
 
     lines.join("\n")
+}
+
+fn push_unique_term(
+    terms: &mut Vec<String>,
+    seen: &mut std::collections::HashSet<String>,
+    term: impl AsRef<str>,
+) {
+    let normalized = term.as_ref().trim().to_lowercase();
+    if normalized.len() < 2 || seen.contains(&normalized) {
+        return;
+    }
+
+    seen.insert(normalized.clone());
+    terms.push(normalized);
 }
 
 fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> Vec<String> {
@@ -99,7 +129,7 @@ fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> 
     let mut seen = std::collections::HashSet::<String>::new();
 
     for message in messages.iter().rev().take(3) {
-        let tokens = normalize_query(&format!("{} {}", message.question, message.answer));
+        let tokens = normalize_query(&message.question);
         for token in tokens {
             let normalized = token.trim().to_lowercase();
             if normalized.is_empty()
@@ -111,15 +141,144 @@ fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> 
                 continue;
             }
 
-            seen.insert(normalized.clone());
-            terms.push(normalized);
+            push_unique_term(&mut terms, &mut seen, normalized);
             if terms.len() >= 6 {
                 return terms;
             }
         }
     }
 
+    for message in messages.iter().rev().take(3) {
+        let tokens = normalize_query(&message.answer);
+        for token in tokens {
+            let normalized = token.trim().to_lowercase();
+            if normalized.is_empty()
+                || normalized.len() < 2
+                || current_set.contains(&normalized)
+                || stop_terms.contains(normalized.as_str())
+                || seen.contains(&normalized)
+            {
+                continue;
+            }
+
+            push_unique_term(&mut terms, &mut seen, normalized);
+            if terms.len() >= 8 {
+                return terms;
+            }
+        }
+    }
+
     terms
+}
+
+fn is_relation_follow_up(question: &str) -> bool {
+    ["这两者", "这二者", "二者", "两者", "它们", "前面两个", "前两个"]
+        .iter()
+        .any(|marker| question.contains(marker))
+}
+
+fn normalize_reference_subject(question: &str) -> String {
+    let mut subject = question.trim().to_string();
+    for prefix in ["什么是", "何为", "请问", "介绍一下", "解释一下", "请介绍", "请解释"] {
+        subject = subject.trim_start_matches(prefix).trim().to_string();
+    }
+
+    for suffix in ["是什么", "是啥", "指什么"] {
+        subject = subject.trim_end_matches(suffix).trim().to_string();
+    }
+
+    subject
+        .trim_matches(|ch: char| ch == '？' || ch == '?' || ch == '。' || ch.is_whitespace())
+        .to_string()
+}
+
+fn infer_relation_subjects_from_questions<'a>(
+    questions: impl Iterator<Item = &'a str>,
+) -> Option<(String, String)> {
+    let subjects = questions
+        .filter_map(|question| {
+            let subject = normalize_reference_subject(question);
+            if subject.is_empty() || is_relation_follow_up(&subject) {
+                None
+            } else {
+                Some(subject)
+            }
+        })
+        .take(2)
+        .collect::<Vec<_>>();
+
+    if subjects.len() == 2 {
+        Some((subjects[1].clone(), subjects[0].clone()))
+    } else {
+        None
+    }
+}
+
+fn infer_relation_subjects(
+    messages: &[QaMessageView],
+    recent_questions: &[String],
+) -> Option<(String, String)> {
+    infer_relation_subjects_from_questions(
+        recent_questions
+            .iter()
+            .rev()
+            .map(String::as_str)
+            .chain(messages.iter().rev().map(|message| message.question.as_str())),
+    )
+}
+
+struct QuestionRewrite {
+    retrieval_question: String,
+    relation_hint: Option<String>,
+    boost_terms: Vec<String>,
+}
+
+fn rewrite_follow_up_question(
+    question: &str,
+    messages: &[QaMessageView],
+    recent_questions: &[String],
+) -> QuestionRewrite {
+    if !is_relation_follow_up(question) {
+        return QuestionRewrite {
+            retrieval_question: question.to_string(),
+            relation_hint: None,
+            boost_terms: normalize_query(question),
+        };
+    }
+
+    if let Some((left, right)) = infer_relation_subjects(messages, recent_questions) {
+        let rewritten = format!("{left} 与 {right} 的关系");
+        let hint = format!("当前问题中的“这两者”指代：{left} 与 {right}。请围绕这两个对象回答。");
+        let mut boost_terms = Vec::new();
+        let mut seen = std::collections::HashSet::<String>::new();
+        for term in [
+            left.as_str(),
+            right.as_str(),
+            "关系",
+            "关联",
+            "组成",
+            "分解",
+            "包含",
+            "工作分解结构",
+        ] {
+            push_unique_term(&mut boost_terms, &mut seen, term);
+        }
+        for term in normalize_query(&rewritten) {
+            push_unique_term(&mut boost_terms, &mut seen, term);
+        }
+
+        QuestionRewrite {
+            retrieval_question: rewritten,
+            relation_hint: Some(hint),
+            boost_terms,
+        }
+    } else {
+        QuestionRewrite {
+            retrieval_question: question.to_string(),
+            relation_hint: None,
+            boost_terms: normalize_query(question),
+        }
+    }
 }
 
 fn build_answer_view(
@@ -338,12 +497,24 @@ pub async fn update_qa_session_title(
 }
 
 #[tauri::command]
+pub async fn export_qa_session_markdown(path: String, markdown: String) -> Result<String, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("导出路径不能为空".to_string());
+    }
+
+    fs::write(path, markdown).map_err(|error| format!("导出 Markdown 失败: {error}"))?;
+    Ok(path.to_string())
+}
+
+#[tauri::command]
 pub async fn ask_question(
     app: tauri::AppHandle,
     question: String,
     scope_paths: Vec<String>,
     limit: usize,
     session_id: Option<String>,
+    recent_questions: Option<Vec<String>>,
     state: tauri::State<'_, Database>,
 ) -> Result<QaAskStartView, String> {
     let normalized_question = question.trim().to_string();
@@ -366,8 +537,28 @@ pub async fn ask_question(
     } else {
         Vec::new()
     };
-    let session_context = build_session_context(&session_messages);
-    let session_terms = build_session_terms(&session_messages, &normalize_query(&normalized_question));
+    let recent_questions = recent_questions.unwrap_or_default();
+    let question_rewrite =
+        rewrite_follow_up_question(&normalized_question, &session_messages, &recent_questions);
+    let mut session_context = build_session_context(&session_messages);
+    if let Some(relation_hint) = question_rewrite.relation_hint.as_deref() {
+        if !session_context.is_empty() {
+            session_context.push('\n');
+        }
+        session_context.push_str(&relation_hint);
+    }
+    let mut boost_terms = question_rewrite.boost_terms.clone();
+    let mut seen_boost_terms = boost_terms
+        .iter()
+        .map(|term| term.trim().to_lowercase())
+        .filter(|term| !term.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    for term in build_session_terms(
+        &session_messages,
+        &normalize_query(&question_rewrite.retrieval_question),
+    ) {
+        push_unique_term(&mut boost_terms, &mut seen_boost_terms, term);
+    }
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     register_qa_job(job_id.clone(), abort_handle);
     let database = state.inner().clone();
@@ -435,11 +626,12 @@ pub async fn ask_question(
     ));
 
     let question_for_task = normalized_question.clone();
+    let retrieval_question_for_task = question_rewrite.retrieval_question.clone();
     let scope_paths_for_task = scope_paths.clone();
     let settings_for_task = settings.clone();
     let database_for_task = database.clone();
     let session_id_for_task = normalized_session_id.clone();
-    let session_terms_for_task = session_terms.clone();
+    let boost_terms_for_task = boost_terms.clone();
     let session_context_for_task = session_context.clone();
     let app_for_task = app.clone();
     let job_id_for_task = job_id.clone();
@@ -480,11 +672,11 @@ pub async fn ask_question(
             async move {
                 let context = match build_qa_context(
                     &database_for_task,
-                    &question_for_task,
+                    &retrieval_question_for_task,
                     &scope_paths_for_task,
                     &settings_for_task,
                     limit,
-                    &session_terms_for_task,
+                    &boost_terms_for_task,
                 )
                 .await
                 {
