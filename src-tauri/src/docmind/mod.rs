@@ -1,6 +1,7 @@
 pub mod file_ops;
 pub mod models;
 pub mod parser;
+pub mod qa;
 pub mod search;
 pub mod semantic;
 pub mod sidecar;

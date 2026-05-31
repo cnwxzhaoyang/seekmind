@@ -168,6 +168,14 @@ pub async fn search_documents(
     limit: usize,
     state: tauri::State<'_, Database>,
 ) -> Result<Vec<super::models::SearchResultView>, String> {
+    if state
+        .fulltext_repair_needed()
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        return Err("全文索引正在修复，请稍后再搜索".to_string());
+    }
+
     state
         .search_documents(&query, limit)
         .await
@@ -675,6 +683,157 @@ pub async fn get_index_status(
         .get_index_status()
         .await
         .map_err(|error| error.to_string())
+}
+
+pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Database) {
+    let needed = match database.fulltext_repair_needed().await {
+        Ok(needed) => needed,
+        Err(error) => {
+            eprintln!("[DocMind] fulltext repair check failed: {error}");
+            return;
+        }
+    };
+    if !needed || !database.try_begin_index_job() {
+        return;
+    }
+
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let _ = database
+        .set_current_task(
+            "正在修复全文索引",
+            "使用本地 SQLite 数据重建搜索索引",
+            "running",
+            "",
+            "",
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            None,
+            false,
+        )
+        .await;
+    if let Ok(status) = database.get_index_status().await {
+        let _ = app.emit(
+            "docmind:index-refresh-progress",
+            super::models::IndexRefreshProgressView {
+                job_id: job_id.clone(),
+                state: "running".to_string(),
+                message: "正在修复全文索引".to_string(),
+                scope: "fulltext-repair".to_string(),
+                path: String::new(),
+                status,
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            },
+        );
+    }
+
+    let result = database
+        .repair_empty_fulltext_index(|processed, total, file_name| {
+            let progress = if total == 0 {
+                100
+            } else {
+                ((processed.saturating_mul(100)) / total).min(100) as u8
+            };
+            let database = database.clone();
+            let app = app.clone();
+            let job_id = job_id.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = database
+                    .set_current_task(
+                        "正在修复全文索引",
+                        "使用本地 SQLite 数据重建搜索索引",
+                        "running",
+                        "",
+                        &file_name,
+                        progress,
+                        processed,
+                        total,
+                        processed,
+                        0,
+                        0,
+                        0,
+                        0,
+                        None,
+                        false,
+                    )
+                    .await;
+                if let Ok(status) = database.get_index_status().await {
+                    let _ = app.emit(
+                        "docmind:index-refresh-progress",
+                        super::models::IndexRefreshProgressView {
+                            job_id,
+                            state: "running".to_string(),
+                            message: format!("正在修复全文索引：{processed}/{total}"),
+                            scope: "fulltext-repair".to_string(),
+                            path: file_name,
+                            status,
+                            updated_at: chrono::Utc::now().to_rfc3339(),
+                        },
+                    );
+                }
+            });
+        })
+        .await;
+
+    if let Err(error) = result {
+        eprintln!("[DocMind] fulltext repair failed: {error}");
+        let _ = database
+            .set_current_task(
+                "全文索引修复失败",
+                "请在状态页刷新索引",
+                "failed",
+                "",
+                "",
+                100,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                Some(&error.to_string()),
+                false,
+            )
+            .await;
+        if let Ok(status) = database.get_index_status().await {
+            let _ = app.emit(
+                "docmind:index-refresh-progress",
+                super::models::IndexRefreshProgressView {
+                    job_id: job_id.clone(),
+                    state: "failed".to_string(),
+                    message: "全文索引修复失败".to_string(),
+                    scope: "fulltext-repair".to_string(),
+                    path: String::new(),
+                    status,
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                },
+            );
+        }
+    } else {
+        let _ = database.clear_current_task().await;
+        if let Ok(status) = database.get_index_status().await {
+            let _ = app.emit(
+                "docmind:index-refresh-progress",
+                super::models::IndexRefreshProgressView {
+                    job_id: job_id.clone(),
+                    state: "completed".to_string(),
+                    message: "全文索引修复完成".to_string(),
+                    scope: "fulltext-repair".to_string(),
+                    path: String::new(),
+                    status,
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                },
+            );
+        }
+    }
+
+    database.end_index_job();
 }
 
 #[tauri::command]

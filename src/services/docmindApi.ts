@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ChunkView,
   FavoriteView,
+  QaAnswerView,
+  QaAskStartView,
+  QaAnswerProgressView,
+  QaConnectionTestView,
+  QaHistoryView,
+  QaSettingsView,
   DocumentView,
   DocumentRefreshStartView,
   IndexDirView,
@@ -61,6 +67,19 @@ export const docmindApi = {
     invoke<FavoriteView[]>("list_favorites", { limit }),
   removeFavorite: (target: string) =>
     invoke<void>("remove_favorite", { target }),
+  getQaSettings: () => invoke<QaSettingsView>("get_qa_settings"),
+  saveQaSettings: (settings: QaSettingsView) =>
+    invoke<QaSettingsView>("save_qa_settings", { settings }),
+  cancelQaQuestion: (jobId: string) =>
+    invoke<void>("cancel_qa_question", { jobId }),
+  askQuestion: (question: string, scopePaths: string[] = [], limit = 6) =>
+    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit }),
+  testQaConnection: (settings: QaSettingsView) =>
+    invoke<QaConnectionTestView>("test_qa_connection", { settings }),
+  listQaHistory: (limit = 12) =>
+    invoke<QaHistoryView[]>("list_qa_history", { limit }),
+  removeQaHistory: (id: string) =>
+    invoke<void>("remove_qa_history", { id }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>

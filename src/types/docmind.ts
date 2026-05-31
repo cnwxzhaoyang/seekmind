@@ -264,6 +264,81 @@ export interface FavoriteView {
   updated_at: string;
 }
 
+export interface QaSettingsView {
+  enabled: boolean;
+  provider: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  temperature: number;
+  max_output_tokens: number;
+  context_chunk_limit: number;
+  context_token_budget: number;
+  min_evidence_count: number;
+  min_retrieval_score: number;
+  updated_at: string;
+}
+
+export interface QaSourceView {
+  source_id: string;
+  chunk_id: string;
+  file_name: string;
+  path: string;
+  ext: string;
+  title_path: string;
+  heading: string;
+  paragraph?: number | null;
+  page?: number | null;
+  snippet: string;
+  score: number;
+  rank_reason: string;
+}
+
+export interface QaRetrievalView {
+  search_mode: string;
+  candidate_count: number;
+  selected_count: number;
+  semantic_enabled: boolean;
+  semantic_fallback: boolean;
+  semantic_fallback_reason: string;
+}
+
+export interface QaAnswerView {
+  id: string;
+  question: string;
+  answer: string;
+  state: string;
+  sources: QaSourceView[];
+  retrieval: QaRetrievalView;
+  model: string;
+  created_at: string;
+  error?: string | null;
+}
+
+export interface QaHistoryView extends QaAnswerView {}
+
+export interface QaConnectionTestView {
+  ok: boolean;
+  message: string;
+}
+
+export interface QaAskStartView {
+  job_id: string;
+  status: QaAnswerView;
+}
+
+export interface QaAnswerProgressView {
+  job_id: string;
+  state: string;
+  question: string;
+  answer: string;
+  sources: QaSourceView[];
+  retrieval: QaRetrievalView;
+  model: string;
+  error?: string | null;
+  updated_at: string;
+}
+
 export interface IndexSettingsView {
   exclude_dirs: string[];
   exclude_exts: string[];

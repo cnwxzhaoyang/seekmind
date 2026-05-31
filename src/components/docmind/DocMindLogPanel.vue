@@ -116,7 +116,11 @@ const installListeners = async () => {
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: payload.scope === "dir" && payload.path ? t("logPanel.details.dir", { path: payload.path }) : t("logPanel.details.fullIndex"),
+      details: payload.scope === "fulltext-repair"
+        ? (payload.path || t("logPanel.details.fulltextRepair"))
+        : payload.scope === "dir" && payload.path
+          ? t("logPanel.details.dir", { path: payload.path })
+          : t("logPanel.details.fullIndex"),
     });
   });
 

@@ -15,14 +15,14 @@ use uuid::Uuid;
 use crate::docmind::file_ops;
 use crate::docmind::models::{
     ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
-    IndexDirView, IndexStatusView, PreviewBlockView, RecentDocumentView, SearchHistoryView,
-    SearchResultView,
+    IndexDirView, IndexStatusView, PreviewBlockView, QaAnswerView, QaHistoryView, QaRetrievalView,
+    QaSourceView, RecentDocumentView, SearchHistoryView, SearchResultView,
 };
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::types::{
-    ChunkRecord, DocumentState, ExtractedDocument, IndexSettings,
+    ChunkRecord, DocumentState, ExtractedDocument, IndexSettings, QaSettings,
 };
 
 #[derive(Clone)]
@@ -228,6 +228,35 @@ struct FavoriteRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct QaSettingsRow {
+    enabled: i64,
+    provider: String,
+    base_url: String,
+    api_key: String,
+    model: String,
+    temperature: f32,
+    max_output_tokens: i64,
+    context_chunk_limit: i64,
+    context_token_budget: i64,
+    min_evidence_count: i64,
+    min_retrieval_score: f32,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct QaHistoryRow {
+    id: String,
+    question: String,
+    answer: String,
+    state: String,
+    sources_json: String,
+    retrieval_json: String,
+    model: String,
+    error: String,
+    created_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 pub(crate) struct IndexCheckpointRow {
     pub(crate) dir_paths: String,
     pub(crate) pending_delete_paths: String,
@@ -331,6 +360,10 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_history_tables()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_qa_settings_row()
             .await
             .map_err(|error| error.to_string())?;
         database
@@ -656,6 +689,93 @@ impl Database {
         Ok(self.build_search_results(query, limit).await?.hits)
     }
 
+    pub(crate) async fn fulltext_repair_needed(&self) -> Result<bool, sqlx::Error> {
+        let sqlite_chunks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chunks")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(sqlite_chunks > 0 && self.tantivy_document_count() == 0)
+    }
+
+    pub(crate) async fn repair_empty_fulltext_index<F>(
+        &self,
+        mut on_progress: F,
+    ) -> Result<(), sqlx::Error>
+    where
+        F: FnMut(usize, usize, String) + Send,
+    {
+        let sqlite_chunks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chunks")
+            .fetch_one(&self.pool)
+            .await?;
+        if sqlite_chunks == 0 || self.tantivy_document_count() > 0 {
+            return Ok(());
+        }
+
+        eprintln!(
+            "[DocMind] repairing empty Tantivy index from SQLite chunks={sqlite_chunks}"
+        );
+        self.search_index
+            .clear_all()
+            .map_err(sqlx::Error::Protocol)?;
+
+        let documents = sqlx::query_as::<_, FulltextDocumentRow>(
+            r#"
+            SELECT id, dir_path, path, file_name, ext, file_size, modified_at, content_hash, modified, content
+            FROM documents
+            ORDER BY rowid
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let total = documents.len();
+
+        for (index, document) in documents.into_iter().enumerate() {
+            let chunks = sqlx::query_as::<_, FulltextChunkRow>(
+                r#"
+                SELECT heading, snippet, paragraph, page, score
+                FROM chunks
+                WHERE document_id = ?
+                ORDER BY rowid
+                "#,
+            )
+            .bind(&document.id)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|row| ChunkRecord {
+                heading: row.heading,
+                snippet: row.snippet,
+                paragraph: row.paragraph,
+                page: row.page,
+                score: row.score,
+                block_indexes: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+
+            let extracted = ExtractedDocument {
+                dir_path: document.dir_path,
+                path: document.path,
+                file_name: document.file_name,
+                ext: document.ext,
+                file_size: document.file_size,
+                modified_at: document.modified_at,
+                content_hash: document.content_hash,
+                modified: document.modified,
+                content: document.content,
+            };
+
+            self.search_index
+                .index_document(&document.id, &extracted, &chunks)
+                .map_err(sqlx::Error::Protocol)?;
+            on_progress(index + 1, total, extracted.file_name);
+        }
+
+        eprintln!(
+            "[DocMind] repaired Tantivy index docs={}",
+            self.tantivy_document_count()
+        );
+        Ok(())
+    }
+
     pub async fn record_search_history(
         &self,
         query: &str,
@@ -787,6 +907,149 @@ impl Database {
         .bind(title)
         .bind(file_name)
         .bind(ext)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_qa_settings(&self) -> Result<QaSettings, sqlx::Error> {
+        let row = sqlx::query_as::<_, QaSettingsRow>(
+            r#"
+            SELECT enabled, provider, base_url, api_key, model, temperature, max_output_tokens, context_chunk_limit, context_token_budget, min_evidence_count, min_retrieval_score, updated_at
+            FROM qa_settings
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(QaSettings {
+                enabled: row.enabled != 0,
+                provider: row.provider,
+                base_url: row.base_url,
+                api_key: row.api_key,
+                model: row.model,
+                temperature: row.temperature.clamp(0.0, 2.0),
+                max_output_tokens: row.max_output_tokens.max(1) as usize,
+                context_chunk_limit: row.context_chunk_limit.max(1) as usize,
+                context_token_budget: row.context_token_budget.max(1) as usize,
+                min_evidence_count: row.min_evidence_count.max(1) as usize,
+                min_retrieval_score: row.min_retrieval_score,
+            })
+        } else {
+            Ok(default_qa_settings())
+        }
+    }
+
+    pub async fn get_qa_settings_updated_at(&self) -> Result<String, sqlx::Error> {
+        let updated_at = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT updated_at
+            FROM qa_settings
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .unwrap_or(0);
+
+        Ok(format_unix_ts(updated_at))
+    }
+
+    pub async fn save_qa_settings(&self, settings: &QaSettings) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO qa_settings
+                (id, enabled, provider, base_url, api_key, model, temperature, max_output_tokens, context_chunk_limit, context_token_budget, min_evidence_count, min_retrieval_score, updated_at)
+            VALUES (
+                1,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?
+            )
+            "#,
+        )
+        .bind(settings.enabled as i64)
+        .bind(settings.provider.trim())
+        .bind(settings.base_url.trim())
+        .bind(settings.api_key.as_str())
+        .bind(settings.model.trim())
+        .bind(settings.temperature)
+        .bind(settings.max_output_tokens as i64)
+        .bind(settings.context_chunk_limit as i64)
+        .bind(settings.context_token_budget as i64)
+        .bind(settings.min_evidence_count as i64)
+        .bind(settings.min_retrieval_score)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_qa_history(&self, limit: i64) -> Result<Vec<QaHistoryView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, QaHistoryRow>(
+            r#"
+            SELECT id, question, answer, state, sources_json, retrieval_json, model, error, created_at
+            FROM qa_history
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| qa_history_row_to_view(row))
+            .collect())
+    }
+
+    pub async fn remove_qa_history(&self, id: &str) -> Result<(), sqlx::Error> {
+        if id.trim().is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM qa_history WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn record_qa_history(&self, answer: &QaAnswerView) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        let sources_json =
+            serde_json::to_string(&answer.sources).unwrap_or_else(|_| "[]".to_string());
+        let retrieval_json =
+            serde_json::to_string(&answer.retrieval).unwrap_or_else(|_| "{}".to_string());
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO qa_history
+                (id, question, answer, state, sources_json, retrieval_json, model, error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&answer.id)
+        .bind(&answer.question)
+        .bind(&answer.answer)
+        .bind(&answer.state)
+        .bind(sources_json)
+        .bind(retrieval_json)
+        .bind(&answer.model)
+        .bind(answer.error.as_deref().unwrap_or(""))
         .bind(now)
         .execute(&self.pool)
         .await?;
@@ -2476,6 +2739,36 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 updated_at INTEGER NOT NULL DEFAULT 0
             )
             "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS qa_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER NOT NULL DEFAULT 0,
+                provider TEXT NOT NULL DEFAULT 'openai_compatible',
+                base_url TEXT NOT NULL DEFAULT '',
+                api_key TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                temperature REAL NOT NULL DEFAULT 0.2,
+                max_output_tokens INTEGER NOT NULL DEFAULT 600,
+                context_chunk_limit INTEGER NOT NULL DEFAULT 8,
+                context_token_budget INTEGER NOT NULL DEFAULT 6000,
+                min_evidence_count INTEGER NOT NULL DEFAULT 2,
+                min_retrieval_score REAL NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS qa_history (
+                id TEXT PRIMARY KEY,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                state TEXT NOT NULL,
+                sources_json TEXT NOT NULL DEFAULT '[]',
+                retrieval_json TEXT NOT NULL DEFAULT '{}',
+                model TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
         ];
 
         for statement in statements {
@@ -2503,6 +2796,14 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 prefer_history_enabled: true,
             };
             self.save_index_settings(&defaults).await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_qa_settings_row(&self) -> Result<(), sqlx::Error> {
+        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM qa_settings").await?;
+        if count == 0 {
+            self.save_qa_settings(&default_qa_settings()).await?;
         }
         Ok(())
     }
@@ -3041,6 +3342,53 @@ async fn scalar_count_no_bind(pool: &SqlitePool, sql: &str) -> Result<i64, sqlx:
 async fn scalar_count_bind(pool: &SqlitePool, sql: &str, bind: &str) -> Result<i64, sqlx::Error> {
     let row = sqlx::query(sql).bind(bind).fetch_one(pool).await?;
     row.try_get::<i64, _>(0)
+}
+
+fn default_qa_settings() -> QaSettings {
+    QaSettings {
+        enabled: false,
+        provider: "openai_compatible".to_string(),
+        base_url: String::new(),
+        api_key: String::new(),
+        model: String::new(),
+        temperature: 0.2,
+        max_output_tokens: 600,
+        context_chunk_limit: 8,
+        context_token_budget: 6000,
+        min_evidence_count: 1,
+        min_retrieval_score: 0.0,
+    }
+}
+
+fn qa_history_row_to_view(row: QaHistoryRow) -> QaHistoryView {
+    let sources = serde_json::from_str::<Vec<QaSourceView>>(&row.sources_json).unwrap_or_default();
+    let retrieval = serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
+        search_mode: String::new(),
+        candidate_count: 0,
+        selected_count: 0,
+        semantic_enabled: false,
+        semantic_fallback: false,
+        semantic_fallback_reason: String::new(),
+    });
+
+    QaHistoryView {
+        id: row.id,
+        question: row.question,
+        answer: row.answer,
+        state: row.state,
+        sources,
+        retrieval,
+        model: row.model,
+        created_at: format_unix_ts(row.created_at),
+        error: {
+            let trimmed = row.error.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        },
+    }
 }
 
 fn matched_field_and_origin(row: &SearchRow, terms: &[String]) -> (String, String) {

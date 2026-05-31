@@ -7,7 +7,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, Link2, Search, SquareArrowOutUpRight } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, Link2, MessageSquareText, Search, SquareArrowOutUpRight } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
@@ -16,13 +16,17 @@ import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRender
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { useQuickAccessData } from "../composables/useQuickAccessData";
-import { docmindApi } from "../services/docmindApi";
+import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
 const { t } = useI18n();
 import type {
   ChunkView,
   ParserRuntimeView,
+  QaAnswerView,
+  QaAnswerProgressView,
+  QaAskStartView,
+  QaSettingsView,
   SearchDebugReportEventView,
   SearchDebugView,
   SearchResultView,
@@ -32,6 +36,16 @@ const route = useRoute();
 const router = useRouter();
 const routeSearchQuery = computed(() => (typeof route.query.q === "string" ? route.query.q : ""));
 const query = ref(routeSearchQuery.value);
+const qaQuestion = ref("");
+const qaAnswer = ref<QaAnswerView | null>(null);
+const qaSettings = ref<QaSettingsView | null>(null);
+const qaSelectedSourceId = ref("");
+const qaLoading = ref(false);
+const qaCancelling = ref(false);
+const qaErrorMessage = ref("");
+const qaInfoMessage = ref("");
+const qaMode = ref(false);
+const qaActiveJobId = ref("");
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const selectedId = ref<string>("");
 const results = ref<SearchResultView[]>([]);
@@ -52,6 +66,7 @@ const expandedGroups = ref<Record<string, boolean>>({});
 const routeSyncReady = ref(false);
 let selectedContextRequestId = 0;
 let unlistenSearchDebugReport: null | (() => void) = null;
+let unlistenQaProgress: null | (() => void) = null;
 const { favorites, loadQuickAccessData } = useQuickAccessData();
 
 interface SearchResultGroup {
@@ -68,11 +83,54 @@ const selected = computed(
   () => results.value.find((item) => item.id === selectedId.value) ?? null,
 );
 
+const qaStateLabel = computed(() => {
+  if (!qaAnswer.value) {
+    return t("page.appSearch.qa.idle");
+  }
+
+  return t(`page.appSearch.qa.state.${qaAnswer.value.state}`);
+});
+
+const qaStateTone = computed(() => {
+  if (!qaAnswer.value) {
+    return "default";
+  }
+
+  if (qaAnswer.value.state === "answered") {
+    return "success";
+  }
+
+  if (qaAnswer.value.state === "insufficient_evidence") {
+    return "warning";
+  }
+
+  if (qaAnswer.value.state === "cancelled") {
+    return "danger";
+  }
+
+  return "default";
+});
+
+const isQaConfigured = (settings: QaSettingsView | null) =>
+  Boolean(settings?.enabled && settings.base_url.trim() && settings.model.trim());
+
+const qaSelectedSource = computed(
+  () => qaAnswer.value?.sources.find((item) => item.source_id === qaSelectedSourceId.value) ?? qaAnswer.value?.sources[0] ?? null,
+);
+
 const selectedTitlePath = computed(() =>
   resolveDocumentTitlePath({
     fileName: selected.value?.fileName,
     titlePath: selected.value?.title_path,
     heading: selected.value?.heading,
+  }),
+);
+
+const qaSelectedTitlePath = computed(() =>
+  resolveDocumentTitlePath({
+    fileName: qaSelectedSource.value?.file_name,
+    titlePath: qaSelectedSource.value?.title_path,
+    heading: qaSelectedSource.value?.heading,
   }),
 );
 
@@ -90,6 +148,23 @@ const selectedCitation = computed(() => {
       paragraph: selected.value.paragraph,
       pageLabel: t("page.appSearch.detail.pdfPage", { page: selected.value.page ?? 0 }),
       paragraphLabel: t("searchResultCard.paragraph", { para: selected.value.paragraph ?? 0 }),
+    }),
+  });
+});
+
+const qaSelectedCitation = computed(() => {
+  if (!qaSelectedSource.value) {
+    return "";
+  }
+
+  return formatDocumentCitation({
+    fileName: qaSelectedSource.value.file_name,
+    titlePath: qaSelectedTitlePath.value,
+    locationParts: buildDocumentLocationParts({
+      page: qaSelectedSource.value.page,
+      paragraph: qaSelectedSource.value.paragraph,
+      pageLabel: t("page.appSearch.detail.pdfPage", { page: qaSelectedSource.value.page ?? 0 }),
+      paragraphLabel: t("searchResultCard.paragraph", { para: qaSelectedSource.value.paragraph ?? 0 }),
     }),
   });
 });
@@ -166,7 +241,7 @@ const splitPanels = computed(() => {
   const items: { key: string; initialSize?: number; minSize: number; flex?: boolean }[] = [
     { key: "center", minSize: 300, flex: true },
   ];
-  if (selected.value) {
+  if (qaMode.value ? Boolean(qaSelectedSource.value) : Boolean(selected.value)) {
     items.push({ key: "right", initialSize: 320, minSize: 240 });
   }
   return items;
@@ -259,6 +334,205 @@ const toggleGroup = (path: string) => {
 
 const loadParserRuntime = async () => {
   parserRuntime.value = await docmindApi.getParserRuntime();
+};
+
+const loadQaSettings = async () => {
+  try {
+    qaSettings.value = await docmindApi.getQaSettings();
+  } catch (error) {
+    console.error("[DocMind] getQaSettings failed", error);
+  }
+};
+
+const installQaProgressListener = async () => {
+  if (unlistenQaProgress) {
+    return;
+  }
+
+  unlistenQaProgress = await listen<QaAnswerProgressView>(
+    "docmind:qa:answer-progress",
+    (event) => {
+      const payload = event.payload;
+      if (payload.job_id !== qaActiveJobId.value) {
+        return;
+      }
+
+      qaAnswer.value = {
+        id: payload.job_id,
+        question: payload.question,
+        answer: payload.answer,
+        state: payload.state,
+        sources: payload.sources,
+        retrieval: payload.retrieval,
+        model: payload.model,
+        created_at: payload.updated_at,
+        error: payload.error ?? null,
+      };
+      qaSelectedSourceId.value = qaSelectedSourceId.value || payload.sources[0]?.source_id || "";
+
+      if (payload.state === "searching") {
+        qaLoading.value = true;
+        qaInfoMessage.value = t("page.appSearch.qa.searching");
+        qaErrorMessage.value = "";
+        return;
+      }
+
+      if (payload.state === "generating" || payload.state === "streaming") {
+        qaLoading.value = true;
+        qaInfoMessage.value = payload.state === "generating"
+          ? t("page.appSearch.qa.generating")
+          : t("page.appSearch.qa.streaming");
+        qaErrorMessage.value = "";
+        return;
+      }
+
+      qaLoading.value = false;
+      if (payload.state === "answered") {
+        qaInfoMessage.value = t("page.appSearch.qa.answered");
+        qaErrorMessage.value = "";
+        return;
+      }
+
+      if (payload.state === "insufficient_evidence") {
+        qaInfoMessage.value = t("page.appSearch.qa.insufficient");
+        qaErrorMessage.value = "";
+        return;
+      }
+
+      if (payload.state === "cancelled") {
+        qaLoading.value = false;
+        qaCancelling.value = false;
+        qaInfoMessage.value = t("page.appSearch.qa.stopped");
+        qaErrorMessage.value = "";
+        qaActiveJobId.value = "";
+        return;
+      }
+
+      qaInfoMessage.value = "";
+      qaErrorMessage.value = payload.error || t("page.appSearch.qa.askFailed");
+    },
+  );
+};
+
+const runQa = async () => {
+  if (!qaQuestion.value.trim()) {
+    qaAnswer.value = null;
+    qaSelectedSourceId.value = "";
+    qaErrorMessage.value = "";
+    qaInfoMessage.value = "";
+    return;
+  }
+
+  if (qaLoading.value || qaCancelling.value) {
+    return;
+  }
+
+  qaLoading.value = true;
+  qaErrorMessage.value = "";
+  qaInfoMessage.value = "";
+
+  try {
+    await loadQaSettings();
+    if (!isQaConfigured(qaSettings.value)) {
+      qaAnswer.value = null;
+      qaSelectedSourceId.value = "";
+      qaInfoMessage.value = t("page.appSearch.qa.notConfigured");
+      qaLoading.value = false;
+      return;
+    }
+
+    const started: QaAskStartView = await docmindApi.askQuestion(qaQuestion.value.trim(), [], 6);
+    qaActiveJobId.value = started.job_id;
+    qaAnswer.value = started.status;
+    qaSelectedSourceId.value = started.status.sources[0]?.source_id ?? "";
+
+    if (started.status.state === "model_not_configured") {
+      qaInfoMessage.value = t("page.appSearch.qa.notConfigured");
+      qaLoading.value = false;
+      qaErrorMessage.value = started.status.error || "";
+    } else if (started.status.state === "insufficient_evidence") {
+      qaInfoMessage.value = t("page.appSearch.qa.insufficient");
+      qaLoading.value = false;
+    } else {
+      qaInfoMessage.value = t("page.appSearch.qa.searching");
+    }
+  } catch (error) {
+    qaAnswer.value = null;
+    qaSelectedSourceId.value = "";
+    qaErrorMessage.value = formatDocmindError(error, t("page.appSearch.qa.askFailed"));
+    qaLoading.value = false;
+    qaActiveJobId.value = "";
+  } finally {
+    qaCancelling.value = false;
+    if (qaAnswer.value?.state === "model_not_configured" || qaAnswer.value?.state === "insufficient_evidence") {
+      qaActiveJobId.value = "";
+    }
+  }
+};
+
+const stopQa = async () => {
+  if (!qaActiveJobId.value || qaCancelling.value) {
+    return;
+  }
+
+  const jobId = qaActiveJobId.value;
+  qaCancelling.value = true;
+  qaLoading.value = false;
+  qaInfoMessage.value = t("page.appSearch.qa.stopping");
+  qaErrorMessage.value = "";
+
+  try {
+    await docmindApi.cancelQaQuestion(jobId);
+    if (qaAnswer.value && qaAnswer.value.id === jobId) {
+      qaAnswer.value = {
+        ...qaAnswer.value,
+        state: "cancelled",
+        error: null,
+      };
+    }
+    qaInfoMessage.value = t("page.appSearch.qa.stopped");
+  } catch (error) {
+    qaErrorMessage.value = error instanceof Error ? error.message : t("page.appSearch.qa.askFailed");
+  } finally {
+    qaActiveJobId.value = "";
+    qaCancelling.value = false;
+  }
+};
+
+const selectQaSource = (sourceId: string) => {
+  qaSelectedSourceId.value = sourceId;
+};
+
+const openSelectedQaFile = async () => {
+  if (!qaSelectedSource.value) return;
+  await docmindApi.openFile(qaSelectedSource.value.path);
+  await loadQuickAccessData();
+};
+
+const quickLookSelectedQaFile = async () => {
+  if (!qaSelectedSource.value) return;
+
+  try {
+    await docmindApi.quickLookFile(qaSelectedSource.value.path);
+    setActionMessage(t("page.appSearch.detail.quickLookOpened"));
+  } catch (error) {
+    setActionError(error instanceof Error ? error.message : t("page.appSearch.detail.quickLookFailed"));
+  }
+};
+
+const copySelectedQaPath = async () => {
+  if (!qaSelectedSource.value) return;
+  await copyText(qaSelectedSource.value.path, t("page.appSearch.detail.copiedPath"));
+};
+
+const copySelectedQaCitation = async () => {
+  if (!qaSelectedSource.value) return;
+  await copyText(qaSelectedCitation.value, t("page.appSearch.detail.copiedCitation"));
+};
+
+const viewQaChunks = async () => {
+  if (!qaSelectedSource.value) return;
+  await router.push({ path: "/chunks", query: { path: qaSelectedSource.value.path } });
 };
 
 const officeNotice = computed(() => {
@@ -607,7 +881,7 @@ const handleResultContextMenu = (event: MouseEvent) => {
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
   await installSearchDebugReportListener();
-  await Promise.all([loadParserRuntime(), loadQuickAccessData()]);
+  await Promise.all([loadParserRuntime(), loadQuickAccessData(), loadQaSettings(), installQaProgressListener()]);
   query.value = routeSearchQuery.value;
   if (query.value.trim()) {
     await runSearch();
@@ -624,6 +898,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalShortcut);
   unlistenSearchDebugReport?.();
   unlistenSearchDebugReport = null;
+  unlistenQaProgress?.();
+  unlistenQaProgress = null;
 });
 
 watch(query, () => {
@@ -688,6 +964,13 @@ watch(showDebugPanel, async (visible) => {
     await requestSearchDebugReport();
   }
 });
+
+watch(qaMode, async (visible) => {
+  if (visible) {
+    await loadQaSettings();
+    await installQaProgressListener();
+  }
+});
 </script>
 
 <template>
@@ -696,8 +979,35 @@ watch(showDebugPanel, async (visible) => {
       <SplitPane :panels="splitPanels">
         <template #center>
           <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/70">
-            <div class="border-b border-default bg-surface px-4 py-3">
+            <div class="border-b border-default bg-surface px-4 py-3 space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="docmind-section-label">{{ qaMode ? t("page.appSearch.qa.title") : t("page.appSearch.title") }}</div>
+                  <div class="docmind-item-meta mt-1">
+                    {{ qaMode ? t("page.appSearch.qa.subtitle") : t("page.appSearch.subtitle") }}
+                  </div>
+                </div>
+                <div class="inline-flex rounded-md border border-default bg-panel p-1 text-xs font-medium">
+                  <button
+                    class="rounded px-3 py-1.5 transition"
+                    :class="qaMode ? 'text-secondary hover:bg-surface-hover' : 'bg-accent text-white'"
+                    @click.prevent="qaMode = false"
+                  >
+                    {{ t("page.appSearch.mode.search") }}
+                  </button>
+                  <button
+                    class="rounded px-3 py-1.5 transition"
+                    :class="qaMode ? 'bg-accent text-white' : 'text-secondary hover:bg-surface-hover'"
+                    @click.prevent="qaMode = true"
+                  >
+                    <MessageSquareText :size="14" class="mr-1 inline" />
+                    {{ t("page.appSearch.mode.qa") }}
+                  </button>
+                </div>
+              </div>
+
               <form
+                v-if="!qaMode"
                 class="mx-auto flex h-9 w-full max-w-none items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
                 @submit.prevent="runSearch"
               >
@@ -709,6 +1019,38 @@ watch(showDebugPanel, async (visible) => {
                   class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
                 />
                 <span class="hidden text-xs text-muted sm:inline">Cmd+K</span>
+              </form>
+
+              <form v-else class="space-y-3" @submit.prevent="runQa">
+                <textarea
+                  v-model="qaQuestion"
+                  rows="3"
+                  class="w-full rounded-md border border-default bg-input px-3 py-2.5 text-sm text-primary outline-none transition focus:border-accent focus:bg-surface"
+                  :placeholder="t('page.appSearch.qa.placeholder')"
+                />
+                <div class="flex items-center justify-between gap-3">
+                  <div class="text-xs text-dim">
+                    {{ isQaConfigured(qaSettings) ? t("page.appSearch.qa.ready") : t("page.appSearch.qa.notConfigured") }}
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button
+                      v-if="qaLoading || qaCancelling"
+                      class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
+                      type="button"
+                      @click="stopQa"
+                    >
+                      {{ qaCancelling ? t("page.appSearch.qa.stopping") : t("page.appSearch.qa.stop") }}
+                    </button>
+                    <button
+                      class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      :disabled="qaLoading || qaCancelling"
+                      type="submit"
+                    >
+                      <MessageSquareText :size="15" />
+                      {{ qaCancelling ? t("page.appSearch.qa.stopping") : qaLoading ? t("page.appSearch.qa.asking") : t("page.appSearch.qa.ask") }}
+                    </button>
+                  </div>
+                </div>
               </form>
             </div>
 
@@ -732,7 +1074,7 @@ watch(showDebugPanel, async (visible) => {
               </div>
             </div>
 
-            <div class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
+            <div v-if="!qaMode" class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
               <div class="text-xs font-medium text-dim">
                 {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
               </div>
@@ -741,9 +1083,22 @@ watch(showDebugPanel, async (visible) => {
                 {{ t("page.appSearch.filter") }}
               </button>
             </div>
+            <div v-else class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
+              <div class="text-xs font-medium text-dim">
+                {{ qaAnswer ? t("page.appSearch.qa.resultCount", { count: qaAnswer.sources.length }) : t("page.appSearch.qa.waiting") }}
+              </div>
+              <div class="flex items-center gap-2 text-xs text-dim">
+                <DocMindBadge :tone="qaStateTone">
+                  {{ qaStateLabel }}
+                </DocMindBadge>
+                <DocMindBadge tone="default">
+                  {{ isQaConfigured(qaSettings) ? t("page.appSearch.qa.enabled") : t("page.appSearch.qa.disabled") }}
+                </DocMindBadge>
+              </div>
+            </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto">
-              <div v-if="showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
+              <div v-if="!qaMode && showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
                 <div class="flex items-center justify-between gap-3">
                   <div>
                   <div class="docmind-section-label">{{ t("page.appSearch.debug.title") }}</div>
@@ -786,36 +1141,105 @@ watch(showDebugPanel, async (visible) => {
                 </div>
               </div>
 
-              <div v-if="errorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
+              <div v-if="!qaMode && errorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
                 {{ errorMessage }}
               </div>
 
-              <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
-                {{ t("page.appSearch.noResults") }}
-              </div>
+              <template v-if="!qaMode">
+                <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                  {{ t("page.appSearch.noResults") }}
+                </div>
 
-              <div class="space-y-3 pr-2 pb-4">
-                <DocMindSearchResultGroupCard
-                  v-for="group in groupedResults"
-                  :key="group.path"
-                  :group="group"
-                  :query="query"
-                  :selected-id="selectedId"
-                  :expanded="Boolean(expandedGroups[group.path])"
-                  :is-favorited="isResultFavorited"
-                  @select="selectResult"
-                  @toggle="toggleGroup"
-                  @toggle-favorite="toggleFavoriteResult"
-                  @contextmenu="handleResultContextMenu"
-                />
-              </div>
+                <div class="space-y-3 pr-2 pb-4">
+                  <DocMindSearchResultGroupCard
+                    v-for="group in groupedResults"
+                    :key="group.path"
+                    :group="group"
+                    :query="query"
+                    :selected-id="selectedId"
+                    :expanded="Boolean(expandedGroups[group.path])"
+                    :is-favorited="isResultFavorited"
+                    @select="selectResult"
+                    @toggle="toggleGroup"
+                    @toggle-favorite="toggleFavoriteResult"
+                    @contextmenu="handleResultContextMenu"
+                  />
+                </div>
+              </template>
+
+              <template v-else>
+                <div v-if="qaErrorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
+                  {{ qaErrorMessage }}
+                </div>
+                <div v-if="qaInfoMessage" class="m-4 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-3 text-sm text-success">
+                  {{ qaInfoMessage }}
+                </div>
+                <div v-if="qaLoading && !qaAnswer" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                  {{ t("page.appSearch.qa.loading") }}
+                </div>
+                <div v-else-if="qaAnswer" class="space-y-3 p-4">
+                  <div class="rounded-lg border border-default bg-surface p-4">
+                    <div class="flex items-center justify-between gap-3">
+                    <div class="docmind-section-label">{{ t("page.appSearch.qa.answerTitle") }}</div>
+                      <div class="flex items-center gap-2">
+                        <DocMindBadge tone="default">{{ qaLoading ? qaInfoMessage || t("page.appSearch.qa.streaming") : qaStateLabel }}</DocMindBadge>
+                        <DocMindBadge v-if="qaAnswer.state === 'cancelled'" tone="danger">
+                          {{ t("page.appSearch.qa.cancelledByUser") }}
+                        </DocMindBadge>
+                      </div>
+                    </div>
+                    <div class="mt-2 whitespace-pre-wrap text-sm leading-7 text-primary">
+                      {{ qaAnswer.answer || t("page.appSearch.qa.noAnswer") }}
+                    </div>
+                    <div class="mt-3 flex flex-wrap gap-2 text-xs text-dim">
+                      <DocMindBadge tone="default">{{ qaAnswer.model || t("common.none") }}</DocMindBadge>
+                      <DocMindBadge tone="default">{{ qaAnswer.created_at }}</DocMindBadge>
+                      <DocMindBadge tone="default">{{ t("page.appSearch.qa.sourceCount", { count: qaAnswer.sources.length }) }}</DocMindBadge>
+                    </div>
+                  </div>
+
+                  <div class="space-y-2">
+                    <div class="docmind-section-label px-1">{{ t("page.appSearch.qa.sourcesTitle") }}</div>
+                    <div
+                      v-for="source in qaAnswer.sources"
+                      :key="source.source_id"
+                      class="cursor-pointer rounded-lg border px-3 py-3 transition"
+                      :class="qaSelectedSourceId === source.source_id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
+                      @click="selectQaSource(source.source_id)"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
+                            <span class="text-sm font-medium text-primary">{{ source.file_name }}</span>
+                          </div>
+                          <div class="mt-1 text-xs text-muted">{{ source.path }}</div>
+                          <div class="mt-1 text-[11px] text-dim">
+                            {{ source.title_path || source.heading }}
+                          </div>
+                        </div>
+                        <div class="text-right text-xs text-dim">
+                          <div>{{ Math.round(source.score * 100) }}%</div>
+                          <div class="mt-1">{{ source.rank_reason }}</div>
+                        </div>
+                      </div>
+                      <div class="mt-2 text-sm leading-6 text-secondary">
+                        {{ source.snippet }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                  {{ t("page.appSearch.qa.enterQuestion") }}
+                </div>
+              </template>
             </div>
           </section>
         </template>
 
         <template #right>
           <aside class="min-h-0 flex-1 overflow-y-auto bg-panel/70 p-5">
-            <div class="docmind-detail">
+            <div v-if="!qaMode && selected" class="docmind-detail">
               <div class="mb-4 rounded-lg border border-default bg-panel p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -929,6 +1353,73 @@ watch(showDebugPanel, async (visible) => {
               <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
                 {{ actionErrorMessage }}
               </div>
+            </div>
+
+            <div v-else-if="qaMode && qaSelectedSource" class="docmind-detail">
+              <div class="mb-4 rounded-lg border border-default bg-panel p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-lg font-semibold text-primary">{{ qaSelectedSource.file_name }}</div>
+                    <div class="mt-1 break-all text-xs text-muted">{{ qaSelectedSource.path }}</div>
+                  </div>
+                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
+                    {{ qaSelectedSource.ext.toUpperCase() }}
+                  </div>
+                </div>
+                <div v-if="qaSelectedTitlePath" class="mt-3 rounded-md border border-default bg-surface px-3 py-2">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
+                    {{ t("page.appSearch.detail.titlePath") }}
+                  </div>
+                  <div class="mt-1 text-sm leading-6 text-primary">
+                    {{ qaSelectedTitlePath }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-4 flex flex-wrap gap-2">
+                <DocMindBadge>{{ qaSelectedSource.ext.toUpperCase() }}</DocMindBadge>
+                <DocMindBadge>{{ qaSelectedSource.page ? t("searchResultCard.page", { page: qaSelectedSource.page }) : t("searchResultCard.paragraph", { para: qaSelectedSource.paragraph }) }}</DocMindBadge>
+                <DocMindBadge v-if="qaSelectedSource.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: qaSelectedSource.page }) }}</DocMindBadge>
+                <DocMindBadge tone="success">{{ t("page.appSearch.qa.sourceId", { id: qaSelectedSource.source_id }) }}</DocMindBadge>
+              </div>
+
+              <div class="mb-4 rounded-lg border border-default bg-surface p-4">
+                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.qa.sourceSnippet") }}</div>
+                <div class="whitespace-pre-wrap text-sm leading-7 text-primary">
+                  {{ qaSelectedSource.snippet }}
+                </div>
+                <p class="docmind-item-meta mt-3">{{ qaSelectedSource.rank_reason }}</p>
+              </div>
+
+              <div class="mt-4 rounded-lg border border-default bg-surface p-4">
+                <div class="docmind-section-label">{{ t("page.appSearch.qa.sourceMeta") }}</div>
+                <div class="mt-1 docmind-metric-value text-primary">{{ qaSelectedCitation || t("common.none") }}</div>
+                <div class="mt-1 docmind-item-meta">
+                  {{ qaAnswer?.retrieval.search_mode || t("common.none") }} · {{ qaAnswer?.retrieval.selected_count ?? 0 }}/{{ qaAnswer?.retrieval.candidate_count ?? 0 }}
+                </div>
+              </div>
+
+              <div class="mt-4 flex flex-wrap gap-2">
+                <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="openSelectedQaFile">
+                  {{ t("page.appSearch.detail.openFile") }}
+                </button>
+                <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="viewQaChunks">
+                  {{ t("page.appSearch.detail.viewChunks") }}
+                </button>
+                <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="quickLookSelectedQaFile">
+                  {{ t("page.appSearch.detail.quickLook") }}
+                </button>
+                <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaPath">
+                  {{ t("page.appSearch.detail.copyPath") }}
+                </button>
+                <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaCitation">
+                  {{ t("page.appSearch.detail.copyCitation") }}
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="rounded-lg border border-dashed border-default bg-surface p-6 text-sm text-muted">
+              {{ qaMode ? t("page.appSearch.qa.noSourceSelected") : t("page.appSearch.noResults") }}
             </div>
           </aside>
         </template>

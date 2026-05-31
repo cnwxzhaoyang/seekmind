@@ -312,6 +312,99 @@ pub struct IndexSettingsView {
     pub prefer_history_enabled: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaSettingsView {
+    pub enabled: bool,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub temperature: f32,
+    pub max_output_tokens: usize,
+    pub context_chunk_limit: usize,
+    pub context_token_budget: usize,
+    pub min_evidence_count: usize,
+    pub min_retrieval_score: f32,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaSourceView {
+    pub source_id: String,
+    pub chunk_id: String,
+    pub file_name: String,
+    pub path: String,
+    pub ext: String,
+    pub title_path: String,
+    pub heading: String,
+    pub paragraph: Option<u32>,
+    pub page: Option<u32>,
+    pub snippet: String,
+    pub score: f32,
+    pub rank_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaRetrievalView {
+    pub search_mode: String,
+    pub candidate_count: usize,
+    pub selected_count: usize,
+    pub semantic_enabled: bool,
+    pub semantic_fallback: bool,
+    pub semantic_fallback_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaAnswerView {
+    pub id: String,
+    pub question: String,
+    pub answer: String,
+    pub state: String,
+    pub sources: Vec<QaSourceView>,
+    pub retrieval: QaRetrievalView,
+    pub model: String,
+    pub created_at: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaHistoryView {
+    pub id: String,
+    pub question: String,
+    pub answer: String,
+    pub state: String,
+    pub sources: Vec<QaSourceView>,
+    pub retrieval: QaRetrievalView,
+    pub model: String,
+    pub created_at: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaConnectionTestView {
+    pub ok: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaAskStartView {
+    pub job_id: String,
+    pub status: QaAnswerView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaAnswerProgressView {
+    pub job_id: String,
+    pub state: String,
+    pub question: String,
+    pub answer: String,
+    pub sources: Vec<QaSourceView>,
+    pub retrieval: QaRetrievalView,
+    pub model: String,
+    pub error: Option<String>,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct EmbeddingModelView {
     pub id: String,

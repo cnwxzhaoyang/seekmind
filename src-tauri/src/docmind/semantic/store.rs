@@ -881,6 +881,21 @@ pub async fn semantic_search_hits(
         return Ok(Vec::new());
     }
 
+    let embedded_chunks: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM chunk_embeddings
+        WHERE model_id = ?
+        "#,
+    )
+    .bind(&model.id)
+    .fetch_one(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+    if embedded_chunks == 0 {
+        return Ok(Vec::new());
+    }
+
     let rewritten_query = rewrite_search_text(query);
     if rewritten_query.trim().is_empty() {
         return Ok(Vec::new());

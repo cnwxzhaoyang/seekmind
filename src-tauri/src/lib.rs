@@ -34,11 +34,19 @@ pub fn run() {
     let database = tauri::async_runtime::block_on(docmind::storage::Database::open_or_init())
         .expect("failed to initialize DocMind SQLite database");
 
+    let repair_database = database.clone();
+
     tauri::Builder::default()
         .manage(database)
         .plugin(dialog_init())
         .plugin(opener_init())
-        .setup(|_app| {
+        .setup(move |_app| {
+            let database = repair_database.clone();
+            let app_handle = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                docmind::commands::repair_fulltext_index_if_needed(app_handle, database).await;
+            });
+
             #[cfg(debug_assertions)]
             if std::env::var("DOCMIND_OPEN_DEVTOOLS").ok().as_deref() == Some("1") {
                 if let Some(window) = _app.get_webview_window("main") {
@@ -81,6 +89,13 @@ pub fn run() {
             crate::docmind::commands::clear_all_indexes,
             crate::docmind::commands::pause_indexing,
             crate::docmind::commands::resume_indexing,
+            crate::docmind::qa::commands::ask_question,
+            crate::docmind::qa::commands::cancel_qa_question,
+            crate::docmind::qa::commands::get_qa_settings,
+            crate::docmind::qa::commands::save_qa_settings,
+            crate::docmind::qa::commands::test_qa_connection,
+            crate::docmind::qa::commands::list_qa_history,
+            crate::docmind::qa::commands::remove_qa_history,
             crate::docmind::semantic::commands::get_embedding_model_status,
             crate::docmind::semantic::commands::get_semantic_debug_report,
             crate::docmind::semantic::commands::rebuild_semantic_embeddings,

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Database, Languages, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
+import { Database, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindQaPanel from "../components/docmind/DocMindQaPanel.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { setLocale as setI18nLocale } from "../i18n";
@@ -199,6 +200,12 @@ const settingsNavItems = computed(() => [
     label: t("page.settings.semantic.title"),
     hint: t("page.settings.semantic.thresholdDesc"),
     icon: Sparkles,
+  },
+  {
+    id: "settings-qa",
+    label: t("page.settings.qa.title"),
+    hint: t("page.settings.qa.desc"),
+    icon: MessageSquareText,
   },
   {
     id: "settings-model",
@@ -599,6 +606,10 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </section>
+          </div>
+
+          <div id="settings-qa" class="scroll-mt-4">
+            <DocMindQaPanel />
           </div>
 
           <div id="settings-model" class="scroll-mt-4">
