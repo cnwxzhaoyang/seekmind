@@ -152,7 +152,7 @@ onMounted(() => {
 
     <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden">
       <div class="grid h-full min-h-0 grid-rows-[minmax(0,1.35fr)_minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(0,0.75fr)] gap-2.5 overflow-hidden pr-1">
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-accent bg-surface p-2 shadow-card">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-surface p-2 shadow-card">
           <div class="docmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <FolderOpen :size="13" />
             {{ t("sidebar.indexDirs") }}

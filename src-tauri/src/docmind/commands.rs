@@ -819,24 +819,43 @@ fn available_tesseract_languages() -> Vec<String> {
     static CACHE: OnceLock<Vec<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            let output = Command::new("tesseract").arg("--list-langs").output();
-            let Ok(output) = output else {
-                return Vec::new();
-            };
-            if !output.status.success() {
-                return Vec::new();
+            for candidate in tesseract_binary_candidates() {
+                let output = Command::new(candidate).arg("--list-langs").output();
+                let Ok(output) = output else {
+                    continue;
+                };
+                if !output.status.success() {
+                    continue;
+                }
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let languages: Vec<String> = stdout
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .filter(|line| {
+                        !line.to_lowercase().starts_with("list of available languages")
+                    })
+                    .map(ToOwned::to_owned)
+                    .collect();
+
+                if !languages.is_empty() {
+                    return languages;
+                }
             }
 
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            stdout
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .filter(|line| !line.to_lowercase().starts_with("list of available languages"))
-                .map(ToOwned::to_owned)
-                .collect()
+            Vec::new()
         })
         .clone()
+}
+
+fn tesseract_binary_candidates() -> [&'static str; 4] {
+    [
+        "/opt/homebrew/bin/tesseract",
+        "/usr/local/bin/tesseract",
+        "/opt/local/bin/tesseract",
+        "tesseract",
+    ]
 }
 
 fn has_chinese_tesseract_language(languages: &[String]) -> bool {

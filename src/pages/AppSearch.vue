@@ -814,7 +814,7 @@ watch(showDebugPanel, async (visible) => {
         </template>
 
         <template #right>
-          <aside class="min-h-0 flex-1 overflow-y-auto bg-surface p-5">
+          <aside class="min-h-0 flex-1 overflow-y-auto bg-panel/70 p-5">
             <div class="docmind-detail">
               <div class="mb-4 rounded-lg border border-default bg-panel p-4">
                 <div class="flex items-start justify-between gap-3">
