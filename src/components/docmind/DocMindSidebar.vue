@@ -8,6 +8,7 @@ import { useIndexDirTree } from "../../composables/useIndexDirTree";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
 import { docmindApi } from "../../services/docmindApi";
+import brandIconUrl from "../../../ui-prototype/knowledge_icon_v3_pack/icon_64x64.png";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -106,7 +107,11 @@ onMounted(() => {
     :class="sidebarCollapsed ? 'w-[68px]' : 'w-[240px]'"
   >
     <div class="mb-3 flex items-center justify-between gap-2 px-2 py-2">
-      <div class="flex h-6 w-6 items-center justify-center rounded bg-accent text-xs font-bold text-white shadow-card">dm</div>
+      <img
+        :src="brandIconUrl"
+        alt="docMind"
+        class="h-6 w-6 shrink-0 rounded-md object-contain shadow-card"
+      >
       <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
         <div class="text-base font-semibold text-primary">docMind</div>
       </div>
