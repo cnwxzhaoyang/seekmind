@@ -8,8 +8,12 @@ import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import {
+  Plus,
+  X,
   MessageSquareText,
   RefreshCw,
+  ArrowUp,
+  SlidersHorizontal,
   Trash2,
   ChevronDown,
   ChevronRight,
@@ -36,6 +40,7 @@ const qaQuestion = ref("");
 const qaAnswer = ref<QaMessageView | null>(null);
 const qaMessages = ref<QaMessageView[]>([]);
 const qaSessions = ref<QaSessionView[]>([]);
+const qaSessionFilter = ref("");
 const qaSessionId = ref("");
 const qaSessionTitle = ref("");
 const qaActiveSessionId = ref("");
@@ -66,13 +71,34 @@ const currentSession = computed(
   () => qaSessions.value.find((item) => item.id === qaSessionId.value) ?? null,
 );
 
+const filteredSessions = computed(() => {
+  const queryText = qaSessionFilter.value.trim().toLowerCase();
+  if (!queryText) {
+    return qaSessions.value;
+  }
+
+  return qaSessions.value.filter((session) => {
+    const haystack = [
+      session.title,
+      session.created_at,
+      session.updated_at,
+      String(session.message_count),
+    ].join(" ").toLowerCase();
+    return haystack.includes(queryText);
+  });
+});
+
 const selectedSource = computed(() => {
   const message = qaAnswer.value;
   if (!message) {
     return null;
   }
 
-  return message.sources.find((item) => item.source_id === qaSelectedSourceId.value) ?? message.sources[0] ?? null;
+  if (!qaSelectedSourceId.value) {
+    return null;
+  }
+
+  return message.sources.find((item) => item.source_id === qaSelectedSourceId.value) ?? null;
 });
 
 const selectedSourceTitlePath = computed(() =>
@@ -113,6 +139,8 @@ const panels = computed(() => {
 
 const isQaConfigured = (settings: QaSettingsView | null) =>
   Boolean(settings?.enabled && settings.base_url.trim() && settings.model.trim());
+
+const sessionDraftTitle = () => t("page.appQa.defaultSessionTitle");
 
 const routeSessionId = computed(() => (typeof route.query.session === "string" ? route.query.session : ""));
 
@@ -179,14 +207,37 @@ const deleteSession = async (sessionId: string) => {
     return;
   }
 
+  const deletingCurrent = qaSessionId.value === sessionId;
   await docmindApi.removeQaSession(sessionId);
-  if (qaSessionId.value === sessionId) {
+  if (deletingCurrent) {
     await newSession();
   }
-  await refreshSessions(true);
+  await refreshSessions(deletingCurrent);
   if (routeSessionId.value === sessionId) {
     await syncRouteSession("");
   }
+};
+
+const clearSessionFilter = () => {
+  qaSessionFilter.value = "";
+};
+
+const closeSelectedSource = () => {
+  qaSelectedSourceId.value = "";
+};
+
+const resetCurrentSessionState = () => {
+  qaSessionId.value = "";
+  qaSessionTitle.value = "";
+  qaMessages.value = [];
+  qaAnswer.value = null;
+  qaSelectedSourceId.value = "";
+  qaActiveSessionId.value = "";
+  qaActiveJobId.value = "";
+  qaQuestion.value = "";
+  qaInfoMessage.value = "";
+  qaErrorMessage.value = "";
+  expandedMessages.value = {};
 };
 
 const loadInitialData = async () => {
@@ -298,18 +349,15 @@ const newSession = async () => {
     return;
   }
 
-  qaSessionId.value = "";
-  qaSessionTitle.value = "";
-  qaMessages.value = [];
-  qaAnswer.value = null;
-  qaSelectedSourceId.value = "";
-  qaActiveSessionId.value = "";
-  qaActiveJobId.value = "";
-  qaQuestion.value = "";
-  qaInfoMessage.value = "";
-  qaErrorMessage.value = "";
-  expandedMessages.value = {};
-  await syncRouteSession("");
+  const session = await docmindApi.createQaSession(sessionDraftTitle());
+  qaSessions.value = [session, ...qaSessions.value.filter((item) => item.id !== session.id)];
+  qaSessionId.value = session.id;
+  qaSessionTitle.value = session.title;
+  qaSessionFilter.value = "";
+  resetCurrentSessionState();
+  qaSessionId.value = session.id;
+  qaSessionTitle.value = session.title;
+  await syncRouteSession(session.id);
 };
 
 const renameSession = async (session: QaSessionView) => {
@@ -456,6 +504,69 @@ const copySelectedQaCitation = async () => {
   await navigator.clipboard.writeText(selectedSourceCitation.value);
 };
 
+const buildSessionMarkdown = () => {
+  const title = qaSessionTitle.value || currentSession.value?.title || t("page.appQa.defaultSessionTitle");
+  const lines = [`# ${title}`, ""];
+
+  if (qaMessages.value.length === 0) {
+    lines.push(t("page.appQa.noAnswer"));
+    return lines.join("\n");
+  }
+
+  qaMessages.value.forEach((message, index) => {
+    lines.push(`## ${index + 1}. ${message.question}`);
+    lines.push("");
+    lines.push(message.answer || t("page.appQa.noAnswer"));
+    lines.push("");
+    lines.push(`- ${t("page.appQa.sourceCount", { count: message.sources.length })}`);
+    lines.push(`- ${t("page.appQa.messageStateLabel", { state: t(`page.appSearch.qa.state.${message.state}`) })}`);
+    lines.push("");
+
+    if (message.sources.length > 0) {
+      lines.push(`### ${t("page.appQa.sourceSummary")}`);
+      message.sources.forEach((source) => {
+        lines.push(`- [${source.source_id}] ${source.file_name}`);
+        lines.push(`  - ${source.path}`);
+        if (source.title_path || source.heading) {
+          lines.push(`  - ${source.title_path || source.heading}`);
+        }
+      });
+      lines.push("");
+    }
+  });
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+};
+
+const exportCurrentSession = async () => {
+  if (qaMessages.value.length === 0) {
+    return;
+  }
+
+  const markdown = buildSessionMarkdown();
+  const title = qaSessionTitle.value || currentSession.value?.title || t("page.appQa.defaultSessionTitle");
+  const safeName = title.replace(/[\\/:*?"<>|]+/g, "-").trim() || "qa-session";
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  document.body.appendChild(link);
+  link.href = url;
+  link.download = `${safeName}.md`;
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  qaInfoMessage.value = t("page.appQa.exportedMarkdown");
+};
+
+const copyCurrentSessionMarkdown = async () => {
+  if (qaMessages.value.length === 0) {
+    return;
+  }
+
+  await navigator.clipboard.writeText(buildSessionMarkdown());
+  qaInfoMessage.value = t("page.appQa.copiedMarkdown");
+};
+
 const viewQaChunks = async () => {
   if (!selectedSource.value) return;
   await router.push({ path: "/chunks", query: { path: selectedSource.value.path } });
@@ -484,7 +595,7 @@ watch(routeSessionId, async (next, previous) => {
 
   if (!next) {
     if (qaSessionId.value) {
-      newSession();
+      resetCurrentSessionState();
     }
     return;
   }
@@ -498,78 +609,49 @@ watch(routeSessionId, async (next, previous) => {
 
 <template>
   <section class="flex h-full min-h-0 flex-col overflow-hidden bg-panel/70">
-    <div class="border-b border-default bg-surface px-4 py-3">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <div class="docmind-section-label">{{ t("page.appQa.title") }}</div>
-          <div class="docmind-item-meta mt-1">{{ t("page.appQa.subtitle") }}</div>
-        </div>
-        <div class="flex items-center gap-2">
-          <DocMindBadge :tone="isQaConfigured(qaSettings) ? 'success' : 'default'">
-            {{ isQaConfigured(qaSettings) ? t("page.appQa.ready") : t("page.appQa.notConfigured") }}
-          </DocMindBadge>
-          <RouterLink
-            to="/settings"
-            class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover"
-          >
-            <MessageSquareText :size="14" />
-            {{ t("page.appQa.settings") }}
-          </RouterLink>
-        </div>
-      </div>
-
-      <div class="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-        <textarea
-          v-model="qaQuestion"
-          rows="3"
-          class="w-full rounded-md border border-default bg-input px-3 py-2.5 text-sm text-primary outline-none transition focus:border-accent focus:bg-surface"
-          :placeholder="t('page.appQa.placeholder')"
-        />
-        <div class="flex flex-wrap items-start gap-2 lg:flex-col lg:items-stretch">
-          <button
-            v-if="qaLoading || qaCancelling"
-            class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
-            type="button"
-            @click="stopQa"
-          >
-            {{ qaCancelling ? t("page.appQa.stopping") : t("page.appQa.stop") }}
-          </button>
-          <button
-            class="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-            :disabled="qaLoading || qaCancelling"
-            type="button"
-            @click="runQa"
-          >
-            <MessageSquareText :size="15" />
-            {{ qaCancelling ? t("page.appQa.stopping") : qaLoading ? t("page.appQa.asking") : t("page.appQa.ask") }}
-          </button>
-          <button
-            class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-panel px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
-            type="button"
-            :disabled="qaLoading || qaCancelling"
-            @click="newSession"
-          >
-            {{ t("page.appQa.newSession") }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <SplitPane :panels="panels">
       <template #sidebar>
         <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-default bg-sidebar">
           <div class="border-b border-default px-4 py-3">
             <div class="flex items-center justify-between gap-2">
-              <div>
-                <div class="docmind-section-label">{{ t("page.appQa.sessions") }}</div>
-                <div class="docmind-item-meta mt-1">{{ t("page.appQa.sessionDesc") }}</div>
+              <div class="docmind-section-label">{{ t("page.appQa.sessions") }}</div>
+              <div class="flex items-center gap-1.5">
+                <button
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent text-white shadow-sm hover:bg-accent/90"
+                  :title="t('page.appQa.createSession')"
+                  @click="newSession"
+                >
+                  <Plus :size="14" />
+                </button>
+                <button
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  :title="t('page.appQa.settings')"
+                  @click="router.push('/settings')"
+                >
+                  <SlidersHorizontal :size="14" />
+                </button>
+                <button
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  :title="t('common.refresh')"
+                  @click="refreshSessions()"
+                >
+                  <RefreshCw :size="14" />
+                </button>
               </div>
+            </div>
+            <div class="mt-3 flex items-center gap-2 rounded-md border border-default bg-input px-3 py-2">
+              <input
+                v-model="qaSessionFilter"
+                class="min-w-0 flex-1 bg-transparent text-xs text-primary outline-none placeholder:text-muted"
+                :placeholder="t('page.appQa.searchSessions')"
+              />
               <button
-                class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover"
-                :title="t('common.refresh')"
-                @click="refreshSessions()"
+                v-if="qaSessionFilter"
+                class="text-xs text-secondary hover:text-primary"
+                type="button"
+                @click="clearSessionFilter"
               >
-                <RefreshCw :size="14" />
+                {{ t("page.appQa.clearSessionFilter") }}
               </button>
             </div>
           </div>
@@ -581,9 +663,12 @@ watch(routeSessionId, async (next, previous) => {
             <div v-else-if="qaSessions.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
               {{ t("page.appQa.emptySessions") }}
             </div>
+            <div v-else-if="filteredSessions.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+              {{ t("page.appQa.noMatchingSessions") }}
+            </div>
             <div v-else class="space-y-2">
               <div
-                v-for="session in qaSessions"
+                v-for="session in filteredSessions"
                 :key="session.id"
                 class="w-full rounded-lg border px-3 py-2 text-left transition"
                 :class="qaSessionId === session.id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
@@ -625,11 +710,27 @@ watch(routeSessionId, async (next, previous) => {
             <div class="text-xs font-medium text-dim">
               {{ currentSession ? currentSession.title : t("page.appQa.currentSessionEmpty") }}
             </div>
-            <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2">
               <DocMindBadge tone="default">{{ qaMessages.length }}</DocMindBadge>
               <DocMindBadge :tone="isQaConfigured(qaSettings) ? 'success' : 'default'">
                 {{ isQaConfigured(qaSettings) ? t("page.appQa.enabled") : t("page.appQa.disabled") }}
               </DocMindBadge>
+              <button
+                class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                type="button"
+                :disabled="qaMessages.length === 0"
+                @click="exportCurrentSession"
+              >
+                {{ t("page.appQa.exportSession") }}
+              </button>
+              <button
+                class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                type="button"
+                :disabled="qaMessages.length === 0"
+                @click="copyCurrentSessionMarkdown"
+              >
+                {{ t("page.appQa.copySession") }}
+              </button>
             </div>
           </div>
 
@@ -645,81 +746,129 @@ watch(routeSessionId, async (next, previous) => {
             </div>
             <div v-else-if="qaMessages.length" class="space-y-3 p-4">
               <article
-                v-for="message in qaMessages"
+                v-for="(message, index) in qaMessages"
                 :key="message.id"
-                class="rounded-xl border border-default bg-surface p-4 shadow-sm transition"
-                :class="qaAnswer?.id === message.id ? 'ring-1 ring-accent-soft' : ''"
+                :class="[
+                  'relative',
+                  index < qaMessages.length - 1 ? 'pb-6' : '',
+                  qaAnswer?.id === message.id ? 'ring-1 ring-accent-soft' : '',
+                ]"
                 @click="selectMessage(message)"
               >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="docmind-section-label">{{ t("page.appQa.question") }}</div>
-                    <div class="mt-1 break-words text-sm font-medium text-primary">{{ message.question }}</div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <DocMindBadge tone="default">{{ t(`page.appSearch.qa.state.${message.state}`) }}</DocMindBadge>
-                    <DocMindBadge v-if="message.state === 'cancelled'" tone="danger">
-                      {{ t("page.appSearch.qa.cancelledByUser") }}
-                    </DocMindBadge>
-                  </div>
-                </div>
-
-                <div class="mt-3">
-                  <DocMindMarkdownRenderer
-                    :block="emptyMarkdownBlock"
-                    :markdown="message.answer || t('page.appQa.noAnswer')"
-                  />
-                </div>
-
-                <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-dim">
-                  <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
-                  <DocMindBadge tone="default">{{ message.created_at }}</DocMindBadge>
-                  <DocMindBadge tone="default">{{ t("page.appQa.sourceCount", { count: message.sources.length }) }}</DocMindBadge>
-                  <button
-                    class="inline-flex items-center gap-1 rounded-full border border-default bg-badge px-2 py-0.5 text-[12px] text-secondary hover:bg-surface-hover"
-                    type="button"
-                    @click.stop="toggleMessageSources(message.id)"
-                  >
-                    <ChevronDown v-if="expandedMessages[message.id]" :size="12" />
-                    <ChevronRight v-else :size="12" />
-                    {{ expandedMessages[message.id] ? t("page.appQa.hideSources") : t("page.appQa.showSources") }}
-                  </button>
-                </div>
-
                 <div
-                  v-if="expandedMessages[message.id]"
-                  class="mt-4 rounded-lg border border-default bg-panel/40 p-3"
-                >
-                  <div class="docmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
-                  <div class="mt-3 space-y-2">
-                    <button
-                      v-for="source in message.sources"
-                      :key="source.source_id"
-                      class="w-full rounded-lg border px-3 py-2 text-left transition"
-                      :class="qaSelectedSourceId === source.source_id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
-                      @click.stop="selectSource(source.source_id)"
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <div class="flex flex-wrap items-center gap-2">
-                            <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
-                            <span class="truncate text-sm font-medium text-primary">{{ source.file_name }}</span>
-                          </div>
-                          <div class="mt-1 truncate text-xs text-muted">{{ source.path }}</div>
-                          <div class="mt-1 text-[11px] text-dim">{{ source.title_path || source.heading }}</div>
-                        </div>
-                        <div class="text-right text-xs text-dim">
-                          <div>{{ Math.round(source.score * 100) }}%</div>
-                          <div class="mt-1">{{ source.rank_reason }}</div>
+                  v-if="index < qaMessages.length - 1"
+                  class="absolute bottom-0 left-4 top-0 w-px bg-gradient-to-b from-accent/65 via-border to-transparent"
+                />
+                <div class="absolute left-4 top-4 z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-accent bg-surface shadow-sm" />
+
+                <div class="pl-10">
+                  <div class="flex justify-end">
+                    <div class="max-w-[86%] rounded-2xl rounded-br-md bg-accent-soft px-4 py-3 shadow-sm">
+                      <div class="mt-1 break-words text-sm leading-7 text-primary">{{ message.question }}</div>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 flex justify-start">
+                    <div class="max-w-[86%] rounded-2xl rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2">
+                          <DocMindBadge v-if="message.state !== 'answered'" tone="default">
+                            {{ t(`page.appSearch.qa.state.${message.state}`) }}
+                          </DocMindBadge>
+                          <DocMindBadge v-if="message.state === 'cancelled'" tone="danger">
+                            {{ t("page.appSearch.qa.cancelledByUser") }}
+                          </DocMindBadge>
                         </div>
                       </div>
-                    </button>
+                      <div class="mt-3">
+                        <DocMindMarkdownRenderer
+                          :block="emptyMarkdownBlock"
+                          :markdown="message.answer || t('page.appQa.noAnswer')"
+                        />
+                      </div>
+                      <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-dim">
+                        <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
+                        <DocMindBadge tone="default">{{ message.created_at }}</DocMindBadge>
+                        <DocMindBadge tone="default">{{ t("page.appQa.sourceCount", { count: message.sources.length }) }}</DocMindBadge>
+                        <button
+                          class="inline-flex items-center gap-1 rounded-full border border-default bg-badge px-2 py-0.5 text-[12px] text-secondary hover:bg-surface-hover"
+                          type="button"
+                          @click.stop="toggleMessageSources(message.id)"
+                        >
+                          <ChevronDown v-if="expandedMessages[message.id]" :size="12" />
+                          <ChevronRight v-else :size="12" />
+                          {{ expandedMessages[message.id] ? t("page.appQa.hideSources") : t("page.appQa.showSources") }}
+                        </button>
+                      </div>
+
+                      <div
+                        v-if="expandedMessages[message.id]"
+                        class="mt-4 rounded-xl border border-default bg-panel/40 p-3"
+                      >
+                        <div class="docmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
+                        <div class="mt-3 space-y-2">
+                          <button
+                            v-for="source in message.sources"
+                            :key="source.source_id"
+                            class="w-full rounded-lg border px-3 py-2.5 text-left transition"
+                            :class="qaSelectedSourceId === source.source_id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent hover:bg-surface-hover'"
+                            @click.stop="selectSource(source.source_id)"
+                          >
+                            <div class="flex items-start gap-3">
+                              <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
+                              <div class="min-w-0 flex-1">
+                                <div class="flex min-w-0 items-center gap-2">
+                                  <span class="truncate text-sm font-medium text-primary">{{ source.file_name }}</span>
+                                  <DocMindBadge tone="default">{{ Math.round(source.score * 100) }}%</DocMindBadge>
+                                </div>
+                                <div class="mt-1 truncate text-xs text-muted">{{ source.title_path || source.heading || source.path }}</div>
+                                <div class="mt-1 truncate text-[11px] text-dim">{{ source.rank_reason }}</div>
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </article>
             </div>
             <div v-else class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
               {{ t("page.appQa.enterQuestion") }}
+            </div>
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="rounded-2xl border border-default bg-input px-3 py-2 shadow-sm">
+              <textarea
+                v-model="qaQuestion"
+                rows="2"
+                class="min-h-[44px] w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 text-primary outline-none placeholder:text-muted"
+                :placeholder="t('page.appQa.placeholder')"
+                @keydown.enter.exact.prevent="runQa"
+              />
+              <div class="mt-1.5 flex items-end justify-between gap-3">
+                <div class="pb-0.5 text-[11px] leading-4 text-muted">
+                  {{ t("page.appQa.sendHint") }}
+                </div>
+                <button
+                  v-if="qaLoading || qaCancelling"
+                  class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  type="button"
+                  @click="stopQa"
+                >
+                  <X :size="16" />
+                </button>
+                <button
+                  v-else
+                  class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white shadow-sm transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  :disabled="qaLoading || qaCancelling || !qaQuestion.trim()"
+                  type="button"
+                  @click="runQa"
+                >
+                  <ArrowUp :size="16" />
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -734,18 +883,37 @@ watch(routeSessionId, async (next, previous) => {
                 <div class="mt-1 truncate text-sm font-medium text-primary">{{ selectedSource.file_name }}</div>
                 <div class="mt-1 break-all text-xs text-muted">{{ selectedSource.path }}</div>
               </div>
-              <DocMindBadge tone="default">{{ selectedSource.source_id }}</DocMindBadge>
+              <div class="flex items-center gap-2">
+                <DocMindBadge tone="default">{{ selectedSource.source_id }}</DocMindBadge>
+                <button
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                  type="button"
+                  :title="t('common.close')"
+                  @click="closeSelectedSource"
+                >
+                  <X :size="14" />
+                </button>
+              </div>
             </div>
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
             <div class="rounded-lg border border-default bg-surface p-4">
-              <div class="flex flex-wrap gap-2">
+              <div class="docmind-section-label">{{ t("page.appQa.sourceMeta") }}</div>
+              <div class="mt-3 flex flex-wrap gap-2">
                 <DocMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</DocMindBadge>
-                <DocMindBadge tone="default">{{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}</DocMindBadge>
-                <DocMindBadge tone="success">{{ selectedSourceCitation || t("common.none") }}</DocMindBadge>
+                <DocMindBadge tone="default">
+                  {{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}
+                </DocMindBadge>
               </div>
-              <div class="mt-4 whitespace-pre-wrap text-sm leading-7 text-secondary">
+              <div class="mt-3 rounded-md bg-panel/70 px-3 py-2 text-xs leading-6 text-secondary">
+                {{ selectedSourceCitation || t("common.none") }}
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-default bg-surface p-4">
+              <div class="docmind-section-label">{{ t("page.appQa.referenceSnippet") }}</div>
+              <div class="mt-3 whitespace-pre-wrap rounded-md border border-default bg-panel/70 px-3 py-3 text-sm leading-7 text-secondary">
                 {{ selectedSource.snippet }}
               </div>
               <p class="docmind-item-meta mt-3">{{ selectedSource.rank_reason }}</p>
