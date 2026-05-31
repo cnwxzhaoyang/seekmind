@@ -1,9 +1,10 @@
 use crate::docmind::models::{
     QaAnswerProgressView, QaAnswerView, QaAskStartView, QaConnectionTestView, QaHistoryView,
-    QaRetrievalView, QaSettingsView, QaSourceView,
+    QaMessageView, QaRetrievalView, QaSessionView, QaSettingsView, QaSourceView,
 };
 use crate::docmind::storage::db::Database;
 use crate::docmind::storage::types::QaSettings;
+use crate::docmind::search::normalize_query;
 
 use super::cancel::{cancel as cancel_qa_job, clear as clear_qa_job, register as register_qa_job};
 use super::client::{ask_model, ask_model_stream};
@@ -30,13 +31,19 @@ fn qa_settings_to_view(settings: &QaSettings) -> QaSettingsView {
     }
 }
 
-fn build_system_prompt(context: &QaContext) -> String {
+fn build_system_prompt(context: &QaContext, session_context: Option<&str>) -> String {
     let mut prompt = String::from(
         "你是 DocMind 的本地文档问答引擎。只能基于给定来源回答，不能使用外部知识补全事实。\
 如果来源不足，直接说明无法从当前文档判断。回答要简短、具体、可回溯。\
 不要编造新的来源编号，不要输出与来源无关的结论。\
 如果能回答，请用与用户问题相同的语言输出，并尽量把结论控制在 3 到 6 句以内。\n\n可用来源如下：\n",
     );
+
+    if let Some(session_context) = session_context.filter(|text| !text.trim().is_empty()) {
+        prompt.push_str("\n最近对话上下文（仅用于理解指代，不可当作事实来源）：\n");
+        prompt.push_str(session_context.trim());
+        prompt.push_str("\n\n");
+    }
 
     for source in &context.sources {
         prompt.push('\n');
@@ -52,6 +59,67 @@ fn build_system_prompt(context: &QaContext) -> String {
     );
 
     prompt
+}
+
+fn truncate_prompt_text(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect()
+}
+
+fn build_session_context(messages: &[QaMessageView]) -> String {
+    let mut lines = Vec::new();
+    for message in messages.iter().rev().take(3).rev() {
+        let question = truncate_prompt_text(message.question.trim(), 80);
+        let answer = truncate_prompt_text(message.answer.trim(), 140);
+        if question.is_empty() && answer.is_empty() {
+            continue;
+        }
+
+        lines.push(format!("Q: {question}"));
+        if !answer.is_empty() {
+            lines.push(format!("A: {answer}"));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> Vec<String> {
+    let current_set = current_terms
+        .iter()
+        .map(|term| term.trim().to_lowercase())
+        .filter(|term| !term.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    let stop_terms = [
+        "什么", "怎么", "如何", "是否", "这个", "那个", "它的", "它", "以及", "问题", "答案", "来源", "文档", "内容", "可以", "已经",
+    ]
+    .into_iter()
+    .collect::<std::collections::HashSet<_>>();
+
+    let mut terms = Vec::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+
+    for message in messages.iter().rev().take(3) {
+        let tokens = normalize_query(&format!("{} {}", message.question, message.answer));
+        for token in tokens {
+            let normalized = token.trim().to_lowercase();
+            if normalized.is_empty()
+                || normalized.len() < 2
+                || current_set.contains(&normalized)
+                || stop_terms.contains(normalized.as_str())
+                || seen.contains(&normalized)
+            {
+                continue;
+            }
+
+            seen.insert(normalized.clone());
+            terms.push(normalized);
+            if terms.len() >= 6 {
+                return terms;
+            }
+        }
+    }
+
+    terms
 }
 
 fn build_answer_view(
@@ -213,11 +281,57 @@ pub async fn remove_qa_history(
 }
 
 #[tauri::command]
+pub async fn create_qa_session(
+    title: String,
+    state: tauri::State<'_, Database>,
+) -> Result<QaSessionView, String> {
+    state
+        .create_qa_session(&title)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_qa_sessions(
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<QaSessionView>, String> {
+    state
+        .list_qa_sessions(limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_qa_messages(
+    session_id: String,
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<QaMessageView>, String> {
+    state
+        .list_qa_messages(&session_id, limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_qa_session(
+    session_id: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .remove_qa_session(&session_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn ask_question(
     app: tauri::AppHandle,
     question: String,
     scope_paths: Vec<String>,
     limit: usize,
+    session_id: Option<String>,
     state: tauri::State<'_, Database>,
 ) -> Result<QaAskStartView, String> {
     let normalized_question = question.trim().to_string();
@@ -229,6 +343,19 @@ pub async fn ask_question(
     let created_at = chrono::Utc::now().to_rfc3339();
     let answer_id = uuid::Uuid::new_v4().to_string();
     let job_id = answer_id.clone();
+    let normalized_session_id = session_id
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty());
+    let session_messages = if let Some(session_id) = normalized_session_id.as_deref() {
+        state
+            .list_qa_messages_recent(session_id, 6)
+            .await
+            .map_err(|error| error.to_string())?
+    } else {
+        Vec::new()
+    };
+    let session_context = build_session_context(&session_messages);
+    let session_terms = build_session_terms(&session_messages, &normalize_query(&normalized_question));
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     register_qa_job(job_id.clone(), abort_handle);
     let database = state.inner().clone();
@@ -267,7 +394,9 @@ pub async fn ask_question(
             answer.model.clone(),
             answer.error.clone(),
         ));
-        let _ = state.record_qa_history(&answer).await;
+        let _ = state
+            .record_qa_answer(&answer, normalized_session_id.as_deref())
+            .await;
         clear_qa_job(&job_id);
         return Ok(QaAskStartView {
             job_id,
@@ -297,6 +426,9 @@ pub async fn ask_question(
     let scope_paths_for_task = scope_paths.clone();
     let settings_for_task = settings.clone();
     let database_for_task = database.clone();
+    let session_id_for_task = normalized_session_id.clone();
+    let session_terms_for_task = session_terms.clone();
+    let session_context_for_task = session_context.clone();
     let app_for_task = app.clone();
     let job_id_for_task = job_id.clone();
     let answer_id_for_task = answer_id.clone();
@@ -309,6 +441,7 @@ pub async fn ask_question(
     let cancel_model = settings.model.clone();
     let cancel_created_at = created_at.clone();
     let cancel_database = database.clone();
+    let cancel_session_id = normalized_session_id.clone();
     let cancel_meta_for_cancel = cancel_meta.clone();
     let clear_job_id = job_id.clone();
     let start_status = build_answer_view(
@@ -339,6 +472,7 @@ pub async fn ask_question(
                     &scope_paths_for_task,
                     &settings_for_task,
                     limit,
+                    &session_terms_for_task,
                 )
                 .await
                 {
@@ -375,7 +509,9 @@ pub async fn ask_question(
                                 answer.error.clone(),
                             ),
                         );
-                        let _ = database_for_task.record_qa_history(&answer).await;
+                        let _ = database_for_task
+                            .record_qa_answer(&answer, session_id_for_task.as_deref())
+                            .await;
                         return Ok::<(), String>(());
                     }
                 };
@@ -417,11 +553,13 @@ pub async fn ask_question(
                             answer.error.clone(),
                         ),
                     );
-                    let _ = database_for_task.record_qa_history(&answer).await;
+                    let _ = database_for_task
+                        .record_qa_answer(&answer, session_id_for_task.as_deref())
+                        .await;
                     return Ok::<(), String>(());
                 }
 
-                let prompt = build_system_prompt(&context);
+                let prompt = build_system_prompt(&context, Some(session_context_for_task.as_str()));
                 let sources = context
                     .sources
                     .iter()
@@ -498,7 +636,9 @@ pub async fn ask_question(
                                 None,
                             ),
                         );
-                        let _ = database_for_task.record_qa_history(&answer).await;
+                        let _ = database_for_task
+                            .record_qa_answer(&answer, session_id_for_task.as_deref())
+                            .await;
                     }
                     Err(error) => {
                         let is_cancelled = error == "task has been cancelled" || error == "aborted";
@@ -532,7 +672,9 @@ pub async fn ask_question(
                                 Some(error_message),
                             ),
                         );
-                        let _ = database_for_task.record_qa_history(&answer).await;
+                        let _ = database_for_task
+                            .record_qa_answer(&answer, session_id_for_task.as_deref())
+                            .await;
                     }
                 }
 
@@ -586,7 +728,9 @@ pub async fn ask_question(
                         Some(error),
                     ),
                 );
-                let _ = cancel_database.record_qa_history(&answer).await;
+                let _ = cancel_database
+                    .record_qa_answer(&answer, cancel_session_id.as_deref())
+                    .await;
             }
         }
         clear_qa_job(&clear_job_id);

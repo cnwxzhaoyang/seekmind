@@ -16,7 +16,8 @@ use crate::docmind::file_ops;
 use crate::docmind::models::{
     ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
     IndexDirView, IndexStatusView, PreviewBlockView, QaAnswerView, QaHistoryView, QaRetrievalView,
-    QaSourceView, RecentDocumentView, SearchHistoryView, SearchResultView,
+    QaMessageView, QaSessionView, QaSourceView, RecentDocumentView, SearchHistoryView,
+    SearchResultView,
 };
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
@@ -254,6 +255,30 @@ struct QaHistoryRow {
     model: String,
     error: String,
     created_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct QaSessionRow {
+    id: String,
+    title: String,
+    message_count: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct QaMessageRow {
+    id: String,
+    session_id: String,
+    question: String,
+    answer: String,
+    state: String,
+    sources_json: String,
+    retrieval_json: String,
+    model: String,
+    error: String,
+    created_at: i64,
+    updated_at: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1092,6 +1117,194 @@ impl Database {
 
         sqlx::query("DELETE FROM recent_documents WHERE path = ?")
             .bind(path)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn create_qa_session(&self, title: &str) -> Result<QaSessionView, sqlx::Error> {
+        let now = current_unix_ts();
+        let id = Uuid::new_v4().to_string();
+        let normalized_title = normalize_qa_session_title(title);
+        sqlx::query(
+            r#"
+            INSERT INTO qa_sessions (id, title, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(&normalized_title)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(QaSessionView {
+            id,
+            title: normalized_title,
+            message_count: 0,
+            created_at: format_unix_ts(now),
+            updated_at: format_unix_ts(now),
+        })
+    }
+
+    pub async fn list_qa_sessions(&self, limit: i64) -> Result<Vec<QaSessionView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, QaSessionRow>(
+            r#"
+            SELECT
+                s.id,
+                s.title,
+                COUNT(m.id) AS message_count,
+                s.created_at,
+                s.updated_at
+            FROM qa_sessions s
+            LEFT JOIN qa_messages m ON m.session_id = s.id
+            GROUP BY s.id
+            ORDER BY s.updated_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(qa_session_row_to_view).collect())
+    }
+
+    pub async fn list_qa_messages(
+        &self,
+        session_id: &str,
+        limit: i64,
+    ) -> Result<Vec<QaMessageView>, sqlx::Error> {
+        if session_id.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query_as::<_, QaMessageRow>(
+            r#"
+            SELECT id, session_id, question, answer, state, sources_json, retrieval_json, model, error, created_at, updated_at
+            FROM qa_messages
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(session_id.trim())
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(qa_message_row_to_view).collect())
+    }
+
+    pub async fn list_qa_messages_recent(
+        &self,
+        session_id: &str,
+        limit: i64,
+    ) -> Result<Vec<QaMessageView>, sqlx::Error> {
+        if session_id.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query_as::<_, QaMessageRow>(
+            r#"
+            SELECT id, session_id, question, answer, state, sources_json, retrieval_json, model, error, created_at, updated_at
+            FROM qa_messages
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(session_id.trim())
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut messages = rows.into_iter().map(qa_message_row_to_view).collect::<Vec<_>>();
+        messages.reverse();
+        Ok(messages)
+    }
+
+    pub async fn remove_qa_session(&self, session_id: &str) -> Result<(), sqlx::Error> {
+        if session_id.trim().is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM qa_messages WHERE session_id = ?")
+            .bind(session_id.trim())
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM qa_sessions WHERE id = ?")
+            .bind(session_id.trim())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn record_qa_answer(
+        &self,
+        answer: &QaAnswerView,
+        session_id: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        self.record_qa_history(answer).await?;
+        if let Some(session_id) = session_id.map(str::trim).filter(|id| !id.is_empty()) {
+            self.record_qa_message(session_id, answer).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn record_qa_message(
+        &self,
+        session_id: &str,
+        answer: &QaAnswerView,
+    ) -> Result<(), sqlx::Error> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(());
+        }
+
+        let now = current_unix_ts();
+        let sources_json =
+            serde_json::to_string(&answer.sources).unwrap_or_else(|_| "[]".to_string());
+        let retrieval_json =
+            serde_json::to_string(&answer.retrieval).unwrap_or_else(|_| "{}".to_string());
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO qa_messages
+                (id, session_id, question, answer, state, sources_json, retrieval_json, model, error, created_at, updated_at)
+            VALUES (
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                COALESCE((SELECT created_at FROM qa_messages WHERE id = ?), ?),
+                ?
+            )
+            "#,
+        )
+        .bind(&answer.id)
+        .bind(session_id)
+        .bind(&answer.question)
+        .bind(&answer.answer)
+        .bind(&answer.state)
+        .bind(sources_json)
+        .bind(retrieval_json)
+        .bind(&answer.model)
+        .bind(answer.error.as_deref().unwrap_or(""))
+        .bind(&answer.id)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query("UPDATE qa_sessions SET updated_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(session_id)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -2769,6 +2982,30 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 created_at INTEGER NOT NULL DEFAULT 0
             )
             "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS qa_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS qa_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                state TEXT NOT NULL,
+                sources_json TEXT NOT NULL DEFAULT '[]',
+                retrieval_json TEXT NOT NULL DEFAULT '{}',
+                model TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(session_id) REFERENCES qa_sessions(id) ON DELETE CASCADE
+            )
+            "#,
         ];
 
         for statement in statements {
@@ -3389,6 +3626,57 @@ fn qa_history_row_to_view(row: QaHistoryRow) -> QaHistoryView {
             }
         },
     }
+}
+
+fn qa_session_row_to_view(row: QaSessionRow) -> QaSessionView {
+    QaSessionView {
+        id: row.id,
+        title: row.title,
+        message_count: row.message_count.max(0) as usize,
+        created_at: format_unix_ts(row.created_at),
+        updated_at: format_unix_ts(row.updated_at),
+    }
+}
+
+fn qa_message_row_to_view(row: QaMessageRow) -> QaMessageView {
+    let sources = serde_json::from_str::<Vec<QaSourceView>>(&row.sources_json).unwrap_or_default();
+    let retrieval = serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
+        search_mode: String::new(),
+        candidate_count: 0,
+        selected_count: 0,
+        semantic_enabled: false,
+        semantic_fallback: false,
+        semantic_fallback_reason: String::new(),
+    });
+
+    QaMessageView {
+        id: row.id,
+        session_id: row.session_id,
+        question: row.question,
+        answer: row.answer,
+        state: row.state,
+        sources,
+        retrieval,
+        model: row.model,
+        created_at: format_unix_ts(row.created_at),
+        updated_at: format_unix_ts(row.updated_at),
+        error: {
+            let trimmed = row.error.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        },
+    }
+}
+
+fn normalize_qa_session_title(title: &str) -> String {
+    let normalized = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return "新问答会话".to_string();
+    }
+    normalized.chars().take(40).collect()
 }
 
 fn matched_field_and_origin(row: &SearchRow, terms: &[String]) -> (String, String) {

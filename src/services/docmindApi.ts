@@ -7,6 +7,8 @@ import type {
   QaAnswerProgressView,
   QaConnectionTestView,
   QaHistoryView,
+  QaMessageView,
+  QaSessionView,
   QaSettingsView,
   DocumentView,
   DocumentRefreshStartView,
@@ -72,14 +74,22 @@ export const docmindApi = {
     invoke<QaSettingsView>("save_qa_settings", { settings }),
   cancelQaQuestion: (jobId: string) =>
     invoke<void>("cancel_qa_question", { jobId }),
-  askQuestion: (question: string, scopePaths: string[] = [], limit = 6) =>
-    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit }),
+  askQuestion: (question: string, scopePaths: string[] = [], limit = 6, sessionId?: string) =>
+    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit, sessionId }),
   testQaConnection: (settings: QaSettingsView) =>
     invoke<QaConnectionTestView>("test_qa_connection", { settings }),
   listQaHistory: (limit = 12) =>
     invoke<QaHistoryView[]>("list_qa_history", { limit }),
   removeQaHistory: (id: string) =>
     invoke<void>("remove_qa_history", { id }),
+  createQaSession: (title: string) =>
+    invoke<QaSessionView>("create_qa_session", { title }),
+  listQaSessions: (limit = 12) =>
+    invoke<QaSessionView[]>("list_qa_sessions", { limit }),
+  listQaMessages: (sessionId: string, limit = 50) =>
+    invoke<QaMessageView[]>("list_qa_messages", { sessionId, limit }),
+  removeQaSession: (sessionId: string) =>
+    invoke<void>("remove_qa_session", { sessionId }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>

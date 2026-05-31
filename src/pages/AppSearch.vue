@@ -38,6 +38,9 @@ const routeSearchQuery = computed(() => (typeof route.query.q === "string" ? rou
 const query = ref(routeSearchQuery.value);
 const qaQuestion = ref("");
 const qaAnswer = ref<QaAnswerView | null>(null);
+const qaMessages = ref<QaAnswerView[]>([]);
+const qaSessionId = ref("");
+const qaSessionTitle = ref("");
 const qaSettings = ref<QaSettingsView | null>(null);
 const qaSelectedSourceId = ref("");
 const qaLoading = ref(false);
@@ -344,6 +347,36 @@ const loadQaSettings = async () => {
   }
 };
 
+const loadLatestQaSession = async () => {
+  try {
+    const sessions = await docmindApi.listQaSessions(1);
+    const latest = sessions[0];
+    if (!latest) {
+      return;
+    }
+
+    qaSessionId.value = latest.id;
+    qaSessionTitle.value = latest.title;
+    const messages = await docmindApi.listQaMessages(latest.id, 50);
+    qaMessages.value = messages;
+    qaAnswer.value = messages[messages.length - 1] ?? null;
+    qaSelectedSourceId.value = qaAnswer.value?.sources[0]?.source_id ?? "";
+  } catch (error) {
+    console.error("[DocMind] loadLatestQaSession failed", error);
+  }
+};
+
+const ensureQaSession = async (title: string) => {
+  if (qaSessionId.value) {
+    return qaSessionId.value;
+  }
+
+  const session = await docmindApi.createQaSession(title);
+  qaSessionId.value = session.id;
+  qaSessionTitle.value = session.title;
+  return session.id;
+};
+
 const installQaProgressListener = async () => {
   if (unlistenQaProgress) {
     return;
@@ -368,6 +401,12 @@ const installQaProgressListener = async () => {
         created_at: payload.updated_at,
         error: payload.error ?? null,
       };
+      const messageIndex = qaMessages.value.findIndex((item) => item.id === payload.job_id);
+      if (messageIndex >= 0 && qaAnswer.value) {
+        qaMessages.value.splice(messageIndex, 1, qaAnswer.value);
+      } else if (qaAnswer.value) {
+        qaMessages.value.push(qaAnswer.value);
+      }
       qaSelectedSourceId.value = qaSelectedSourceId.value || payload.sources[0]?.source_id || "";
 
       if (payload.state === "searching") {
@@ -417,6 +456,9 @@ const installQaProgressListener = async () => {
 const runQa = async () => {
   if (!qaQuestion.value.trim()) {
     qaAnswer.value = null;
+    qaMessages.value = [];
+    qaSessionId.value = "";
+    qaSessionTitle.value = "";
     qaSelectedSourceId.value = "";
     qaErrorMessage.value = "";
     qaInfoMessage.value = "";
@@ -441,10 +483,14 @@ const runQa = async () => {
       return;
     }
 
-    const started: QaAskStartView = await docmindApi.askQuestion(qaQuestion.value.trim(), [], 6);
+    const questionText = qaQuestion.value.trim();
+    const sessionId = await ensureQaSession(questionText);
+    const started: QaAskStartView = await docmindApi.askQuestion(questionText, [], 6, sessionId);
     qaActiveJobId.value = started.job_id;
     qaAnswer.value = started.status;
+    qaMessages.value.push(started.status);
     qaSelectedSourceId.value = started.status.sources[0]?.source_id ?? "";
+    qaQuestion.value = "";
 
     if (started.status.state === "model_not_configured") {
       qaInfoMessage.value = t("page.appSearch.qa.notConfigured");
@@ -468,6 +514,27 @@ const runQa = async () => {
       qaActiveJobId.value = "";
     }
   }
+};
+
+const newQaSession = () => {
+  if (qaLoading.value || qaCancelling.value) {
+    return;
+  }
+
+  qaMessages.value = [];
+  qaAnswer.value = null;
+  qaSessionId.value = "";
+  qaSessionTitle.value = "";
+  qaQuestion.value = "";
+  qaSelectedSourceId.value = "";
+  qaInfoMessage.value = "";
+  qaErrorMessage.value = "";
+  qaActiveJobId.value = "";
+};
+
+const selectQaMessage = (message: QaAnswerView) => {
+  qaAnswer.value = message;
+  qaSelectedSourceId.value = message.sources[0]?.source_id ?? "";
 };
 
 const stopQa = async () => {
@@ -881,7 +948,7 @@ const handleResultContextMenu = (event: MouseEvent) => {
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
   await installSearchDebugReportListener();
-  await Promise.all([loadParserRuntime(), loadQuickAccessData(), loadQaSettings(), installQaProgressListener()]);
+  await Promise.all([loadParserRuntime(), loadQuickAccessData(), loadQaSettings(), loadLatestQaSession(), installQaProgressListener()]);
   query.value = routeSearchQuery.value;
   if (query.value.trim()) {
     await runSearch();
@@ -968,6 +1035,9 @@ watch(showDebugPanel, async (visible) => {
 watch(qaMode, async (visible) => {
   if (visible) {
     await loadQaSettings();
+    if (!qaSessionId.value && qaMessages.value.length === 0) {
+      await loadLatestQaSession();
+    }
     await installQaProgressListener();
   }
 });
@@ -1031,8 +1101,18 @@ watch(qaMode, async (visible) => {
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-xs text-dim">
                     {{ isQaConfigured(qaSettings) ? t("page.appSearch.qa.ready") : t("page.appSearch.qa.notConfigured") }}
+                    <span v-if="qaSessionTitle" class="ml-2 text-muted">· {{ qaSessionTitle }}</span>
                   </div>
                   <div class="flex items-center gap-2">
+                    <button
+                      v-if="qaMessages.length"
+                      class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                      type="button"
+                      :disabled="qaLoading || qaCancelling"
+                      @click="newQaSession"
+                    >
+                      {{ t("page.appSearch.qa.newSession") }}
+                    </button>
                     <button
                       v-if="qaLoading || qaCancelling"
                       class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
@@ -1174,31 +1254,42 @@ watch(qaMode, async (visible) => {
                 <div v-if="qaInfoMessage" class="m-4 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-3 text-sm text-success">
                   {{ qaInfoMessage }}
                 </div>
-                <div v-if="qaLoading && !qaAnswer" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                <div v-if="qaLoading && qaMessages.length === 0" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
                   {{ t("page.appSearch.qa.loading") }}
                 </div>
-                <div v-else-if="qaAnswer" class="space-y-3 p-4">
-                  <div class="rounded-lg border border-default bg-surface p-4">
+                <div v-else-if="qaMessages.length" class="space-y-3 p-4">
+                  <div
+                    v-for="message in qaMessages"
+                    :key="message.id"
+                    class="rounded-lg border border-default bg-surface p-4"
+                    :class="qaAnswer?.id === message.id ? 'ring-1 ring-accent-soft' : ''"
+                    @click="selectQaMessage(message)"
+                  >
                     <div class="flex items-center justify-between gap-3">
-                    <div class="docmind-section-label">{{ t("page.appSearch.qa.answerTitle") }}</div>
+                      <div class="min-w-0">
+                        <div class="docmind-section-label">{{ t("page.appSearch.qa.answerTitle") }}</div>
+                        <div class="mt-1 text-sm font-medium text-primary">{{ message.question }}</div>
+                      </div>
                       <div class="flex items-center gap-2">
-                        <DocMindBadge tone="default">{{ qaLoading ? qaInfoMessage || t("page.appSearch.qa.streaming") : qaStateLabel }}</DocMindBadge>
-                        <DocMindBadge v-if="qaAnswer.state === 'cancelled'" tone="danger">
+                        <DocMindBadge tone="default">
+                          {{ qaLoading && qaAnswer?.id === message.id ? qaInfoMessage || t("page.appSearch.qa.streaming") : t(`page.appSearch.qa.state.${message.state}`) }}
+                        </DocMindBadge>
+                        <DocMindBadge v-if="message.state === 'cancelled'" tone="danger">
                           {{ t("page.appSearch.qa.cancelledByUser") }}
                         </DocMindBadge>
                       </div>
                     </div>
                     <div class="mt-2 whitespace-pre-wrap text-sm leading-7 text-primary">
-                      {{ qaAnswer.answer || t("page.appSearch.qa.noAnswer") }}
+                      {{ message.answer || t("page.appSearch.qa.noAnswer") }}
                     </div>
                     <div class="mt-3 flex flex-wrap gap-2 text-xs text-dim">
-                      <DocMindBadge tone="default">{{ qaAnswer.model || t("common.none") }}</DocMindBadge>
-                      <DocMindBadge tone="default">{{ qaAnswer.created_at }}</DocMindBadge>
-                      <DocMindBadge tone="default">{{ t("page.appSearch.qa.sourceCount", { count: qaAnswer.sources.length }) }}</DocMindBadge>
+                      <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
+                      <DocMindBadge tone="default">{{ message.created_at }}</DocMindBadge>
+                      <DocMindBadge tone="default">{{ t("page.appSearch.qa.sourceCount", { count: message.sources.length }) }}</DocMindBadge>
                     </div>
                   </div>
 
-                  <div class="space-y-2">
+                  <div v-if="qaAnswer" class="space-y-2">
                     <div class="docmind-section-label px-1">{{ t("page.appSearch.qa.sourcesTitle") }}</div>
                     <div
                       v-for="source in qaAnswer.sources"

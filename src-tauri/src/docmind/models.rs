@@ -381,6 +381,30 @@ pub struct QaHistoryView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaSessionView {
+    pub id: String,
+    pub title: String,
+    pub message_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaMessageView {
+    pub id: String,
+    pub session_id: String,
+    pub question: String,
+    pub answer: String,
+    pub state: String,
+    pub sources: Vec<QaSourceView>,
+    pub retrieval: QaRetrievalView,
+    pub model: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaConnectionTestView {
     pub ok: bool,
     pub message: String,

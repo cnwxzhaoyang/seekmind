@@ -65,10 +65,17 @@ pub async fn build_qa_context(
     scope_paths: &[String],
     settings: &QaSettings,
     limit: usize,
+    session_terms: &[String],
 ) -> Result<QaContext, String> {
     let recall_limit = limit.max(1).saturating_mul(3).max(20);
+    let mut augmented_query = question.trim().to_string();
+    if !session_terms.is_empty() {
+        augmented_query.push(' ');
+        augmented_query.push_str(&session_terms.join(" "));
+    }
+
     let debug = database
-        .search_documents_debug(question, recall_limit)
+        .search_documents_debug(&augmented_query, recall_limit)
         .await
         .map_err(|error| error.to_string())?;
 

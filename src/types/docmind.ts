@@ -317,6 +317,19 @@ export interface QaAnswerView {
 
 export interface QaHistoryView extends QaAnswerView {}
 
+export interface QaSessionView {
+  id: string;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QaMessageView extends QaAnswerView {
+  session_id: string;
+  updated_at: string;
+}
+
 export interface QaConnectionTestView {
   ok: boolean;
   message: string;

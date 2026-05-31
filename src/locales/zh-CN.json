@@ -95,6 +95,7 @@
         "notConfigured": "问答模型未配置或已关闭",
         "ask": "开始问答",
         "asking": "问答中...",
+        "newSession": "新会话",
         "loading": "正在生成答案...",
         "searching": "正在检索来源...",
         "generating": "正在生成答案...",

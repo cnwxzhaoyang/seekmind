@@ -94,6 +94,7 @@
         "notConfigured": "QA model is not configured or disabled",
         "ask": "Ask",
         "asking": "Asking...",
+        "newSession": "New Session",
         "loading": "Generating answer...",
         "searching": "Searching sources...",
         "generating": "Generating answer...",
