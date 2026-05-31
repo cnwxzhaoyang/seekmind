@@ -266,9 +266,7 @@ const setCurrentSession = async (
   qaMessages.value = messages;
   qaAnswer.value = messages.find((item) => item.id === uiState.answerId) ?? messages[messages.length - 1] ?? null;
   qaSelectedSourceId.value =
-    qaAnswer.value?.sources.find((item) => item.source_id === uiState.selectedSourceId)?.source_id ??
-    qaAnswer.value?.sources[0]?.source_id ??
-    "";
+    qaAnswer.value?.sources.find((item) => item.source_id === uiState.selectedSourceId)?.source_id ?? "";
   qaSessionTitle.value = qaSessions.value.find((item) => item.id === sessionId)?.title ?? qaSessionTitle.value;
   expandedMessages.value = uiState.expandedMessages ?? {};
 };
@@ -422,7 +420,6 @@ const installQaProgressListener = async () => {
       qaMessages.value.push(nextMessage);
     }
     qaAnswer.value = nextMessage;
-    qaSelectedSourceId.value = qaSelectedSourceId.value || payload.sources[0]?.source_id || "";
 
     if (payload.state === "searching") {
       qaLoading.value = true;
@@ -544,7 +541,7 @@ const runQa = async () => {
     };
     qaAnswer.value = startedMessage;
     qaMessages.value = [...qaMessages.value.filter((item) => item.id !== startedMessage.id), startedMessage];
-    qaSelectedSourceId.value = startedMessage.sources[0]?.source_id ?? "";
+    qaSelectedSourceId.value = "";
     qaQuestion.value = "";
 
     if (started.status.state === "model_not_configured") {
@@ -612,7 +609,7 @@ const toggleMessageSources = (messageId: string) => {
 
 const selectMessage = (message: QaMessageView) => {
   qaAnswer.value = message;
-  qaSelectedSourceId.value = message.sources[0]?.source_id ?? "";
+  qaSelectedSourceId.value = "";
 };
 
 const selectSource = (sourceId: string) => {

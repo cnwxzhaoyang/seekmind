@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
+import { MessageSquareText, RefreshCw, Save, Shield } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import { docmindApi, formatDocmindError } from "../../services/docmindApi";
-import type { QaAnswerView, QaConnectionTestView, QaHistoryView, QaSettingsView } from "../../types/docmind";
+import type { QaConnectionTestView, QaSettingsView } from "../../types/docmind";
 
 const { t } = useI18n();
 
@@ -20,11 +20,9 @@ const contextChunkLimit = ref(8);
 const contextTokenBudget = ref(6000);
 const minEvidenceCount = ref(2);
 const minRetrievalScore = ref(0);
-const history = ref<QaHistoryView[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
-const refreshingHistory = ref(false);
 const errorMessage = ref("");
 const infoMessage = ref("");
 const connectionResult = ref<QaConnectionTestView | null>(null);
@@ -79,17 +77,6 @@ const loadSettings = async () => {
   }
 };
 
-const loadHistory = async () => {
-  refreshingHistory.value = true;
-  try {
-    history.value = await docmindApi.listQaHistory(8);
-  } catch (error) {
-    console.error("[DocMind] listQaHistory failed", error);
-  } finally {
-    refreshingHistory.value = false;
-  }
-};
-
 const buildSettingsPayload = (): QaSettingsView => ({
   enabled: enabled.value,
   provider: provider.value.trim() || "openai_compatible",
@@ -115,7 +102,6 @@ const saveSettings = async () => {
     savedSettings.value = settings;
     applySettings(settings);
     infoMessage.value = t("page.settings.qa.saved");
-    await loadHistory();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, t("page.settings.qa.error.save"));
     console.error("[DocMind] saveQaSettings failed", error);
@@ -138,7 +124,6 @@ const testConnection = async () => {
     applySettings(settings);
     connectionResult.value = result;
     infoMessage.value = t("page.settings.qa.connectionSaved", { message: result.message });
-    await loadHistory();
   } catch (error) {
     errorMessage.value = formatDocmindError(error, t("page.settings.qa.error.connection"));
     console.error("[DocMind] testQaConnection failed", error);
@@ -148,30 +133,7 @@ const testConnection = async () => {
 };
 
 const refreshAll = async () => {
-  await Promise.all([loadSettings(), loadHistory()]);
-};
-
-const removeHistoryItem = async (item: QaHistoryView) => {
-  try {
-    await docmindApi.removeQaHistory(item.id);
-    history.value = history.value.filter((entry) => entry.id !== item.id);
-  } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.settings.qa.error.historyRemove"));
-    console.error("[DocMind] removeQaHistory failed", error);
-  }
-};
-
-const stateBadgeTone = (item: QaAnswerView) => {
-  if (item.state === "answered") {
-    return "success";
-  }
-  if (item.state === "cancelled") {
-    return "danger";
-  }
-  if (item.state === "insufficient_evidence") {
-    return "warning";
-  }
-  return "default";
+  await loadSettings();
 };
 
 onMounted(async () => {
@@ -330,10 +292,10 @@ onMounted(async () => {
           </button>
           <button
             class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-            :disabled="loading || saving || testing || refreshingHistory"
+            :disabled="loading || saving || testing"
             @click="refreshAll"
           >
-            <RefreshCw :size="15" :class="{ 'animate-spin': refreshingHistory }" />
+            <RefreshCw :size="15" />
             {{ t("page.settings.qa.refresh") }}
           </button>
           <button
@@ -356,53 +318,19 @@ onMounted(async () => {
           <div class="mt-1">{{ connectionResult.message }}</div>
         </div>
 
-        <div>
-          <div class="mb-2 flex items-center justify-between">
-            <div>
-              <div class="docmind-section-label">{{ t("page.settings.qa.historyTitle") }}</div>
-              <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.historyDesc") }}</div>
+        <div class="rounded-lg border border-default bg-panel px-4 py-3">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="docmind-section-label">{{ t("page.settings.qa.sessionEntryTitle") }}</div>
+              <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.sessionEntryDesc") }}</div>
             </div>
-            <DocMindBadge tone="default">{{ history.length }}</DocMindBadge>
-          </div>
-
-          <div v-if="history.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-xs text-muted">
-            {{ t("page.settings.qa.historyEmpty") }}
-          </div>
-
-          <div v-else class="space-y-2">
-            <div
-              v-for="item in history"
-              :key="item.id"
-              class="rounded-lg border border-default bg-surface px-4 py-3"
+            <RouterLink
+              to="/qa"
+              class="inline-flex shrink-0 items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <DocMindBadge :tone="stateBadgeTone(item)">{{ t(`page.settings.qa.state.${item.state}`) }}</DocMindBadge>
-                    <DocMindBadge v-if="item.state === 'cancelled'" tone="danger">
-                      {{ t("page.settings.qa.cancelledByUser") }}
-                    </DocMindBadge>
-                    <span class="text-xs text-dim">{{ item.created_at }}</span>
-                  </div>
-                  <div class="mt-2 text-sm font-medium text-primary">
-                    {{ item.question }}
-                  </div>
-                  <div class="mt-2 max-h-20 overflow-hidden text-sm leading-6 text-secondary">
-                    {{ item.answer || t("page.settings.qa.historyNoAnswer") }}
-                  </div>
-                  <div class="mt-2 text-xs text-dim">
-                    {{ t("page.settings.qa.historySources", { count: item.sources.length }) }} · {{ item.model || t("common.none") }}
-                  </div>
-                </div>
-                <button
-                  class="rounded-md p-1.5 text-muted transition hover:bg-surface-hover hover:text-danger"
-                  :title="t('common.delete')"
-                  @click="removeHistoryItem(item)"
-                >
-                  <Trash2 :size="15" />
-                </button>
-              </div>
-            </div>
+              <MessageSquareText :size="15" />
+              {{ t("page.settings.qa.openQa") }}
+            </RouterLink>
           </div>
         </div>
       </div>
