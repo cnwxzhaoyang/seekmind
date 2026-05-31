@@ -1241,6 +1241,32 @@ impl Database {
         Ok(())
     }
 
+    pub async fn update_qa_session_title(
+        &self,
+        session_id: &str,
+        title: &str,
+    ) -> Result<(), sqlx::Error> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(());
+        }
+
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            UPDATE qa_sessions
+            SET title = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(normalize_qa_session_title(title))
+        .bind(now)
+        .bind(session_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn record_qa_answer(
         &self,
         answer: &QaAnswerView,

@@ -100,6 +100,7 @@ pub fn run() {
             crate::docmind::qa::commands::list_qa_sessions,
             crate::docmind::qa::commands::list_qa_messages,
             crate::docmind::qa::commands::remove_qa_session,
+            crate::docmind::qa::commands::update_qa_session_title,
             crate::docmind::semantic::commands::get_embedding_model_status,
             crate::docmind::semantic::commands::get_semantic_debug_report,
             crate::docmind::semantic::commands::rebuild_semantic_embeddings,

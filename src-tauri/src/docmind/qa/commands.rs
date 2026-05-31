@@ -326,6 +326,18 @@ pub async fn remove_qa_session(
 }
 
 #[tauri::command]
+pub async fn update_qa_session_title(
+    session_id: String,
+    title: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .update_qa_session_title(&session_id, &title)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn ask_question(
     app: tauri::AppHandle,
     question: String,

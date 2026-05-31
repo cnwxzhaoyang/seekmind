@@ -10,6 +10,7 @@ const props = defineProps<{
   query?: string;
   highlightText?: string;
   highlightSpans?: HighlightSpan[];
+  markdown?: string;
 }>();
 
 const markdownIt = new MarkdownIt({
@@ -25,6 +26,10 @@ const hasHighlight = computed(() => highlightSpans.value.length > 0 || Boolean(p
 const escapeFence = (value: string) => value.replace(/```/g, "\\`\\`\\`");
 
 const sourceMarkdown = computed(() => {
+  if (props.markdown !== undefined) {
+    return props.markdown.trimEnd();
+  }
+
   const text = (props.block.text || "").replace(/\r\n/g, "\n").trimEnd();
   switch (props.block.block_type) {
     case "quote":
@@ -60,8 +65,9 @@ const renderedHtml = computed(() => {
 
 <template>
   <div class="docmind-markdown-renderer markdown-body">
+    <div v-if="props.markdown !== undefined" v-html="renderedHtml"></div>
     <div
-      v-if="block.block_type === 'paragraph' && hasHighlight"
+      v-else-if="block.block_type === 'paragraph' && hasHighlight"
       class="text-sm leading-7 text-secondary"
     >
       <DocMindHighlightedText

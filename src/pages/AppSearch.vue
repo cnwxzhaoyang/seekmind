@@ -948,7 +948,7 @@ const handleResultContextMenu = (event: MouseEvent) => {
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
   await installSearchDebugReportListener();
-  await Promise.all([loadParserRuntime(), loadQuickAccessData(), loadQaSettings(), loadLatestQaSession(), installQaProgressListener()]);
+  await Promise.all([loadParserRuntime(), loadQuickAccessData()]);
   query.value = routeSearchQuery.value;
   if (query.value.trim()) {
     await runSearch();
@@ -1031,16 +1031,6 @@ watch(showDebugPanel, async (visible) => {
     await requestSearchDebugReport();
   }
 });
-
-watch(qaMode, async (visible) => {
-  if (visible) {
-    await loadQaSettings();
-    if (!qaSessionId.value && qaMessages.value.length === 0) {
-      await loadLatestQaSession();
-    }
-    await installQaProgressListener();
-  }
-});
 </script>
 
 <template>
@@ -1057,23 +1047,13 @@ watch(qaMode, async (visible) => {
                     {{ qaMode ? t("page.appSearch.qa.subtitle") : t("page.appSearch.subtitle") }}
                   </div>
                 </div>
-                <div class="inline-flex rounded-md border border-default bg-panel p-1 text-xs font-medium">
-                  <button
-                    class="rounded px-3 py-1.5 transition"
-                    :class="qaMode ? 'text-secondary hover:bg-surface-hover' : 'bg-accent text-white'"
-                    @click.prevent="qaMode = false"
-                  >
-                    {{ t("page.appSearch.mode.search") }}
-                  </button>
-                  <button
-                    class="rounded px-3 py-1.5 transition"
-                    :class="qaMode ? 'bg-accent text-white' : 'text-secondary hover:bg-surface-hover'"
-                    @click.prevent="qaMode = true"
-                  >
-                    <MessageSquareText :size="14" class="mr-1 inline" />
-                    {{ t("page.appSearch.mode.qa") }}
-                  </button>
-                </div>
+                <RouterLink
+                  to="/qa"
+                  class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary transition hover:bg-surface-hover hover:text-primary"
+                >
+                  <MessageSquareText :size="14" />
+                  {{ t("sidebar.qa") }}
+                </RouterLink>
               </div>
 
               <form

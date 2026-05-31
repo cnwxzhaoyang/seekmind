@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { ChevronLeft, ChevronRight, Database, FileText, FolderOpen, History, Layers3, Search, Settings, Star, Trash2 } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, Database, FileText, FolderOpen, History, Layers3, MessageSquareText, Search, Settings, Star, Trash2 } from "lucide-vue-next";
 import DocMindIndexTree from "./DocMindIndexTree.vue";
 import { useIndexDirTree } from "../../composables/useIndexDirTree";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
@@ -20,6 +20,7 @@ const panelActionTarget = ref("");
 
 const items = computed(() => [
   { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
+  { key: "qa", label: t("sidebar.qa"), icon: MessageSquareText, to: "/qa" },
   { key: "chunks", label: t("sidebar.chunks"), icon: Layers3, to: "/chunks" },
   { key: "status", label: t("sidebar.status"), icon: Database, to: "/status" },
   { key: "settings", label: t("sidebar.settings"), icon: Settings, to: "/settings" },
@@ -27,6 +28,7 @@ const items = computed(() => [
 
 const activeKey = computed(() => {
   const path = route.path;
+  if (path.startsWith("/qa")) return "qa";
   if (path.startsWith("/chunks")) return "chunks";
   if (path.startsWith("/status")) return "status";
   if (path.startsWith("/settings")) return "settings";

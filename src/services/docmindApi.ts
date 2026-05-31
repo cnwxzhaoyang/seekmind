@@ -90,6 +90,8 @@ export const docmindApi = {
     invoke<QaMessageView[]>("list_qa_messages", { sessionId, limit }),
   removeQaSession: (sessionId: string) =>
     invoke<void>("remove_qa_session", { sessionId }),
+  updateQaSessionTitle: (sessionId: string, title: string) =>
+    invoke<void>("update_qa_session_title", { sessionId, title }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>
