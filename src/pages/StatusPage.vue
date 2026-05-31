@@ -180,6 +180,21 @@ const officeNotice = computed(() => {
   };
 });
 
+const ocrLanguagesPreview = computed(() => {
+  if (!parserRuntime.value?.tesseract_languages.length) {
+    return t("common.none");
+  }
+
+  const languages = parserRuntime.value.tesseract_languages;
+  const previewCount = 8;
+  const preview = languages.slice(0, previewCount).join(", ");
+  if (languages.length > previewCount) {
+    return `${preview}, …`;
+  }
+
+  return preview;
+});
+
 const chineseOcrNotice = computed(() => {
   if (!parserRuntime.value?.chinese_ocr_warning) {
     return null;
@@ -851,7 +866,7 @@ onBeforeUnmount(() => {
         <h1 class="text-base font-semibold tracking-tight text-primary">
           {{ t("page.status.title") }}
         </h1>
-        <p class="mt-0.5 text-xs text-dim">{{ t("page.status.subtitle") }}</p>
+        <p class="docmind-item-meta mt-0.5">{{ t("page.status.subtitle") }}</p>
       </div>
 
       <DocMindBadge
@@ -876,10 +891,10 @@ onBeforeUnmount(() => {
           <div class="text-sm font-medium text-warning">
             {{ officeNotice.title }}
           </div>
-          <div class="mt-1 text-xs leading-5 text-secondary">
+          <div class="docmind-item-meta mt-1 leading-5 text-secondary">
             {{ officeNotice.desc }}
           </div>
-          <div class="mt-1 text-xs leading-5 text-dim">
+          <div class="docmind-item-meta mt-1 leading-5">
             {{ officeNotice.hint }}
           </div>
         </div>
@@ -889,8 +904,8 @@ onBeforeUnmount(() => {
     <main class="flex min-h-0 flex-1 overflow-hidden p-5">
       <div class="mx-auto grid h-full min-h-0 w-full max-w-400 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
         <!-- 左侧：索引服务控制中心 -->
-        <section class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pr-1">
-          <div class="flex min-h-0 flex-1 flex-col rounded-xl border border-default bg-white p-4 shadow-sm">
+        <section class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+          <div class="flex shrink-0 flex-col rounded-xl border border-default bg-white p-4 shadow-sm">
             <div class="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div class="flex items-center gap-2">
@@ -911,7 +926,7 @@ onBeforeUnmount(() => {
                     }}
                   </h2>
                 </div>
-                <p class="mt-1 text-xs text-dim">
+                <p class="docmind-item-meta mt-1">
                   {{
                     status?.last_run
                       ? status.last_run.completed_at
@@ -930,7 +945,7 @@ onBeforeUnmount(() => {
               </DocMindBadge>
             </div>
 
-            <div class="min-h-0 flex-1">
+            <div class="mt-1">
               <DocMindTaskCard
                 v-if="status?.current_task"
                 :task="status.current_task"
@@ -940,13 +955,13 @@ onBeforeUnmount(() => {
                 :badge-tone="taskDisplayState.tone"
                 :badge-spinning="taskDisplayState.spinning"
               />
-              <div v-else class="flex h-full min-h-[210px] flex-col rounded-lg border border-light bg-[#f7f9fc] p-4">
+              <div v-else class="flex min-h-[210px] flex-col rounded-lg border border-light bg-[#f7f9fc] p-4">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
+                    <div class="docmind-section-label">
                       {{ t("taskCard.defaultTitle") }}
                     </div>
-                    <div class="mt-1 text-xs text-dim">{{ t("status.noRecentRun") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("status.noRecentRun") }}</div>
                   </div>
                   <div class="text-2xl font-semibold text-primary">{{ indexProgressPercent }}%</div>
                 </div>
@@ -960,24 +975,24 @@ onBeforeUnmount(() => {
 
                 <div class="mt-4 grid grid-cols-2 gap-2">
                   <div class="rounded-lg bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.stats.scanned") }}</div>
-                    <div class="mt-1 text-sm font-semibold text-primary">{{ status?.scanned_docs ?? 0 }}</div>
+                    <div class="text-[11px] font-medium leading-4 text-dim">{{ t("page.status.stats.scanned") }}</div>
+                    <div class="mt-1 docmind-metric-value text-primary">{{ status?.scanned_docs ?? 0 }}</div>
                   </div>
                   <div class="rounded-lg bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.stats.indexed") }}</div>
-                    <div class="mt-1 text-sm font-semibold text-primary">{{ status?.indexed_docs ?? 0 }}</div>
+                    <div class="text-[11px] font-medium leading-4 text-dim">{{ t("page.status.stats.indexed") }}</div>
+                    <div class="mt-1 docmind-metric-value text-primary">{{ status?.indexed_docs ?? 0 }}</div>
                   </div>
                   <div class="rounded-lg bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.stats.chunks") }}</div>
-                    <div class="mt-1 text-sm font-semibold text-primary">{{ status?.indexed_chunks ?? 0 }}</div>
+                    <div class="text-[11px] font-medium leading-4 text-dim">{{ t("page.status.stats.chunks") }}</div>
+                    <div class="mt-1 docmind-metric-value text-primary">{{ status?.indexed_chunks ?? 0 }}</div>
                   </div>
                   <div class="rounded-lg bg-white px-3 py-2">
-                    <div class="text-[10px] uppercase tracking-wide text-dim">{{ t("page.status.stats.failed") }}</div>
-                    <div class="mt-1 text-sm font-semibold text-primary">{{ status?.failed_files ?? 0 }}</div>
+                    <div class="text-[11px] font-medium leading-4 text-dim">{{ t("page.status.stats.failed") }}</div>
+                    <div class="mt-1 docmind-metric-value text-primary">{{ status?.failed_files ?? 0 }}</div>
                   </div>
                 </div>
 
-                <div class="mt-auto pt-4 text-xs text-dim">
+                <div class="mt-auto pt-4 text-sm text-dim">
                   {{
                     status?.last_run
                       ? status.last_run.completed_at
@@ -1052,11 +1067,11 @@ onBeforeUnmount(() => {
             <div class="mb-3 flex items-center justify-between">
               <div>
                 <div
-                  class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim"
+                  class="docmind-section-label"
                 >
                   {{ t("page.status.section.incrementalSummary") }}
                 </div>
-                <div class="mt-1 text-xs text-dim">
+                <div class="docmind-item-meta mt-1">
                   {{ t("page.status.section.incrementalDesc") }}
                 </div>
               </div>
@@ -1071,34 +1086,34 @@ onBeforeUnmount(() => {
 
             <div v-if="status?.last_run" class="grid grid-cols-2 gap-2">
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.incremental.updated") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ status.last_run.updated }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.incremental.skipped") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ status.last_run.skipped }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.incremental.deleted") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ status.last_run.deleted }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.incremental.successFail") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ status.last_run.succeeded }} / {{ status.last_run.failed }}
                 </div>
               </div>
@@ -1106,7 +1121,7 @@ onBeforeUnmount(() => {
 
             <div
               v-else
-              class="rounded-lg border border-dashed border-default bg-[#f7f9fc] px-4 py-6 text-xs text-muted"
+              class="rounded-lg border border-dashed border-default bg-[#f7f9fc] px-4 py-6 text-sm text-muted"
             >
               {{ t("page.status.incremental.none") }}
             </div>
@@ -1114,82 +1129,79 @@ onBeforeUnmount(() => {
 
           <div class="rounded-xl border border-default bg-white p-4 shadow-sm">
             <div class="mb-3">
-              <div
-                class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim"
-              >
+              <div class="docmind-section-label">
                 {{ t("page.status.section.parserStatus") }}
               </div>
-              <div class="mt-1 text-xs text-dim">
+              <div class="docmind-item-meta mt-1">
                 {{ t("page.status.section.parserDesc") }}
               </div>
             </div>
 
             <div v-if="parserRuntime" class="grid grid-cols-2 gap-2">
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.parser.enabled") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ parserRuntime.enabled ? t("common.yes") : t("common.no") }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.parser.available") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{
                     parserRuntime.available ? t("common.yes") : t("common.no")
                   }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.parser.pythonBin") }}
                 </div>
-                <div class="mt-1 truncate text-sm font-medium">
+                <div class="mt-1 truncate docmind-metric-value text-primary">
                   {{ parserRuntime.python_bin }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.parser.timeout") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ parserRuntime.timeout_ms }} ms
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.parser.systemLanguage") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 docmind-metric-value text-primary">
                   {{ parserRuntime.system_locale || t("common.unknown") }}
                 </div>
-                <div class="mt-1 text-xs text-dim">
+                <div class="docmind-item-meta mt-1">
                   {{ t("page.status.parser.systemLanguageHint", { language: parserRuntime.system_language }) }}
                 </div>
               </div>
               <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("page.status.parser.ocrLanguages") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
-                  {{
-                    parserRuntime.tesseract_languages.length
-                      ? parserRuntime.tesseract_languages.join(", ")
-                      : t("common.none")
-                  }}
+                <div class="mt-1 docmind-metric-value text-primary">
+                  {{ parserRuntime.tesseract_languages.length }}
                 </div>
-                <div class="mt-1 text-xs text-dim">
+                <div class="docmind-item-meta mt-1">
                   {{ t("page.status.parser.ocrAvailability", { status: parserRuntime.chinese_ocr_available ? t("common.available") : t("common.unavailable") }) }}
                 </div>
+                <div class="mt-2 max-h-24 overflow-y-auto rounded-md bg-white/70 px-2 py-1 text-[11px] leading-5 text-secondary">
+                  {{ ocrLanguagesPreview }}
+                </div>
               </div>
-              <div class="col-span-2 rounded-lg border border-default bg-[#f7f9fc] px-3 py-2">
-                <div class="text-[10px] uppercase tracking-wide text-dim">
+              <div class="rounded-lg bg-[#f7f9fc] px-3 py-2">
+                <div class="text-[11px] font-medium leading-4 text-dim">
                   {{ t("common.office.runtimeLabel") }}
                 </div>
-                <div class="mt-1 text-sm font-semibold">
+                <div class="mt-1 truncate docmind-metric-value text-primary">
                   {{
                     parserRuntime.office_available
                       ? t("common.office.runtimeAvailable", {
@@ -1198,33 +1210,30 @@ onBeforeUnmount(() => {
                       : t("common.office.runtimeUnavailable")
                   }}
                 </div>
-                <div class="mt-1 text-xs leading-5 text-dim">
+                <div class="docmind-item-meta mt-1 leading-5">
                   {{ t("common.office.runtimePlatform", { platform: parserRuntime.office_platform || t("common.unknown") }) }}
                 </div>
-                <div v-if="!parserRuntime.office_available" class="mt-1 text-xs leading-5 text-warning">
+                <div v-if="!parserRuntime.office_available" class="docmind-item-meta mt-1 leading-5 text-warning">
                   {{ parserRuntime.office_message || t("common.office.warningHint") }}
                 </div>
               </div>
-              <div
-                v-if="chineseOcrNotice"
-                class="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
-              >
-                <div class="text-[10px] uppercase tracking-wide text-amber-700">
+              <div v-if="chineseOcrNotice" class="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <div class="text-[11px] font-medium leading-4 text-amber-700">
                   {{ chineseOcrNotice.title }}
                 </div>
                 <div class="mt-1 text-sm font-semibold text-amber-900">
                   {{ chineseOcrNotice.desc }}
                 </div>
-                <div class="mt-1 text-xs leading-5 text-amber-800">
+                <div class="docmind-item-meta mt-1 leading-5 text-amber-800">
                   {{ t("page.status.parser.ocrInstalled", { languages: chineseOcrNotice.languages }) }}
                 </div>
-                <div class="mt-1 text-xs leading-5 text-amber-700">
+                <div class="docmind-item-meta mt-1 leading-5 text-amber-700">
                   {{ chineseOcrNotice.hint }}
                 </div>
               </div>
             </div>
 
-            <div v-if="parserRuntime" class="mt-3 truncate text-xs text-dim">
+            <div v-if="parserRuntime" class="mt-3 truncate text-sm text-dim">
               {{
                 t("page.status.parser.script", {
                   path: parserRuntime.script_path,
@@ -1240,10 +1249,10 @@ onBeforeUnmount(() => {
           <div class="flex min-h-0 flex-col rounded-xl border border-default bg-white p-4 shadow-sm">
             <div class="mb-3 flex shrink-0 items-center justify-between gap-3">
               <div>
-                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
+                <div class="docmind-section-label">
                   {{ t("page.status.section.indexDirs") }}
                 </div>
-                <div class="mt-1 text-xs text-dim">
+                <div class="docmind-item-meta mt-1">
                   {{ t("page.status.section.indexDirsDesc") }}
                 </div>
               </div>
@@ -1288,7 +1297,7 @@ onBeforeUnmount(() => {
             <div class="min-h-0 flex-1 overflow-hidden rounded-lg border border-default bg-[#f7f9fc]">
               <div
                   v-if="dirs.length === 0"
-                  class="flex h-full items-center px-4 py-8 text-xs text-muted"
+                  class="flex h-full items-center px-4 py-8 text-sm text-muted"
               >
                 {{ t("page.status.emptyDirs") }}
               </div>
@@ -1312,14 +1321,14 @@ onBeforeUnmount(() => {
 
           <!-- 解析失败 -->
           <div class="flex min-h-0 flex-col rounded-xl border border-default bg-white p-4 shadow-sm">
-            <div class="mb-3 flex shrink-0 items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">
+            <div class="mb-3 flex shrink-0 items-center gap-2 docmind-section-label">
               <AlertCircle :size="16" class="text-warning" />
               {{ t("page.status.section.failedFiles") }}
             </div>
 
             <div
                 v-if="failedGroups.length === 0"
-                class="flex min-h-0 flex-1 items-center rounded-lg border border-dashed border-default bg-[#f7f9fc] px-4 py-8 text-xs text-muted"
+                class="flex min-h-0 flex-1 items-center rounded-lg border border-dashed border-default bg-[#f7f9fc] px-4 py-8 text-sm text-muted"
             >
               {{ t("page.status.failed.noFailed") }}
             </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Database, Languages, Moon, Monitor, RefreshCw, Save, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
+import { Database, Languages, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
@@ -286,7 +286,7 @@ onBeforeUnmount(() => {
     <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
         <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.settings.title") }}</h1>
-        <p class="mt-0.5 text-xs text-dim">{{ t("page.settings.subtitle") }}</p>
+        <p class="docmind-item-meta mt-0.5">{{ t("page.settings.subtitle") }}</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
@@ -327,8 +327,8 @@ onBeforeUnmount(() => {
           <section class="rounded-lg border border-default bg-surface">
             <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
               <div>
-                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">导航</div>
-                <div class="mt-1 text-xs text-dim">{{ t("page.settings.instructions.effective") }}</div>
+                <div class="docmind-section-label">导航</div>
+                <div class="docmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
               </div>
               <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
             </div>
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
 
           <section class="rounded-lg border border-default bg-surface">
             <div class="border-b border-default px-4 py-2.5">
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">快捷</div>
+              <div class="docmind-section-label">快捷</div>
             </div>
             <div class="grid gap-2 p-4">
               <button
@@ -401,7 +401,7 @@ onBeforeUnmount(() => {
 
           <section class="rounded-lg border border-default bg-surface">
             <div class="border-b border-default px-4 py-2.5">
-              <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">状态</div>
+              <div class="docmind-section-label">状态</div>
             </div>
             <div class="space-y-3 p-4 text-sm">
               <div class="flex items-center justify-between gap-3">
@@ -427,8 +427,8 @@ onBeforeUnmount(() => {
             <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
                 <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.rules") }}</div>
-                  <div class="mt-1 text-xs text-dim">{{ t("page.settings.rulesDesc") }}</div>
+                  <div class="docmind-section-label">{{ t("page.settings.section.rules") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.rulesDesc") }}</div>
                 </div>
                 <DocMindBadge tone="default">{{ t("status.localEffective") }}</DocMindBadge>
               </div>
@@ -436,8 +436,8 @@ onBeforeUnmount(() => {
               <div class="space-y-4 p-4">
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.excludeDirs") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.placeholder.dirs") }}</div>
+                  <div class="docmind-section-label">{{ t("page.settings.label.excludeDirs") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.placeholder.dirs") }}</div>
                   </div>
                   <textarea
                     v-model="excludeDirsText"
@@ -449,8 +449,8 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.excludeExts") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.placeholder.exts") }}</div>
+                  <div class="docmind-section-label">{{ t("page.settings.label.excludeExts") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.placeholder.exts") }}</div>
                   </div>
                   <textarea
                     v-model="excludeExtsText"
@@ -462,8 +462,8 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.maxFileSize") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.label.maxFileSize") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
                   </div>
                   <div class="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
                     <input
@@ -473,8 +473,8 @@ onBeforeUnmount(() => {
                       step="1"
                       class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
                     />
-                    <div class="rounded-lg border border-default bg-panel px-4 py-3 text-xs text-dim">
-                      <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.label.currentStatus") }}</div>
+                    <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm text-dim">
+                      <div class="docmind-section-label">{{ t("page.settings.label.currentStatus") }}</div>
                       <div class="mt-1 text-sm font-medium text-primary">
                         {{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}
                       </div>
@@ -487,8 +487,8 @@ onBeforeUnmount(() => {
             <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
                 <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.title") }}</div>
-                  <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.desc") }}</div>
+                  <div class="docmind-section-label">{{ t("page.settings.semantic.title") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
                 </div>
                 <DocMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</DocMindBadge>
               </div>
@@ -496,8 +496,8 @@ onBeforeUnmount(() => {
               <div class="space-y-4 p-4">
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.title") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.desc") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.semantic.title") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
                   </div>
                   <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
                     <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
@@ -507,11 +507,11 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.weight") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.thresholdDesc") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.semantic.weight") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
                   </div>
                   <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                    <div class="mb-2 flex items-center justify-between text-xs text-dim">
+                    <div class="mb-2 flex items-center justify-between docmind-item-meta">
                       <span>{{ t("page.settings.semantic.weight") }}</span>
                       <span>{{ Math.round(semanticWeight * 100) }}%</span>
                     </div>
@@ -528,11 +528,11 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.semantic.threshold") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.semantic.thresholdDesc") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.semantic.threshold") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
                   </div>
                   <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                    <div class="mb-2 flex items-center justify-between text-xs text-dim">
+                    <div class="mb-2 flex items-center justify-between docmind-item-meta">
                       <span>{{ t("page.settings.semantic.threshold") }}</span>
                       <span>{{ Math.round(semanticThreshold * 100) }}%</span>
                     </div>
@@ -549,8 +549,8 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.preference.title") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.preference.title") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.preference.title") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.preference.title") }}</div>
                   </div>
                   <div class="grid gap-2 rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
                     <label class="inline-flex items-center justify-between gap-3">
@@ -570,26 +570,26 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.weight.title") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.settings.weight.title") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.weight.title") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.settings.weight.title") }}</div>
                   </div>
                   <div class="space-y-4 rounded-lg border border-default bg-panel px-4 py-3">
                     <label class="block">
-                      <div class="mb-2 flex items-center justify-between text-xs text-dim">
+                      <div class="mb-2 flex items-center justify-between docmind-item-meta">
                         <span>{{ t("page.settings.weight.titleWeight") }}</span>
                         <span>{{ titleWeight.toFixed(2) }}</span>
                       </div>
                       <input v-model.number="titleWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                     </label>
                     <label class="block">
-                      <div class="mb-2 flex items-center justify-between text-xs text-dim">
+                      <div class="mb-2 flex items-center justify-between docmind-item-meta">
                         <span>{{ t("page.settings.weight.filenameWeight") }}</span>
                         <span>{{ filenameWeight.toFixed(2) }}</span>
                       </div>
                       <input v-model.number="filenameWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                     </label>
                     <label class="block">
-                      <div class="mb-2 flex items-center justify-between text-xs text-dim">
+                      <div class="mb-2 flex items-center justify-between docmind-item-meta">
                         <span>{{ t("page.settings.weight.preferenceWeight") }}</span>
                         <span>{{ preferenceWeight.toFixed(2) }}</span>
                       </div>
@@ -609,14 +609,14 @@ onBeforeUnmount(() => {
             <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
                 <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.appearance") }}</div>
-                  <div class="mt-1 text-xs text-dim">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
+                  <div class="docmind-section-label">{{ t("page.settings.section.appearance") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
                 </div>
                 <Languages :size="15" class="text-muted" />
               </div>
               <div class="space-y-4 p-4">
                 <div>
-                  <div class="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.language") }}</div>
+                  <div class="mb-2 docmind-section-label">{{ t("page.settings.language") }}</div>
                   <div class="grid gap-2">
                     <button
                       class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
@@ -640,7 +640,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div>
-                  <div class="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.theme") }}</div>
+                  <div class="mb-2 docmind-section-label">{{ t("page.settings.theme") }}</div>
                   <div class="grid gap-2">
                     <button
                       class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
@@ -677,8 +677,8 @@ onBeforeUnmount(() => {
             <section class="rounded-lg border border-default bg-surface">
               <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
                 <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.settings.section.instructions") }}</div>
-                  <div class="mt-1 text-xs text-dim">{{ t("page.settings.instructions.effective") }}</div>
+                  <div class="docmind-section-label">{{ t("page.settings.section.instructions") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
                 </div>
                 <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
               </div>
@@ -690,15 +690,30 @@ onBeforeUnmount(() => {
             </section>
           </div>
 
+          <section class="rounded-lg border border-default bg-surface">
+            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+              <div>
+                <div class="docmind-section-label">{{ t("page.settings.section.privacy") }}</div>
+                <div class="docmind-item-meta mt-1">{{ t("page.settings.privacy.desc") }}</div>
+              </div>
+              <Shield :size="15" class="text-muted" />
+            </div>
+            <div class="space-y-2 p-4 text-sm text-secondary">
+              <p>{{ t("page.settings.privacy.localFirst") }}</p>
+              <p>{{ t("page.settings.privacy.localFirstDesc") }}</p>
+              <p>{{ t("page.settings.privacy.localOnlyHint") }}</p>
+            </div>
+          </section>
+
           <section id="settings-danger" class="scroll-mt-4 rounded-lg border border-danger-soft bg-danger-soft px-4 py-3">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
-                <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-danger">
+                <div class="flex items-center gap-2 docmind-section-label text-danger">
                   <Trash2 :size="15" />
                   {{ t("page.settings.section.danger") }}
                 </div>
-                <div class="mt-1 text-xs text-secondary">{{ t("page.settings.danger.desc") }}</div>
-                <div class="mt-2 text-xs leading-5 text-secondary">
+                <div class="docmind-item-meta mt-1 text-secondary">{{ t("page.settings.danger.desc") }}</div>
+                <div class="docmind-item-meta mt-2 leading-5 text-secondary">
                   {{ t("page.settings.danger.detail") }}
                 </div>
               </div>

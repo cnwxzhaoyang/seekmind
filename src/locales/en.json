@@ -74,9 +74,7 @@
     "status": "Index Status",
     "settings": "Settings",
     "expand": "Expand Sidebar",
-    "collapse": "Collapse Sidebar",
-    "localFirst": "Local First",
-    "localFirstDesc": "Documents are parsed and indexed locally on your Mac. Nothing is uploaded to the cloud."
+    "collapse": "Collapse Sidebar"
   },
 
   "page": {
@@ -400,6 +398,7 @@
         "rules": "Index Rules",
         "instructions": "Instructions",
         "appearance": "Appearance",
+        "privacy": "Privacy",
         "danger": "Danger Zone"
       },
       "rulesDesc": "Directory names and extensions are split by comma, semicolon, or newline. Extensions do not need leading dots.",
@@ -422,6 +421,12 @@
       "danger": {
         "desc": "Clearing local indexes does not delete original documents.",
         "detail": "This removes local SQLite data and Tantivy indexes. Useful for troubleshooting initialization or index anomalies."
+      },
+      "privacy": {
+        "desc": "Explains how the app handles your documents and index data.",
+        "localFirst": "Local First",
+        "localFirstDesc": "Documents are parsed and indexed locally on your Mac. Nothing is uploaded to the cloud.",
+        "localOnlyHint": "In practice, search, chunking, and indexing all happen on this machine by default."
       },
       "placeholder": {
         "dirs": "node_modules, .git, target",

@@ -712,11 +712,11 @@ watch(
         <div class="flex items-center gap-2">
           <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.chunks.title") }}</h1>
         </div>
-        <p class="mt-0.5 text-xs text-dim">
+        <p class="docmind-item-meta mt-0.5">
           {{ t("page.chunks.subtitle") }}
         </p>
       </div>
-      <div class="flex items-center gap-3 text-xs text-dim">
+      <div class="flex items-center gap-3 text-sm text-dim">
         <div class="hidden sm:block">
           {{ t("page.chunks.parserInfo") }}
           <span class="font-medium text-secondary">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
@@ -739,10 +739,10 @@ watch(
           <div class="text-sm font-medium text-warning">
             {{ officeNotice.title }}
           </div>
-          <div class="mt-1 text-xs leading-5 text-secondary">
+          <div class="docmind-item-meta mt-1 leading-5 text-secondary">
             {{ officeNotice.desc }}
           </div>
-          <div class="mt-1 text-xs leading-5 text-dim">
+          <div class="docmind-item-meta mt-1 leading-5">
             {{ officeNotice.hint }}
           </div>
         </div>
@@ -759,8 +759,8 @@ watch(
           <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/60 px-3 py-3">
             <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
               <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ t("page.chunks.section.docList") }}</div>
-                <div class="mt-1 text-xs text-dim">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
+              <div class="docmind-section-label">{{ t("page.chunks.section.docList") }}</div>
+              <div class="docmind-item-meta mt-1">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
               </div>
               <div class="flex items-center gap-2">
                 <DocMindBadge tone="default">
@@ -810,7 +810,7 @@ watch(
                       </div>
                       <div
                         v-if="refreshWarnings[doc.path]"
-                        class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
+                        class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
                         :class="refreshOutcomes[doc.path] === 'python'
                           ? 'border-emerald-soft bg-emerald-soft text-success'
                           : 'border-amber-soft bg-amber-soft text-warning'"
@@ -819,7 +819,7 @@ watch(
                       </div>
                       <div
                         v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
-                        class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px]"
+                        class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
                         :class="refreshOutcomes[doc.path] === 'python'
                           ? 'border border-emerald-soft bg-emerald-soft text-success'
                           : 'border border-amber-soft bg-amber-soft text-warning'"
@@ -844,8 +844,8 @@ watch(
           <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
             <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
               <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ t("page.chunks.section.chunkDetail") }}</div>
-                <div class="mt-1 text-xs text-dim">
+                <div class="docmind-section-label">{{ t("page.chunks.section.chunkDetail") }}</div>
+                <div class="docmind-item-meta mt-1">
                   {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
                 </div>
                 <div

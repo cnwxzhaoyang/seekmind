@@ -722,10 +722,10 @@ watch(showDebugPanel, async (visible) => {
                   <div class="text-sm font-medium text-warning">
                     {{ officeNotice.title }}
                   </div>
-                  <div class="mt-1 text-xs leading-5 text-secondary">
+                  <div class="docmind-item-meta mt-1 leading-5 text-secondary">
                     {{ officeNotice.desc }}
                   </div>
-                  <div class="mt-1 text-xs leading-5 text-dim">
+                  <div class="docmind-item-meta mt-1 leading-5">
                     {{ officeNotice.hint }}
                   </div>
                 </div>
@@ -746,8 +746,8 @@ watch(showDebugPanel, async (visible) => {
               <div v-if="showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                    <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.title") }}</div>
-                    <div class="mt-1 text-xs text-dim">{{ t("page.appSearch.debug.desc") }}</div>
+                  <div class="docmind-section-label">{{ t("page.appSearch.debug.title") }}</div>
+                    <div class="docmind-item-meta mt-1">{{ t("page.appSearch.debug.desc") }}</div>
                   </div>
                   <button class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover" @click="requestSearchDebugReport">
                     {{ t("common.refresh") }}
@@ -762,23 +762,23 @@ watch(showDebugPanel, async (visible) => {
                 <div v-else-if="debugReport" class="mt-3 space-y-3">
                   <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.hits") }}</div>
-                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.hit_count }}</div>
+                      <div class="docmind-section-label">{{ t("page.appSearch.debug.hits") }}</div>
+                      <div class="mt-1 docmind-metric-value text-primary">{{ debugReport.hit_count }}</div>
                     </div>
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.keywordHits") }}</div>
-                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.keyword_hit_count }}</div>
+                      <div class="docmind-section-label">{{ t("page.appSearch.debug.keywordHits") }}</div>
+                      <div class="mt-1 docmind-metric-value text-primary">{{ debugReport.keyword_hit_count }}</div>
                     </div>
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.semanticHits") }}</div>
-                      <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.semantic_hit_count }}</div>
+                      <div class="docmind-section-label">{{ t("page.appSearch.debug.semanticHits") }}</div>
+                      <div class="mt-1 docmind-metric-value text-primary">{{ debugReport.semantic_hit_count }}</div>
                     </div>
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="text-[10px] uppercase tracking-[0.16em] text-dim">{{ t("page.appSearch.debug.mode") }}</div>
+                      <div class="docmind-section-label">{{ t("page.appSearch.debug.mode") }}</div>
                       <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.search_mode }}</div>
                     </div>
                   </div>
-                  <div class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary">
+                  <div class="rounded-md border border-default bg-surface px-3 py-2 text-sm text-secondary">
                     <div>{{ t("page.appSearch.debug.normalized", { query: debugReport.normalized_search_text || t("common.none") }) }}</div>
                     <div class="mt-1 break-all">{{ t("page.appSearch.debug.rewritten", { query: debugReport.rewritten_query || t("common.none") }) }}</div>
                     <div class="mt-1 break-all">{{ t("page.appSearch.debug.expanded", { query: debugReport.expanded_query || t("common.none") }) }}</div>
@@ -822,7 +822,7 @@ watch(showDebugPanel, async (visible) => {
                     <div class="text-lg font-semibold text-primary">{{ selected.fileName }}</div>
                     <div class="mt-1 break-all text-xs text-muted">{{ selected.path }}</div>
                   </div>
-                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[10px] font-semibold text-secondary">
+                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
                     {{ selected.ext.toUpperCase() }}
                   </div>
                 </div>
@@ -876,7 +876,7 @@ watch(showDebugPanel, async (visible) => {
                     class="rounded-md border px-3 py-2"
                     :class="item.key === 'current' ? 'border-accent bg-surface' : 'border-default bg-surface/70'"
                   >
-                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" :class="item.key === 'current' ? 'text-accent-text' : 'text-dim'">
+                    <div class="docmind-section-label" :class="item.key === 'current' ? 'text-accent-text' : 'text-dim'">
                       {{ item.label }}
                     </div>
                     <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-dim">
@@ -904,21 +904,21 @@ watch(showDebugPanel, async (visible) => {
                         }"
                       />
                     </div>
-                    <div class="mt-1 text-[11px] text-muted">
+                    <div class="docmind-item-meta mt-1">
                       {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
                     </div>
                   </div>
                 </div>
-                <div v-else class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-xs text-muted">
+                <div v-else class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-sm text-muted">
                   {{ t("page.appSearch.detail.noContext") }}
                 </div>
-                <p class="mt-3 text-xs text-muted">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
+                <p class="docmind-item-meta mt-3">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
               </div>
 
               <div class="mt-4 rounded-lg border border-default bg-surface p-4">
-                <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("searchResultCard.rankReason") }}</div>
-                <div class="mt-1 text-sm font-medium text-primary">{{ selected.rank_reason.summary || t("common.none") }}</div>
-                <div v-if="selected.rank_reason.boosts.length > 0" class="mt-1 text-xs text-dim">
+                <div class="docmind-section-label">{{ t("searchResultCard.rankReason") }}</div>
+                <div class="mt-1 docmind-metric-value text-primary">{{ selected.rank_reason.summary || t("common.none") }}</div>
+                <div v-if="selected.rank_reason.boosts.length > 0" class="docmind-item-meta mt-1">
                   {{ selected.rank_reason.boosts.join(" · ") }}
                 </div>
               </div>

@@ -41,8 +41,8 @@ const remainingCount = computed(() => {
   <div v-if="props.task" class="rounded-lg border border-default bg-surface p-3">
     <div class="mb-2.5 flex items-center justify-between">
       <div>
-        <div class="text-xs font-semibold uppercase tracking-wide text-dim">{{ displayTitle }}</div>
-        <div class="mt-1 text-xs text-dim">{{ displayDesc }}</div>
+        <div class="docmind-section-label">{{ displayTitle }}</div>
+        <div class="docmind-item-meta mt-1">{{ displayDesc }}</div>
       </div>
       <DocMindBadge :tone="badgeTone">
         <Loader2 v-if="badgeSpinning" class="mr-1 animate-spin" :size="13" />
@@ -63,55 +63,55 @@ const remainingCount = computed(() => {
 
     <div class="mt-2.5 grid gap-2 md:grid-cols-2 xl:grid-cols-6">
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.currentDir") }}</div>
-        <div class="mt-1 truncate text-sm font-medium text-primary">
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.currentDir") }}</div>
+        <div class="mt-1 truncate docmind-metric-value text-primary">
           {{ props.task.current_dir || t("taskCard.noDir") }}
         </div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.currentFile") }}</div>
-        <div class="mt-1 truncate text-sm font-medium text-primary">
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.currentFile") }}</div>
+        <div class="mt-1 truncate docmind-metric-value text-primary">
           {{ props.task.current_file || t("taskCard.noFile") }}
         </div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.cumulativeSuccess") }}</div>
-        <div class="mt-1 text-sm font-semibold text-success">{{ props.task.succeeded }}</div>
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.cumulativeSuccess") }}</div>
+        <div class="mt-1 docmind-metric-value text-success">{{ props.task.succeeded }}</div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.cumulativeFailed") }}</div>
-        <div class="mt-1 text-sm font-semibold text-danger">{{ props.task.failed }}</div>
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.cumulativeFailed") }}</div>
+        <div class="mt-1 docmind-metric-value text-danger">{{ props.task.failed }}</div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.thisUpdate") }}</div>
-        <div class="mt-1 text-sm font-semibold text-primary">{{ props.task.updated }}</div>
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.thisUpdate") }}</div>
+        <div class="mt-1 docmind-metric-value text-primary">{{ props.task.updated }}</div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.thisSkipped") }}</div>
-        <div class="mt-1 text-sm font-semibold text-primary">{{ props.task.skipped }}</div>
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.thisSkipped") }}</div>
+        <div class="mt-1 docmind-metric-value text-primary">{{ props.task.skipped }}</div>
       </div>
     </div>
 
     <div class="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.thisDeleted") }}</div>
-        <div class="mt-1 text-sm font-semibold text-primary">{{ props.task.deleted }}</div>
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.thisDeleted") }}</div>
+        <div class="mt-1 docmind-metric-value text-primary">{{ props.task.deleted }}</div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.processed") }}</div>
-        <div class="mt-1 text-sm font-semibold text-primary">
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.processed") }}</div>
+        <div class="mt-1 docmind-metric-value text-primary">
           {{ props.task.scanned }} / {{ props.task.total }}
         </div>
       </div>
       <div class="rounded-md bg-panel px-2.5 py-2">
-        <div class="text-[11px] uppercase tracking-wide text-dim">{{ t("taskCard.queueRemaining") }}</div>
-        <div class="mt-1 text-sm font-semibold text-primary">
+        <div class="text-[11px] font-medium leading-4 text-dim">{{ t("taskCard.queueRemaining") }}</div>
+        <div class="mt-1 docmind-metric-value text-primary">
           {{ remainingCount }}
         </div>
       </div>
     </div>
 
-    <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-dim">
+    <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] leading-4 text-dim">
       <span>{{ props.task.scanned }} / {{ props.task.total }} {{ t("taskCard.files", { count: "" }) }}</span>
       <span>·</span>
       <span>{{ props.task.progress }}%</span>

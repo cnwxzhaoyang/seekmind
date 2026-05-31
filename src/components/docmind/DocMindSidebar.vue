@@ -105,10 +105,10 @@ onMounted(() => {
     class="flex h-full flex-col overflow-hidden border-r border-default bg-sidebar p-2 transition-[width] duration-200"
     :class="sidebarCollapsed ? 'w-[68px]' : 'w-[240px]'"
   >
-    <div class="mb-4 flex items-center justify-between gap-2 px-2 py-2">
+    <div class="mb-3 flex items-center justify-between gap-2 px-2 py-2">
       <div class="flex h-6 w-6 items-center justify-center rounded bg-accent text-xs font-bold text-white shadow-card">dm</div>
       <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-        <div class="text-sm font-semibold text-primary">docMind</div>
+        <div class="text-base font-semibold text-primary">docMind</div>
       </div>
       <button
         class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted transition hover:bg-surface-active hover:text-primary"
@@ -121,16 +121,20 @@ onMounted(() => {
       </button>
     </div>
 
-    <nav class="space-y-1">
+    <nav
+      :class="sidebarCollapsed
+        ? 'space-y-1'
+        : 'grid grid-cols-2 gap-1 rounded-lg border border-default bg-surface/75 p-1 shadow-card'"
+    >
       <RouterLink
         v-for="item in items"
         :key="item.key"
         :to="item.to"
-        class="group relative flex w-full items-center rounded-md py-2 text-sm transition"
+        class="group relative flex h-9 w-full items-center rounded-md text-[13px] transition"
         :class="[
-          sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3',
+          sidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-2',
           activeKey === item.key
-            ? 'bg-accent-soft !text-accent-text font-medium ring-1 ring-inset ring-accent/35 shadow-sm shadow-accent/10 after:absolute after:bottom-1 after:left-1 after:top-1 after:w-1 after:rounded-full after:bg-accent'
+            ? 'bg-accent-soft !text-accent-text font-medium ring-1 ring-inset ring-accent/35 shadow-sm shadow-accent/10'
             : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
         :title="sidebarCollapsed ? item.label : undefined"
@@ -139,16 +143,44 @@ onMounted(() => {
         <component
           :is="item.icon"
           :size="17"
+          class="shrink-0"
           :class="activeKey === item.key ? 'text-accent' : 'text-current'"
         />
-        <span v-if="!sidebarCollapsed">{{ item.label }}</span>
+        <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 text-left leading-none">{{ item.label }}</span>
       </RouterLink>
     </nav>
 
     <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden">
-      <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_auto] gap-3 overflow-hidden pr-1">
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
-          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+      <div class="grid h-full min-h-0 grid-rows-[minmax(0,1.35fr)_minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(0,0.75fr)] gap-2.5 overflow-hidden pr-1">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-accent bg-surface p-2 shadow-card">
+          <div class="docmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
+            <FolderOpen :size="13" />
+            {{ t("sidebar.indexDirs") }}
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
+              {{ t("page.appSearch.section.noDirs") }}
+            </div>
+            <DocMindIndexTree
+              v-else
+              :rows="visibleQuickDirRows"
+              :selected-path="selectedIndexDirPath"
+              :selectable="true"
+              :path-tooltip="true"
+              :virtual-label="t('common.virtualDir')"
+              :expand-title="t('sidebar.expand')"
+              :collapse-title="t('sidebar.collapse')"
+              :node-padding-base="0"
+              :node-padding-step="12"
+              density="compact"
+              @node-select="openIndexDir"
+              @toggle="setQuickDirExpanded"
+            />
+          </div>
+        </section>
+
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/35 p-2">
+          <div class="docmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <History :size="13" />
             {{ t("page.appSearch.section.recentSearch") }}
           </div>
@@ -183,8 +215,8 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
-          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/35 p-2">
+          <div class="docmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <FileText :size="13" />
             {{ t("page.appSearch.section.recentOpen") }}
           </div>
@@ -219,8 +251,8 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
-          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/35 p-2">
+          <div class="docmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <Star :size="13" />
             {{ t("page.appSearch.section.favorites") }}
           </div>
@@ -255,46 +287,8 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/45 p-2">
-          <div class="flex items-center gap-1.5 border-b border-default px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-dim">
-            <FolderOpen :size="13" />
-            {{ t("sidebar.indexDirs") }}
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
-            <div v-if="quickDirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
-              {{ t("page.appSearch.section.noDirs") }}
-            </div>
-            <DocMindIndexTree
-              v-else
-              :rows="visibleQuickDirRows"
-              :selected-path="selectedIndexDirPath"
-              :selectable="true"
-              :path-tooltip="true"
-              :virtual-label="t('common.virtualDir')"
-              :expand-title="t('sidebar.expand')"
-              :collapse-title="t('sidebar.collapse')"
-              :node-padding-base="0"
-              :node-padding-step="12"
-              density="compact"
-              @node-select="openIndexDir"
-              @toggle="setQuickDirExpanded"
-            />
-          </div>
-        </section>
-
-        <div class="flex-none rounded-lg border border-accent-soft bg-accent-soft p-3 text-[10px] leading-snug text-muted">
-          <div class="mb-1 font-semibold text-accent-text">{{ t("sidebar.localFirst") }}</div>
-          {{ t("sidebar.localFirstDesc") }}
-        </div>
       </div>
     </div>
 
-    <div
-      v-else
-      class="mt-auto flex items-center justify-center rounded-lg border border-accent-soft bg-accent-soft p-2 text-accent-text"
-      :title="t('sidebar.localFirst')"
-    >
-      <div class="flex h-6 w-6 items-center justify-center rounded bg-accent text-[10px] font-bold text-white shadow-card">dm</div>
-    </div>
   </aside>
 </template>

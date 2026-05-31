@@ -546,7 +546,7 @@ onBeforeUnmount(() => {
     <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
         <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.library.title") }}</h1>
-        <p class="mt-0.5 text-xs text-dim">{{ t("page.library.subtitle") }}</p>
+        <p class="docmind-item-meta mt-0.5">{{ t("page.library.subtitle") }}</p>
       </div>
       <button
         class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
@@ -560,7 +560,7 @@ onBeforeUnmount(() => {
 
     <main class="relative min-h-0 flex-1 overflow-y-auto p-4">
       <div
-        class="mb-4 rounded-md border border-dashed px-4 py-3 text-xs transition"
+        class="mb-4 rounded-md border border-dashed px-4 py-3 text-sm transition"
         :class="dragActive
           ? 'border-accent bg-accent-soft text-accent-text'
           : 'border-default bg-surface text-muted'"
@@ -596,20 +596,20 @@ onBeforeUnmount(() => {
       </div>
 
         <div class="mb-3 flex items-center justify-between border-b border-default bg-surface px-4 py-2">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.library.emptyState.title") }}</div>
+        <div class="docmind-section-label">{{ t("page.library.emptyState.title") }}</div>
         <DocMindBadge tone="default">
           <FolderOpen class="mr-1" :size="13" />
           {{ explicitIndexDirCount }}
         </DocMindBadge>
       </div>
 
-      <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+      <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-sm text-muted">
         {{ t("page.library.loading") }}
       </div>
 
-      <div v-else-if="dirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.library.emptyState.title") }}</div>
-        <div class="mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
+      <div v-else-if="dirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-sm text-muted">
+        <div class="docmind-section-label">{{ t("page.library.emptyState.title") }}</div>
+        <div class="docmind-item-meta mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
       </div>
 
       <DocMindIndexTree

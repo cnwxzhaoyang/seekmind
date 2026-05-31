@@ -199,27 +199,27 @@ onBeforeUnmount(() => {
   <section class="rounded-lg border border-default bg-surface p-4">
     <div class="mb-3 flex items-center justify-between">
       <div>
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("semantic.title") }}</div>
-        <div class="mt-1 text-xs text-dim">{{ t("semantic.desc") }}</div>
+        <div class="docmind-section-label">{{ t("semantic.title") }}</div>
+        <div class="docmind-item-meta mt-1">{{ t("semantic.desc") }}</div>
       </div>
       <DocMindBadge tone="default">{{ semanticIndexStatusLabel }}</DocMindBadge>
     </div>
 
-    <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
-      {{ errorMessage }}
-    </div>
+      <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm text-danger">
+        {{ errorMessage }}
+      </div>
 
-    <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
+    <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-sm text-success">
       {{ infoMessage }}
     </div>
 
-    <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-xs text-muted">
+    <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-sm text-muted">
       {{ t("semantic.loading") }}
     </div>
 
     <div v-else-if="semanticStatus" class="space-y-4 text-sm">
       <label class="block">
-        <div class="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("semantic.defaultModel") }}</div>
+        <div class="mb-2 docmind-section-label">{{ t("semantic.defaultModel") }}</div>
         <select
           v-model="selectedEmbeddingModelId"
           class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
@@ -233,7 +233,7 @@ onBeforeUnmount(() => {
       <div v-if="semanticRebuildProgress" class="rounded-lg border border-default bg-panel px-4 py-4">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("semantic.rebuildProgress") }}</div>
+            <div class="docmind-section-label">{{ t("semantic.rebuildProgress") }}</div>
             <div class="mt-1 text-sm font-medium text-primary">
               {{ semanticRebuildProgress.state === "completed" ? t("semantic.completed") : semanticRebuildProgress.message }}
             </div>
@@ -248,46 +248,46 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <div class="mt-3 grid gap-3 text-xs text-secondary md:grid-cols-2">
+        <div class="mt-3 grid gap-3 text-sm text-secondary md:grid-cols-2">
           <div>
-            <div class="text-dim">{{ t("semantic.currentDirDoc") }}</div>
+            <div class="docmind-item-meta">{{ t("semantic.currentDirDoc") }}</div>
             <div class="mt-1 break-all text-primary">
               {{ semanticRebuildProgress.current_document || t("semantic.none") }}
             </div>
           </div>
           <div>
-            <div class="text-dim">{{ t("semantic.currentChunk") }}</div>
+            <div class="docmind-item-meta">{{ t("semantic.currentChunk") }}</div>
             <div class="mt-1 break-all text-primary">
               {{ semanticRebuildProgress.current_chunk || t("semantic.none") }}
             </div>
           </div>
           <div>
-            <div class="text-dim">{{ t("semantic.processed") }}</div>
-            <div class="mt-1 text-primary">
+            <div class="docmind-item-meta">{{ t("semantic.processed") }}</div>
+            <div class="mt-1 docmind-metric-value text-primary">
               {{ semanticRebuildProgress.processed_chunks }} / {{ semanticRebuildProgress.total_chunks }}
             </div>
           </div>
           <div>
-            <div class="text-dim">{{ t("semantic.embedded") }}</div>
-            <div class="mt-1 text-primary">{{ semanticRebuildProgress.embedded_chunks }}</div>
+            <div class="docmind-item-meta">{{ t("semantic.embedded") }}</div>
+            <div class="mt-1 docmind-metric-value text-primary">{{ semanticRebuildProgress.embedded_chunks }}</div>
           </div>
         </div>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div class="rounded-lg bg-panel px-4 py-3">
-          <div class="text-xs text-dim">{{ t("semantic.embeddedShort") }}</div>
-          <div class="mt-1 font-medium text-primary">{{ semanticStatus.embedded_chunks }}</div>
+          <div class="docmind-item-meta">{{ t("semantic.embeddedShort") }}</div>
+          <div class="mt-1 docmind-metric-value text-primary">{{ semanticStatus.embedded_chunks }}</div>
         </div>
         <div class="rounded-lg bg-panel px-4 py-3">
-          <div class="text-xs text-dim">{{ t("semantic.pendingRebuild") }}</div>
-          <div class="mt-1 font-medium text-primary">
+          <div class="docmind-item-meta">{{ t("semantic.pendingRebuild") }}</div>
+          <div class="mt-1 docmind-metric-value text-primary">
             {{ semanticStatus.needs_rebuild ? t("semantic.yes") : t("semantic.no") }}
           </div>
         </div>
       </div>
 
-      <div class="rounded-lg bg-panel px-4 py-3 text-xs text-secondary">
+      <div class="rounded-lg bg-panel px-4 py-3 text-sm text-secondary">
         <div>{{ t("semantic.model", { name: semanticStatus.model.name }) }}</div>
         <div class="mt-1">{{ t("semantic.provider", { provider: semanticStatus.model.provider, dim: semanticStatus.model.dimension }) }}</div>
         <div class="mt-1">{{ t("semantic.availability", { status: semanticStatus.model.available ? t("semantic.yes") : t("semantic.no") }) }}</div>
@@ -318,8 +318,8 @@ onBeforeUnmount(() => {
     <div class="mt-4 rounded-lg border border-default bg-surface p-4">
       <div class="mb-3 flex items-center justify-between">
         <div>
-          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("semantic.debug.title") }}</div>
-          <div class="mt-1 text-xs text-dim">{{ t("semantic.debug.desc") }}</div>
+          <div class="docmind-section-label">{{ t("semantic.debug.title") }}</div>
+          <div class="docmind-item-meta mt-1">{{ t("semantic.debug.desc") }}</div>
         </div>
         <DocMindBadge tone="success">{{ t("semantic.debug.onlyLocal") }}</DocMindBadge>
       </div>
@@ -345,16 +345,16 @@ onBeforeUnmount(() => {
       <div v-if="semanticDebug" class="mt-4 space-y-3">
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div class="rounded-lg bg-panel px-4 py-3">
-            <div class="text-xs text-dim">{{ t("semantic.debug.vectorDim") }}</div>
-            <div class="mt-1 font-medium text-primary">{{ semanticDebug.query_vector_dim }}</div>
+            <div class="docmind-item-meta">{{ t("semantic.debug.vectorDim") }}</div>
+            <div class="mt-1 docmind-metric-value text-primary">{{ semanticDebug.query_vector_dim }}</div>
           </div>
           <div class="rounded-lg bg-panel px-4 py-3">
-            <div class="text-xs text-dim">{{ t("semantic.debug.hitCount") }}</div>
-            <div class="mt-1 font-medium text-primary">{{ semanticDebug.hit_count }}</div>
+            <div class="docmind-item-meta">{{ t("semantic.debug.hitCount") }}</div>
+            <div class="mt-1 docmind-metric-value text-primary">{{ semanticDebug.hit_count }}</div>
           </div>
         </div>
 
-        <div class="rounded-lg bg-panel px-4 py-3 text-xs text-secondary">
+        <div class="rounded-lg bg-panel px-4 py-3 text-sm text-secondary">
           <div>{{ t("semantic.debug.normalizedQuery", { query: semanticDebug.normalized_query || t("semantic.debug.empty") }) }}</div>
           <div class="mt-1">{{ t("semantic.model", { name: semanticDebug.model.name }) }} / {{ semanticDebug.model.provider }}</div>
           <div class="mt-1">{{ t("semantic.debug.status", { status: semanticDebug.index_status || "idle", error: semanticDebug.last_error || t("semantic.noError") }) }}</div>
@@ -367,11 +367,11 @@ onBeforeUnmount(() => {
             class="rounded-lg border border-default bg-surface px-4 py-3 text-sm"
           >
             <div class="flex items-center justify-between gap-3">
-              <div class="font-medium text-primary">{{ hit.file_name }}</div>
+              <div class="docmind-item-title">{{ hit.file_name }}</div>
               <DocMindBadge tone="default">{{ hit.score.toFixed(3) }}</DocMindBadge>
             </div>
-            <div class="mt-1 text-xs text-dim">{{ hit.title_path || hit.heading || t("semantic.debug.noHitHeading") }}</div>
-            <div class="mt-2 line-clamp-2 text-secondary">{{ hit.snippet }}</div>
+            <div class="docmind-item-meta mt-1">{{ hit.title_path || hit.heading || t("semantic.debug.noHitHeading") }}</div>
+            <div class="mt-2 line-clamp-2 text-sm text-secondary">{{ hit.snippet }}</div>
           </div>
         </div>
       </div>

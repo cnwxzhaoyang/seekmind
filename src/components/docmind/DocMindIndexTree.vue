@@ -90,13 +90,13 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
         <Folder :size="15" />
       </span>
 
-      <div class="min-w-0 flex-1 truncate text-sm leading-none">
+      <div class="docmind-item-title min-w-0 flex-1 truncate">
         <slot name="label" :row="row">
           {{ row.displayName }}
         </slot>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2 text-[10px] text-muted">
+      <div class="flex shrink-0 items-center gap-2 text-[11px] text-muted">
         <span v-if="row.isVirtual" class="rounded bg-badge px-1 py-px text-[10px] text-accent-text">
           {{ virtualLabel || "Virtual" }}
         </span>

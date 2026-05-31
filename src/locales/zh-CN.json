@@ -75,9 +75,7 @@
     "settings": "设置",
     "indexDirs": "索引目录",
     "expand": "展开侧栏",
-    "collapse": "收起侧栏",
-    "localFirst": "本地优先",
-    "localFirstDesc": "文档只在当前 Mac 上解析和索引，不上传云端。"
+    "collapse": "收起侧栏"
   },
 
   "page": {
@@ -397,6 +395,7 @@
         "rules": "索引规则",
         "instructions": "操作说明",
         "appearance": "界面",
+        "privacy": "隐私说明",
         "danger": "危险操作"
       },
       "rulesDesc": "目录名和扩展名会按逗号、分号或换行分隔，扩展名无需输入点号。",
@@ -419,6 +418,12 @@
       "danger": {
         "desc": "清空本地索引，不会删除原始文档。",
         "detail": "这会删除当前本地 SQLite 数据和 Tantivy 索引，适合排查初始化和索引异常。"
+      },
+      "privacy": {
+        "desc": "说明当前应用如何处理你的文档与索引数据。",
+        "localFirst": "本地优先",
+        "localFirstDesc": "文档只在当前 Mac 上解析和索引，不上传云端。",
+        "localOnlyHint": "你可以把它理解为默认离线工作模式：搜索、切片和索引都只在本机完成。"
       },
       "placeholder": {
         "dirs": "node_modules, .git, target",

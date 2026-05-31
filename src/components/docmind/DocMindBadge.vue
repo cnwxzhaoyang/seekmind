@@ -19,7 +19,7 @@ const toneClassMap: Record<BadgeTone, string> = {
 
 <template>
   <span
-    class="docmind-badge inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] leading-none"
+    class="docmind-badge inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] leading-none"
     :class="toneClassMap[props.tone]"
   >
     <slot />

@@ -127,7 +127,7 @@ html.dark {
 .shadow-card-hover { box-shadow: 0 2px 4px var(--color-shadow-md); }
 
 .font-base {
-  font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  font-family: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
 }
 
 * {
@@ -145,7 +145,9 @@ body {
   min-height: 100vh;
   background-color: var(--color-page-bg);
   color: var(--color-text-primary);
-  font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  font-family: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 a {
@@ -200,6 +202,34 @@ button {
 
 .docmind-file-icon {
   letter-spacing: 0.08em;
+}
+
+.docmind-section-label {
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.docmind-item-title {
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.docmind-item-meta {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.docmind-metric-value {
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 600;
 }
 
 @media (max-width: 900px) {
