@@ -33,6 +33,7 @@ import type {
   QaAnswerProgressView,
   QaAskStartView,
   QaMessageView,
+  QaModelProfileView,
   QaSessionView,
   QaSettingsView,
 } from "../types/docmind";
@@ -56,6 +57,8 @@ const qaCancelling = ref(false);
 const qaErrorMessage = ref("");
 const qaInfoMessage = ref("");
 const qaActiveJobId = ref("");
+const qaModelProfiles = ref<QaModelProfileView[]>([]);
+const qaProfileChoice = ref("__current__");
 const expandedMessages = ref<Record<string, boolean>>({});
 const editingSessionId = ref("");
 const editingSessionTitle = ref("");
@@ -64,7 +67,10 @@ const sessionMenuPosition = ref({ x: 0, y: 0 });
 const sessionMenuTarget = ref<QaSessionView | null>(null);
 const loading = ref(false);
 const qaQuestionInput = ref<HTMLTextAreaElement | null>(null);
+const qaChatScrollEl = ref<HTMLElement | null>(null);
+const chatShouldFollowLatest = ref(true);
 let unlistenQaProgress: null | (() => void) = null;
+const inFlightMessageStates = new Set(["searching", "generating", "streaming"]);
 
 const emptyMarkdownBlock: PreviewBlockView = {
   block_index: 0,
@@ -87,6 +93,7 @@ interface QaUiState {
   expandedMessages: Record<string, boolean>;
   sessionFilter: string;
   question: string;
+  profileChoice: string;
 }
 
 const loadSavedQaUiState = (): Partial<QaUiState> => {
@@ -108,8 +115,36 @@ const saveQaUiState = () => {
     expandedMessages: expandedMessages.value,
     sessionFilter: qaSessionFilter.value,
     question: qaQuestion.value,
+    profileChoice: qaProfileChoice.value,
   };
   sessionStorage.setItem(qaUiStateStorageKey, JSON.stringify(state));
+};
+
+const isChatNearBottom = () => {
+  const el = qaChatScrollEl.value;
+  if (!el) {
+    return true;
+  }
+
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+};
+
+const scrollChatToBottom = async (force = false) => {
+  await nextTick();
+  const el = qaChatScrollEl.value;
+  if (!el) {
+    return;
+  }
+
+  if (!force && !chatShouldFollowLatest.value) {
+    return;
+  }
+
+  el.scrollTop = el.scrollHeight;
+};
+
+const handleChatScroll = () => {
+  chatShouldFollowLatest.value = isChatNearBottom();
 };
 
 const currentSession = computed(
@@ -220,6 +255,35 @@ const selectedSourceCitation = computed(() => {
   });
 });
 
+const qaCurrentModelLabel = computed(() => qaSettings.value?.model.trim() || t("common.none"));
+
+const qaSelectedProfile = computed(() => {
+  if (qaProfileChoice.value === "__current__") {
+    return null;
+  }
+
+  return qaModelProfiles.value.find((item) => item.id === qaProfileChoice.value) ?? null;
+});
+
+const qaSelectedModel = computed(() => qaSelectedProfile.value?.model.trim() || qaSettings.value?.model.trim() || "");
+
+const qaModelOptions = computed(() => qaModelProfiles.value.filter((item) => item.enabled));
+
+const isInFlightMessage = (state: string) => inFlightMessageStates.has(state);
+
+const inFlightMessageLabel = (state: string) => {
+  if (state === "searching") {
+    return t("page.appQa.searching");
+  }
+  if (state === "streaming") {
+    return t("page.appQa.streaming");
+  }
+  return t("page.appQa.generating");
+};
+
+const messageFailureTitle = () => t("page.appQa.modelUnavailable");
+const messageFailureHint = (message: QaMessageView) => message.error?.trim() || t("page.appQa.modelUnavailableHint");
+
 const panels = computed(() => {
   const items: { key: string; initialSize?: number; minSize: number; flex?: boolean }[] = [
     { key: "sidebar", initialSize: 280, minSize: 240 },
@@ -231,8 +295,12 @@ const panels = computed(() => {
   return items;
 });
 
-const isQaConfigured = (settings: QaSettingsView | null) =>
-  Boolean(settings?.enabled && settings.base_url.trim() && settings.model.trim());
+const isQaConfigured = (settings: QaSettingsView | null) => {
+  const activeBaseUrl = qaSelectedProfile.value?.base_url?.trim() || settings?.base_url.trim() || "";
+  const activeModel = qaSelectedModel.value.trim();
+  const profileEnabled = qaSelectedProfile.value ? qaSelectedProfile.value.enabled : true;
+  return Boolean(settings?.enabled && profileEnabled && activeBaseUrl && activeModel);
+};
 
 const sessionDraftTitle = () => t("page.appQa.defaultSessionTitle");
 
@@ -243,6 +311,20 @@ const loadQaSettings = async () => {
     qaSettings.value = await docmindApi.getQaSettings();
   } catch (error) {
     console.error("[DocMind] getQaSettings failed", error);
+  }
+};
+
+const loadQaModelProfiles = async () => {
+  try {
+    qaModelProfiles.value = await docmindApi.listQaModelProfiles();
+    if (
+      qaProfileChoice.value !== "__current__" &&
+      !qaModelProfiles.value.some((item) => item.id === qaProfileChoice.value)
+    ) {
+      qaProfileChoice.value = "__current__";
+    }
+  } catch (error) {
+    console.error("[DocMind] listQaModelProfiles failed", error);
   }
 };
 
@@ -269,6 +351,8 @@ const setCurrentSession = async (
     qaAnswer.value?.sources.find((item) => item.source_id === uiState.selectedSourceId)?.source_id ?? "";
   qaSessionTitle.value = qaSessions.value.find((item) => item.id === sessionId)?.title ?? qaSessionTitle.value;
   expandedMessages.value = uiState.expandedMessages ?? {};
+  chatShouldFollowLatest.value = true;
+  void scrollChatToBottom(true);
 };
 
 const syncRouteSession = async (sessionId: string) => {
@@ -343,6 +427,8 @@ const resetCurrentSessionState = () => {
   qaInfoMessage.value = "";
   qaErrorMessage.value = "";
   expandedMessages.value = {};
+  chatShouldFollowLatest.value = true;
+  void scrollChatToBottom(true);
 };
 
 const loadInitialData = async () => {
@@ -351,7 +437,9 @@ const loadInitialData = async () => {
     const savedUiState = loadSavedQaUiState();
     qaSessionFilter.value = savedUiState.sessionFilter ?? qaSessionFilter.value;
     qaQuestion.value = savedUiState.question ?? qaQuestion.value;
+    qaProfileChoice.value = savedUiState.profileChoice ?? qaProfileChoice.value;
     await loadQaSettings();
+    await loadQaModelProfiles();
     await refreshSessions(false);
     const initialSessionId = routeSessionId.value || savedUiState.sessionId || "";
     if (initialSessionId) {
@@ -420,6 +508,9 @@ const installQaProgressListener = async () => {
       qaMessages.value.push(nextMessage);
     }
     qaAnswer.value = nextMessage;
+    if (chatShouldFollowLatest.value) {
+      void scrollChatToBottom(true);
+    }
 
     if (payload.state === "searching") {
       qaLoading.value = true;
@@ -443,7 +534,10 @@ const installQaProgressListener = async () => {
           ? t("page.appQa.insufficient")
           : payload.state === "cancelled"
             ? t("page.appQa.stopped")
-            : "";
+            : payload.state === "failed"
+              ? t("page.appQa.askFailed")
+              : "";
+    qaErrorMessage.value = payload.state === "failed" ? payload.error || t("page.appQa.modelUnavailable") : "";
     qaCancelling.value = false;
     qaActiveJobId.value = "";
     void refreshSessions();
@@ -532,7 +626,14 @@ const runQa = async () => {
       .map((message) => message.question.trim())
       .filter(Boolean)
       .slice(-6);
-    const started: QaAskStartView = await docmindApi.askQuestion(question, [], 6, sessionId, recentQuestions);
+    const started: QaAskStartView = await docmindApi.askQuestion(
+      question,
+      [],
+      6,
+      sessionId,
+      recentQuestions,
+      qaProfileChoice.value === "__current__" ? "" : qaProfileChoice.value,
+    );
     qaActiveJobId.value = started.job_id;
     const startedMessage: QaMessageView = {
       ...started.status,
@@ -543,6 +644,8 @@ const runQa = async () => {
     qaMessages.value = [...qaMessages.value.filter((item) => item.id !== startedMessage.id), startedMessage];
     qaSelectedSourceId.value = "";
     qaQuestion.value = "";
+    chatShouldFollowLatest.value = true;
+    void scrollChatToBottom(true);
 
     if (started.status.state === "model_not_configured") {
       qaInfoMessage.value = t("page.appQa.notConfigured");
@@ -742,7 +845,7 @@ watch(qaMessages, () => {
 });
 
 watch(
-  [qaSessionId, qaAnswer, qaSelectedSourceId, expandedMessages, qaSessionFilter, qaQuestion],
+  [qaSessionId, qaAnswer, qaSelectedSourceId, expandedMessages, qaSessionFilter, qaQuestion, qaProfileChoice],
   saveQaUiState,
   { deep: true },
 );
@@ -885,12 +988,22 @@ watch(routeSessionId, async (next, previous) => {
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto">
+          <div ref="qaChatScrollEl" class="relative min-h-0 flex-1 overflow-y-auto" @scroll.passive="handleChatScroll">
             <div v-if="qaErrorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
               {{ qaErrorMessage }}
             </div>
             <div v-if="qaInfoMessage" class="m-4 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-3 text-sm text-success">
-              {{ qaInfoMessage }}
+              <div class="flex items-start gap-2">
+                <span
+                  v-if="qaLoading"
+                  class="relative mt-1 inline-flex h-2.5 w-2.5 shrink-0"
+                  aria-hidden="true"
+                >
+                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/30" />
+                  <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
+                </span>
+                <span>{{ qaInfoMessage }}</span>
+              </div>
             </div>
             <div v-if="qaLoading && qaMessages.length === 0" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
               {{ t("page.appQa.loading") }}
@@ -930,11 +1043,38 @@ watch(routeSessionId, async (next, previous) => {
                           </DocMindBadge>
                         </div>
                       </div>
-                      <div class="mt-3">
+                      <div v-if="isInFlightMessage(message.state)" class="mt-3 rounded-xl border border-accent/15 bg-accent-soft/35 px-4 py-4">
+                        <div class="flex items-center gap-3">
+                          <span class="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/25" />
+                            <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
+                          </span>
+                          <div class="min-w-0">
+                            <div class="text-sm font-medium text-primary">{{ inFlightMessageLabel(message.state) }}</div>
+                            <div class="mt-0.5 text-xs text-muted">{{ t("page.appQa.generatingHint") }}</div>
+                          </div>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                          <div class="h-2 w-3/4 animate-pulse rounded-full bg-accent-soft/70" />
+                          <div class="h-2 w-5/6 animate-pulse rounded-full bg-accent-soft/50" />
+                          <div class="h-2 w-2/3 animate-pulse rounded-full bg-accent-soft/30" />
+                        </div>
+                        <div v-if="message.answer" class="mt-4">
+                          <DocMindMarkdownRenderer
+                            :block="emptyMarkdownBlock"
+                            :markdown="message.answer"
+                          />
+                        </div>
+                      </div>
+                      <div v-else class="mt-3">
                         <DocMindMarkdownRenderer
                           :block="emptyMarkdownBlock"
                           :markdown="message.answer || t('page.appQa.noAnswer')"
                         />
+                      </div>
+                      <div v-if="message.state === 'failed' || message.error" class="mt-3 rounded-xl border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
+                        <div class="font-medium">{{ messageFailureTitle() }}</div>
+                        <div class="mt-1 text-xs leading-5 text-danger/90">{{ messageFailureHint(message) }}</div>
                       </div>
                       <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-dim">
                         <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
@@ -1003,10 +1143,36 @@ watch(routeSessionId, async (next, previous) => {
             <div v-else class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
               {{ t("page.appQa.enterQuestion") }}
             </div>
+            <button
+              v-if="qaMessages.length > 0 && !chatShouldFollowLatest"
+              class="sticky bottom-4 ml-auto mr-4 mb-4 flex items-center gap-2 rounded-full border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary shadow-sm hover:bg-surface-hover"
+              type="button"
+              @click="scrollChatToBottom(true)"
+            >
+              <ChevronDown :size="14" />
+              {{ t("page.appQa.jumpToLatest") }}
+            </button>
           </div>
 
           <div class="px-4 py-3">
             <div class="rounded-2xl border border-default bg-input px-3 py-2 shadow-sm">
+              <div class="mb-1.5 flex items-center justify-between gap-2 text-[11px] leading-4 text-muted">
+                <span>{{ t("page.appQa.modelLabel") }}</span>
+                <span class="truncate text-right">{{ qaSelectedProfile?.name || qaCurrentModelLabel }}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <select
+                  v-model="qaProfileChoice"
+                  class="min-w-0 flex-1 rounded-md border border-default bg-surface px-2 py-1.5 text-[12px] text-secondary outline-none transition hover:bg-surface-hover"
+                >
+                  <option value="__current__">
+                    {{ t("page.appQa.defaultModelOption", { model: qaCurrentModelLabel }) }}
+                  </option>
+                  <option v-for="profile in qaModelOptions" :key="profile.id" :value="profile.id">
+                    {{ profile.name }} · {{ profile.model }}
+                  </option>
+                </select>
+              </div>
               <textarea
                 ref="qaQuestionInput"
                 v-model="qaQuestion"

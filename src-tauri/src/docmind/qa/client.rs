@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
-use reqwest::{blocking::Client, Client as AsyncClient};
+use reqwest::{blocking::Client, Client as AsyncClient, Proxy};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 #[derive(Debug, Serialize)]
 struct ChatMessage<'a> {
@@ -56,11 +57,9 @@ pub fn ask_model(
     prompt: &str,
     temperature: f32,
     max_output_tokens: usize,
+    proxy_url: Option<&str>,
 ) -> Result<String, String> {
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = build_blocking_client(proxy_url)?;
 
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let request = ChatCompletionsRequest {
@@ -85,14 +84,16 @@ pub fn ask_model(
         builder = builder.bearer_auth(api_key.trim());
     }
 
-    let response = builder.send().map_err(|error| error.to_string())?;
+    let response = builder.send().map_err(|error| format_request_error("模型请求失败", error))?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
         return Err(format!("模型请求失败: {status} {body}"));
     }
 
-    let parsed: ChatCompletionsResponse = response.json().map_err(|error| error.to_string())?;
+    let parsed: ChatCompletionsResponse = response
+        .json()
+        .map_err(|error| format!("模型响应解析失败: {error}"))?;
     let answer = parsed
         .choices
         .into_iter()
@@ -107,6 +108,18 @@ pub fn ask_model(
     Ok(answer)
 }
 
+fn format_request_error(prefix: &str, error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        return format!("{prefix}: 模型服务响应超时");
+    }
+
+    if error.is_connect() {
+        return format!("{prefix}: 无法连接模型服务");
+    }
+
+    format!("{prefix}: {error}")
+}
+
 pub async fn ask_model_stream<F>(
     base_url: &str,
     api_key: &str,
@@ -115,15 +128,13 @@ pub async fn ask_model_stream<F>(
     prompt: &str,
     temperature: f32,
     max_output_tokens: usize,
+    proxy_url: Option<&str>,
     mut on_delta: F,
 ) -> Result<String, String>
 where
     F: FnMut(String) -> Result<(), String> + Send,
 {
-    let client = AsyncClient::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = build_async_client(proxy_url)?;
 
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let request = ChatCompletionsRequest {
@@ -149,7 +160,10 @@ where
     }
     builder = builder.header("Accept", "text/event-stream");
 
-    let response = builder.send().await.map_err(|error| error.to_string())?;
+    let response = builder
+        .send()
+        .await
+        .map_err(|error| format_request_error("模型请求失败", error))?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -187,7 +201,7 @@ where
             }
 
             let chunk: ChatStreamChunk =
-                serde_json::from_str(payload).map_err(|error| error.to_string())?;
+                serde_json::from_str(payload).map_err(|error| format!("模型流解析失败: {error}"))?;
             for choice in chunk.choices {
                 if let Some(content) = choice.delta.content {
                     if !content.is_empty() {
@@ -207,8 +221,8 @@ where
         if line.starts_with("data:") {
             let payload = line.trim_start_matches("data:").trim();
             if payload != "[DONE]" {
-                let chunk: ChatStreamChunk =
-                    serde_json::from_str(payload).map_err(|error| error.to_string())?;
+                let chunk: ChatStreamChunk = serde_json::from_str(payload)
+                    .map_err(|error| format!("模型流解析失败: {error}"))?;
                 for choice in chunk.choices {
                     if let Some(content) = choice.delta.content {
                         if !content.is_empty() {
@@ -227,4 +241,30 @@ where
     }
 
     Ok(answer)
+}
+
+fn build_blocking_client(proxy_url: Option<&str>) -> Result<Client, String> {
+    let mut builder = Client::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(120));
+
+    if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
+        let proxy = Proxy::all(proxy_url).map_err(|error| format!("代理地址无效: {error}"))?;
+        builder = builder.proxy(proxy);
+    }
+
+    builder.build().map_err(|error| error.to_string())
+}
+
+fn build_async_client(proxy_url: Option<&str>) -> Result<AsyncClient, String> {
+    let mut builder = AsyncClient::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(120));
+
+    if let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) {
+        let proxy = Proxy::all(proxy_url).map_err(|error| format!("代理地址无效: {error}"))?;
+        builder = builder.proxy(proxy);
+    }
+
+    builder.build().map_err(|error| error.to_string())
 }

@@ -279,6 +279,36 @@ export interface QaSettingsView {
   updated_at: string;
 }
 
+export interface NetworkProxySettingsView {
+  enabled: boolean;
+  proxy_url: string;
+  updated_at: string;
+}
+
+export interface QaModelProfileView {
+  id: string;
+  name: string;
+  provider: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  enabled: boolean;
+  is_default: boolean;
+  updated_at: string;
+  created_at: string;
+}
+
+export interface QaModelProfileUpsertView {
+  id?: string | null;
+  name: string;
+  provider: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  enabled: boolean;
+  is_default?: boolean;
+}
+
 export interface QaSourceView {
   source_id: string;
   chunk_id: string;

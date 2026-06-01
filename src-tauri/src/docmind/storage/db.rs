@@ -16,14 +16,14 @@ use crate::docmind::file_ops;
 use crate::docmind::models::{
     ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
     IndexDirView, IndexStatusView, PreviewBlockView, QaAnswerView, QaHistoryView, QaRetrievalView,
-    QaMessageView, QaSessionView, QaSourceView, RecentDocumentView, SearchHistoryView,
-    SearchResultView,
+    QaMessageView, QaModelProfileUpsertView, QaModelProfileView, QaSessionView, QaSourceView,
+    RecentDocumentView, SearchHistoryView, SearchResultView,
 };
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::types::{
-    ChunkRecord, DocumentState, ExtractedDocument, IndexSettings, QaSettings,
+    ChunkRecord, DocumentState, ExtractedDocument, IndexSettings, NetworkProxySettings, QaSettings,
 };
 
 #[derive(Clone)]
@@ -245,6 +245,27 @@ struct QaSettingsRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct NetworkProxySettingsRow {
+    enabled: i64,
+    proxy_url: String,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct QaModelProfileRow {
+    id: String,
+    name: String,
+    provider: String,
+    base_url: String,
+    api_key: String,
+    model: String,
+    enabled: i64,
+    is_default: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct QaHistoryRow {
     id: String,
     question: String,
@@ -389,6 +410,14 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_qa_settings_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_network_proxy_settings_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_qa_model_profiles_row()
             .await
             .map_err(|error| error.to_string())?;
         database
@@ -983,6 +1012,42 @@ impl Database {
         Ok(format_unix_ts(updated_at))
     }
 
+    pub async fn get_network_proxy_settings(&self) -> Result<NetworkProxySettings, sqlx::Error> {
+        let row = sqlx::query_as::<_, NetworkProxySettingsRow>(
+            r#"
+            SELECT enabled, proxy_url, updated_at
+            FROM network_proxy_settings
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(NetworkProxySettings {
+                enabled: row.enabled != 0,
+                proxy_url: row.proxy_url,
+            })
+        } else {
+            Ok(default_network_proxy_settings())
+        }
+    }
+
+    pub async fn get_network_proxy_settings_updated_at(&self) -> Result<String, sqlx::Error> {
+        let updated_at = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT updated_at
+            FROM network_proxy_settings
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .unwrap_or(0);
+
+        Ok(format_unix_ts(updated_at))
+    }
+
     pub async fn save_qa_settings(&self, settings: &QaSettings) -> Result<(), sqlx::Error> {
         let now = current_unix_ts();
         sqlx::query(
@@ -1021,6 +1086,176 @@ impl Database {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    pub async fn list_qa_model_profiles(&self) -> Result<Vec<QaModelProfileView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, QaModelProfileRow>(
+            r#"
+            SELECT id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at
+            FROM qa_model_profiles
+            ORDER BY is_default DESC, updated_at DESC, created_at DESC, name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(qa_model_profile_row_to_view).collect())
+    }
+
+    pub async fn get_qa_model_profile(
+        &self,
+        profile_id: &str,
+    ) -> Result<Option<QaModelProfileView>, sqlx::Error> {
+        let row = sqlx::query_as::<_, QaModelProfileRow>(
+            r#"
+            SELECT id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at
+            FROM qa_model_profiles
+            WHERE id = ?
+            "#,
+        )
+        .bind(profile_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(qa_model_profile_row_to_view))
+    }
+
+    pub async fn save_qa_model_profile(
+        &self,
+        profile: &QaModelProfileUpsertView,
+    ) -> Result<QaModelProfileView, sqlx::Error> {
+        let now = current_unix_ts();
+        let id = profile
+            .id
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let existing = sqlx::query_as::<_, QaModelProfileRow>(
+            r#"
+            SELECT id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at
+            FROM qa_model_profiles
+            WHERE id = ?
+            "#,
+        )
+        .bind(&id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let created_at = existing.as_ref().map(|item| item.created_at).unwrap_or(now);
+
+        if profile.is_default {
+            sqlx::query("UPDATE qa_model_profiles SET is_default = 0, updated_at = ?")
+                .bind(now)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO qa_model_profiles
+                (id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(profile.name.trim())
+        .bind(profile.provider.trim())
+        .bind(profile.base_url.trim())
+        .bind(profile.api_key.as_str())
+        .bind(profile.model.trim())
+        .bind(profile.enabled as i64)
+        .bind(profile.is_default as i64)
+        .bind(created_at)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        let row = sqlx::query_as::<_, QaModelProfileRow>(
+            r#"
+            SELECT id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at
+            FROM qa_model_profiles
+            WHERE id = ?
+            "#,
+        )
+        .bind(&id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(qa_model_profile_row_to_view(row))
+    }
+
+    pub async fn remove_qa_model_profile(&self, profile_id: &str) -> Result<(), sqlx::Error> {
+        let row = sqlx::query_as::<_, QaModelProfileRow>(
+            r#"
+            SELECT id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at
+            FROM qa_model_profiles
+            WHERE id = ?
+            "#,
+        )
+        .bind(profile_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let was_default = row.map(|item| item.is_default != 0).unwrap_or(false);
+        sqlx::query("DELETE FROM qa_model_profiles WHERE id = ?")
+            .bind(profile_id)
+            .execute(&self.pool)
+            .await?;
+
+        if was_default {
+            let next_default = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT id
+                FROM qa_model_profiles
+                ORDER BY updated_at DESC, created_at DESC, name ASC
+                LIMIT 1
+                "#,
+            )
+            .fetch_optional(&self.pool)
+            .await?;
+
+            if let Some(next_default) = next_default {
+                self.set_default_qa_model_profile(&next_default).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn set_default_qa_model_profile(
+        &self,
+        profile_id: &str,
+    ) -> Result<QaModelProfileView, sqlx::Error> {
+        let now = current_unix_ts();
+        let row = sqlx::query_as::<_, QaModelProfileRow>(
+            r#"
+            SELECT id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at
+            FROM qa_model_profiles
+            WHERE id = ?
+            "#,
+        )
+        .bind(profile_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Err(sqlx::Error::RowNotFound);
+        };
+
+        sqlx::query("UPDATE qa_model_profiles SET is_default = 0, updated_at = ?")
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("UPDATE qa_model_profiles SET is_default = 1, updated_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(profile_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(qa_model_profile_row_to_view(QaModelProfileRow {
+            is_default: 1,
+            updated_at: now,
+            ..row
+        }))
     }
 
     pub async fn list_qa_history(&self, limit: i64) -> Result<Vec<QaHistoryView>, sqlx::Error> {
@@ -2612,6 +2847,26 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         Ok(())
     }
 
+    pub async fn save_network_proxy_settings(
+        &self,
+        settings: &NetworkProxySettings,
+    ) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO network_proxy_settings
+                (id, enabled, proxy_url, updated_at)
+            VALUES (1, ?, ?, ?)
+            "#,
+        )
+        .bind(settings.enabled as i64)
+        .bind(settings.proxy_url.trim())
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn clear_pause_request(&self) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
@@ -2996,6 +3251,28 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             )
             "#,
             r#"
+            CREATE TABLE IF NOT EXISTS network_proxy_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER NOT NULL DEFAULT 0,
+                proxy_url TEXT NOT NULL DEFAULT '',
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS qa_model_profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                base_url TEXT NOT NULL DEFAULT '',
+                api_key TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
             CREATE TABLE IF NOT EXISTS qa_history (
                 id TEXT PRIMARY KEY,
                 question TEXT NOT NULL,
@@ -3067,6 +3344,48 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM qa_settings").await?;
         if count == 0 {
             self.save_qa_settings(&default_qa_settings()).await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_network_proxy_settings_row(&self) -> Result<(), sqlx::Error> {
+        let count =
+            scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM network_proxy_settings").await?;
+        if count == 0 {
+            self.save_network_proxy_settings(&default_network_proxy_settings())
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_qa_model_profiles_row(&self) -> Result<(), sqlx::Error> {
+        let count =
+            scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM qa_model_profiles").await?;
+        if count == 0 {
+            let settings = self
+                .get_qa_settings()
+                .await
+                .unwrap_or_else(|_| default_qa_settings());
+            let now = current_unix_ts();
+            let id = Uuid::new_v4().to_string();
+            sqlx::query(
+                r#"
+                INSERT INTO qa_model_profiles
+                    (id, name, provider, base_url, api_key, model, enabled, is_default, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind("默认连接")
+            .bind(settings.provider)
+            .bind(settings.base_url)
+            .bind(settings.api_key)
+            .bind(settings.model)
+            .bind(settings.enabled as i64)
+            .bind(now)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
         }
         Ok(())
     }
@@ -3623,6 +3942,13 @@ fn default_qa_settings() -> QaSettings {
     }
 }
 
+fn default_network_proxy_settings() -> NetworkProxySettings {
+    NetworkProxySettings {
+        enabled: false,
+        proxy_url: String::new(),
+    }
+}
+
 fn qa_history_row_to_view(row: QaHistoryRow) -> QaHistoryView {
     let sources = serde_json::from_str::<Vec<QaSourceView>>(&row.sources_json).unwrap_or_default();
     let retrieval = serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
@@ -3694,6 +4020,21 @@ fn qa_message_row_to_view(row: QaMessageRow) -> QaMessageView {
                 Some(trimmed)
             }
         },
+    }
+}
+
+fn qa_model_profile_row_to_view(row: QaModelProfileRow) -> QaModelProfileView {
+    QaModelProfileView {
+        id: row.id,
+        name: row.name,
+        provider: row.provider,
+        base_url: row.base_url,
+        api_key: row.api_key,
+        model: row.model,
+        enabled: row.enabled != 0,
+        is_default: row.is_default != 0,
+        created_at: format_unix_ts(row.created_at),
+        updated_at: format_unix_ts(row.updated_at),
     }
 }
 

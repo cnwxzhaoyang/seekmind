@@ -329,6 +329,40 @@ pub struct QaSettingsView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkProxySettingsView {
+    pub enabled: bool,
+    pub proxy_url: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaModelProfileView {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub enabled: bool,
+    pub is_default: bool,
+    pub updated_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QaModelProfileUpsertView {
+    pub id: Option<String>,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaSourceView {
     pub source_id: String,
     pub chunk_id: String,

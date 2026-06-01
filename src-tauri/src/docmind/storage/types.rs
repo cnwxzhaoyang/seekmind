@@ -82,3 +82,9 @@ pub struct QaSettings {
     pub min_evidence_count: usize,
     pub min_retrieval_score: f32,
 }
+
+#[derive(Debug, Clone)]
+pub struct NetworkProxySettings {
+    pub enabled: bool,
+    pub proxy_url: String,
+}

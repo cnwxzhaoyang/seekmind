@@ -1,9 +1,11 @@
 use crate::docmind::models::{
-    QaAnswerProgressView, QaAnswerView, QaAskStartView, QaConnectionTestView, QaHistoryView,
-    QaMessageView, QaRetrievalView, QaSessionView, QaSettingsView, QaSourceView,
+    NetworkProxySettingsView, QaAnswerProgressView, QaAnswerView, QaAskStartView,
+    QaConnectionTestView, QaHistoryView, QaMessageView, QaModelProfileUpsertView,
+    QaModelProfileView, QaRetrievalView, QaSessionView, QaSettingsView, QaSourceView,
 };
+use crate::docmind::sidecar::apply_network_proxy_environment;
 use crate::docmind::storage::db::Database;
-use crate::docmind::storage::types::QaSettings;
+use crate::docmind::storage::types::{NetworkProxySettings, QaSettings};
 use crate::docmind::search::normalize_query;
 
 use super::cancel::{cancel as cancel_qa_job, clear as clear_qa_job, register as register_qa_job};
@@ -11,6 +13,7 @@ use super::client::{ask_model, ask_model_stream};
 use super::context::build_qa_context;
 use super::models::QaContext;
 use futures_util::future::{AbortHandle, Abortable};
+use reqwest::Proxy;
 use std::{
     fs,
     sync::{Arc, Mutex},
@@ -31,6 +34,17 @@ fn qa_settings_to_view(settings: &QaSettings) -> QaSettingsView {
         min_evidence_count: settings.min_evidence_count,
         min_retrieval_score: settings.min_retrieval_score,
         updated_at: String::new(),
+    }
+}
+
+fn network_proxy_settings_to_view(
+    settings: &NetworkProxySettings,
+    updated_at: String,
+) -> NetworkProxySettingsView {
+    NetworkProxySettingsView {
+        enabled: settings.enabled,
+        proxy_url: settings.proxy_url.clone(),
+        updated_at,
     }
 }
 
@@ -382,7 +396,101 @@ pub async fn save_qa_settings(
 }
 
 #[tauri::command]
-pub async fn test_qa_connection(settings: QaSettingsView) -> Result<QaConnectionTestView, String> {
+pub async fn get_network_proxy_settings(
+    state: tauri::State<'_, Database>,
+) -> Result<NetworkProxySettingsView, String> {
+    let settings = state
+        .get_network_proxy_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    let updated_at = state
+        .get_network_proxy_settings_updated_at()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(network_proxy_settings_to_view(&settings, updated_at))
+}
+
+#[tauri::command]
+pub async fn save_network_proxy_settings(
+    settings: NetworkProxySettingsView,
+    state: tauri::State<'_, Database>,
+) -> Result<NetworkProxySettingsView, String> {
+    let proxy_url = settings.proxy_url.trim().to_string();
+    if settings.enabled && proxy_url.is_empty() {
+        return Err("代理地址不能为空".to_string());
+    }
+    if !proxy_url.is_empty() {
+        Proxy::all(proxy_url.as_str()).map_err(|error| format!("代理地址无效: {error}"))?;
+    }
+
+    let payload = NetworkProxySettings {
+        enabled: settings.enabled,
+        proxy_url,
+    };
+    state
+        .save_network_proxy_settings(&payload)
+        .await
+        .map_err(|error| error.to_string())?;
+    apply_network_proxy_environment(Some(&payload));
+    let settings = state
+        .get_network_proxy_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    let updated_at = state
+        .get_network_proxy_settings_updated_at()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(network_proxy_settings_to_view(&settings, updated_at))
+}
+
+#[tauri::command]
+pub async fn list_qa_model_profiles(
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<QaModelProfileView>, String> {
+    state
+        .list_qa_model_profiles()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn save_qa_model_profile(
+    profile: QaModelProfileUpsertView,
+    state: tauri::State<'_, Database>,
+) -> Result<QaModelProfileView, String> {
+    state
+        .save_qa_model_profile(&profile)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_qa_model_profile(
+    profile_id: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .remove_qa_model_profile(profile_id.trim())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn set_default_qa_model_profile(
+    profile_id: String,
+    state: tauri::State<'_, Database>,
+) -> Result<QaModelProfileView, String> {
+    state
+        .set_default_qa_model_profile(profile_id.trim())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn test_qa_connection(
+    settings: QaSettingsView,
+    state: tauri::State<'_, Database>,
+) -> Result<QaConnectionTestView, String> {
     if settings.base_url.trim().is_empty() {
         return Err("API Base URL 不能为空".to_string());
     }
@@ -393,6 +501,15 @@ pub async fn test_qa_connection(settings: QaSettingsView) -> Result<QaConnection
     let base_url = settings.base_url.clone();
     let api_key = settings.api_key.clone();
     let model = settings.model.clone();
+    let proxy_settings = state
+        .get_network_proxy_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    let proxy_url = if proxy_settings.enabled && !proxy_settings.proxy_url.trim().is_empty() {
+        Some(proxy_settings.proxy_url)
+    } else {
+        None
+    };
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         ask_model(
@@ -403,6 +520,7 @@ pub async fn test_qa_connection(settings: QaSettingsView) -> Result<QaConnection
             "You are a connection test for DocMind. Reply with a short confirmation only.",
             0.0,
             16,
+            proxy_url.as_deref(),
         )
     })
     .await
@@ -515,6 +633,7 @@ pub async fn ask_question(
     limit: usize,
     session_id: Option<String>,
     recent_questions: Option<Vec<String>>,
+    profile_id: Option<String>,
     state: tauri::State<'_, Database>,
 ) -> Result<QaAskStartView, String> {
     let normalized_question = question.trim().to_string();
@@ -523,6 +642,48 @@ pub async fn ask_question(
     }
 
     let settings = state.get_qa_settings().await.map_err(|error| error.to_string())?;
+    let proxy_settings = state
+        .get_network_proxy_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    let selected_profile = match profile_id
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+    {
+        Some(profile_id) => {
+            let profile = state
+                .get_qa_model_profile(&profile_id)
+                .await
+                .map_err(|error| error.to_string())?;
+            if profile.is_none() {
+                return Err(format!("找不到模型连接: {profile_id}"));
+            }
+            profile
+        }
+        None => None,
+    };
+    let connection_enabled = settings.enabled && selected_profile.as_ref().map(|item| item.enabled).unwrap_or(true);
+    let active_provider = selected_profile
+        .as_ref()
+        .map(|item| item.provider.clone())
+        .unwrap_or_else(|| settings.provider.clone());
+    let active_base_url = selected_profile
+        .as_ref()
+        .map(|item| item.base_url.clone())
+        .unwrap_or_else(|| settings.base_url.clone());
+    let active_api_key = selected_profile
+        .as_ref()
+        .map(|item| item.api_key.clone())
+        .unwrap_or_else(|| settings.api_key.clone());
+    let active_model = selected_profile
+        .as_ref()
+        .map(|item| item.model.clone())
+        .unwrap_or_else(|| settings.model.clone());
+    let active_proxy_url = if proxy_settings.enabled && !proxy_settings.proxy_url.trim().is_empty() {
+        Some(proxy_settings.proxy_url.clone())
+    } else {
+        None
+    };
     let created_at = chrono::Utc::now().to_rfc3339();
     let answer_id = uuid::Uuid::new_v4().to_string();
     let job_id = answer_id.clone();
@@ -568,7 +729,11 @@ pub async fn ask_question(
         let _ = app.emit("docmind:qa:answer-progress", payload);
     };
 
-    if !settings.enabled || settings.base_url.trim().is_empty() || settings.model.trim().is_empty() {
+    if !connection_enabled
+        || active_provider.trim().is_empty()
+        || active_base_url.trim().is_empty()
+        || active_model.trim().is_empty()
+    {
         let answer = build_answer_view(
             answer_id,
             normalized_question.clone(),
@@ -583,7 +748,7 @@ pub async fn ask_question(
                 semantic_fallback: false,
                 semantic_fallback_reason: String::new(),
             },
-            settings.model,
+            active_model.clone(),
             created_at,
             Some("问答模型未启用或未配置".to_string()),
         );
@@ -621,7 +786,7 @@ pub async fn ask_question(
             semantic_fallback: false,
             semantic_fallback_reason: String::new(),
         },
-        settings.model.clone(),
+        active_model.clone(),
         None,
     ));
 
@@ -637,12 +802,15 @@ pub async fn ask_question(
     let job_id_for_task = job_id.clone();
     let answer_id_for_task = answer_id.clone();
     let created_at_for_task = created_at.clone();
-    let model_for_task = settings.model.clone();
+    let model_for_task = active_model.clone();
+    let base_url_for_task = active_base_url.clone();
+    let api_key_for_task = active_api_key.clone();
+    let proxy_url_for_task = active_proxy_url.clone();
     let cancel_app = app.clone();
     let cancel_job_id = job_id.clone();
     let cancel_answer_id = answer_id.clone();
     let cancel_question = normalized_question.clone();
-    let cancel_model = settings.model.clone();
+    let cancel_model = active_model.clone();
     let cancel_created_at = created_at.clone();
     let cancel_database = database.clone();
     let cancel_session_id = normalized_session_id.clone();
@@ -662,7 +830,7 @@ pub async fn ask_question(
             semantic_fallback: false,
             semantic_fallback_reason: String::new(),
         },
-        settings.model.clone(),
+        active_model.clone(),
         created_at.clone(),
         None,
     );
@@ -788,13 +956,14 @@ pub async fn ask_question(
                 );
 
                 let streamed = ask_model_stream(
-                    &settings_for_task.base_url,
-                    &settings_for_task.api_key,
-                    &settings_for_task.model,
+                    &base_url_for_task,
+                    &api_key_for_task,
+                    &active_model,
                     &question_for_task,
                     &prompt,
                     settings_for_task.temperature,
                     settings_for_task.max_output_tokens,
+                    proxy_url_for_task.as_deref(),
                     |partial| {
                         let _ = app_for_task.emit(
                             "docmind:qa:answer-progress",

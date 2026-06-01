@@ -4,6 +4,8 @@ use std::process::Command;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
+use crate::docmind::storage::types::NetworkProxySettings;
+
 fn target_triple_suffix() -> String {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => "aarch64-apple-darwin".to_string(),
@@ -109,6 +111,27 @@ pub fn configure_sidecar_command(command: &mut Command) {
     let cache_dir = ensure_fastembed_cache_dir();
     command.env("DOCMIND_FASTEMBED_CACHE_DIR", &cache_dir);
     command.env("HF_HOME", cache_dir.join("huggingface"));
+}
+
+pub fn apply_network_proxy_environment(settings: Option<&NetworkProxySettings>) {
+    let proxy_url = settings
+        .filter(|setting| setting.enabled)
+        .map(|setting| setting.proxy_url.trim())
+        .filter(|value| !value.is_empty());
+
+    apply_proxy_env_var("HTTP_PROXY", proxy_url);
+    apply_proxy_env_var("HTTPS_PROXY", proxy_url);
+    apply_proxy_env_var("ALL_PROXY", proxy_url);
+    apply_proxy_env_var("http_proxy", proxy_url);
+    apply_proxy_env_var("https_proxy", proxy_url);
+    apply_proxy_env_var("all_proxy", proxy_url);
+}
+
+fn apply_proxy_env_var(name: &str, value: Option<&str>) {
+    match value {
+        Some(value) => std::env::set_var(name, value),
+        None => std::env::remove_var(name),
+    }
 }
 
 fn ensure_fastembed_cache_dir() -> PathBuf {

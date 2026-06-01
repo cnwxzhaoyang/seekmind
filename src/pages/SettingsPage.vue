@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Database, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
+import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindQaPanel from "../components/docmind/DocMindQaPanel.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { setLocale as setI18nLocale } from "../i18n";
-import type { IndexSettingsView } from "../types/docmind";
+import type { IndexSettingsView, NetworkProxySettingsView } from "../types/docmind";
 
 const { t, locale } = useI18n();
 const { themeMode, setTheme } = useTheme();
@@ -47,6 +47,13 @@ const preferenceWeight = ref(1.0);
 const preferFavoritesEnabled = ref(true);
 const preferRecentEnabled = ref(true);
 const preferHistoryEnabled = ref(true);
+const networkProxyEnabled = ref(false);
+const networkProxyUrl = ref("");
+const savedNetworkProxySettings = ref<NetworkProxySettingsView | null>(null);
+const networkLoading = ref(false);
+const networkSaving = ref(false);
+const networkErrorMessage = ref("");
+const networkInfoMessage = ref("");
 const loading = ref(false);
 const saving = ref(false);
 const clearing = ref(false);
@@ -110,8 +117,23 @@ const applySettings = (settings: IndexSettingsView) => {
   preferHistoryEnabled.value = settings.prefer_history_enabled;
 };
 
+const applyNetworkProxySettings = (settings: NetworkProxySettingsView) => {
+  networkProxyEnabled.value = settings.enabled;
+  networkProxyUrl.value = settings.proxy_url;
+};
+
+const hasNetworkProxyChanges = computed(() => {
+  if (!savedNetworkProxySettings.value) {
+    return false;
+  }
+
+  return (
+    Boolean(networkProxyEnabled.value) !== savedNetworkProxySettings.value.enabled ||
+    networkProxyUrl.value.trim() !== savedNetworkProxySettings.value.proxy_url.trim()
+  );
+});
+
 const loadSettings = async () => {
-  loading.value = true;
   errorMessage.value = "";
 
   try {
@@ -123,6 +145,22 @@ const loadSettings = async () => {
     console.error("[DocMind] getIndexSettings failed", error);
   } finally {
     loading.value = false;
+  }
+};
+
+const loadNetworkProxySettings = async () => {
+  networkLoading.value = true;
+  networkErrorMessage.value = "";
+
+  try {
+    const settings = await docmindApi.getNetworkProxySettings();
+    savedNetworkProxySettings.value = settings;
+    applyNetworkProxySettings(settings);
+  } catch (error) {
+    networkErrorMessage.value = formatDocmindError(error, t("page.settings.network.error.load"));
+    console.error("[DocMind] getNetworkProxySettings failed", error);
+  } finally {
+    networkLoading.value = false;
   }
 };
 
@@ -155,6 +193,30 @@ const saveSettings = async () => {
     console.error("[DocMind] saveIndexSettings failed", error);
   } finally {
     saving.value = false;
+  }
+};
+
+const saveNetworkProxySettings = async () => {
+  networkSaving.value = true;
+  networkErrorMessage.value = "";
+  networkInfoMessage.value = "";
+
+  const payload: NetworkProxySettingsView = {
+    enabled: networkProxyEnabled.value,
+    proxy_url: networkProxyUrl.value.trim(),
+    updated_at: savedNetworkProxySettings.value?.updated_at ?? "",
+  };
+
+  try {
+    const settings = await docmindApi.saveNetworkProxySettings(payload);
+    savedNetworkProxySettings.value = settings;
+    applyNetworkProxySettings(settings);
+    networkInfoMessage.value = t("page.settings.network.saved");
+  } catch (error) {
+    networkErrorMessage.value = formatDocmindError(error, t("page.settings.network.error.save"));
+    console.error("[DocMind] saveNetworkProxySettings failed", error);
+  } finally {
+    networkSaving.value = false;
   }
 };
 
@@ -220,6 +282,12 @@ const settingsNavItems = computed(() => [
     icon: Languages,
   },
   {
+    id: "settings-network",
+    label: t("page.settings.network.title"),
+    hint: t("page.settings.network.desc"),
+    icon: Globe,
+  },
+  {
     id: "settings-danger",
     label: t("page.settings.section.danger"),
     hint: t("page.settings.btn.clear"),
@@ -277,7 +345,12 @@ const syncActiveSection = () => {
 };
 
 onMounted(async () => {
-  await loadSettings();
+  loading.value = true;
+  try {
+    await Promise.all([loadSettings(), loadNetworkProxySettings()]);
+  } finally {
+    loading.value = false;
+  }
   await nextTick();
   syncActiveSection();
 });
@@ -700,6 +773,78 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </div>
+
+          <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
+            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+              <div>
+                <div class="docmind-section-label">{{ t("page.settings.network.title") }}</div>
+                <div class="docmind-item-meta mt-1">{{ t("page.settings.network.desc") }}</div>
+              </div>
+              <DocMindBadge :tone="networkProxyEnabled ? 'success' : 'default'">
+                {{ networkProxyEnabled ? t("page.settings.network.enabled") : t("page.settings.network.disabled") }}
+              </DocMindBadge>
+            </div>
+
+            <div class="space-y-4 p-4">
+              <div
+                v-if="networkErrorMessage"
+                class="rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger"
+              >
+                {{ networkErrorMessage }}
+              </div>
+              <div
+                v-if="networkInfoMessage"
+                class="rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success"
+              >
+                {{ networkInfoMessage }}
+              </div>
+
+              <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
+                <div>
+                  <div class="docmind-section-label">{{ t("page.settings.network.enableLabel") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.network.enableHint") }}</div>
+                </div>
+                <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
+                  <input
+                    v-model="networkProxyEnabled"
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-default text-accent accent-accent"
+                  />
+                  {{ networkProxyEnabled ? t("page.settings.network.enabled") : t("page.settings.network.disabled") }}
+                </label>
+              </div>
+
+              <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
+                <div>
+                  <div class="docmind-section-label">{{ t("page.settings.network.proxyUrl") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.network.proxyUrlHint") }}</div>
+                </div>
+                <input
+                  v-model="networkProxyUrl"
+                  type="text"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                  :placeholder="t('page.settings.network.proxyPlaceholder')"
+                />
+              </div>
+
+              <div class="rounded-lg border border-default bg-panel px-4 py-3 text-xs leading-5 text-secondary">
+                <div class="docmind-section-label text-primary">{{ t("page.settings.network.exampleTitle") }}</div>
+                <div class="mt-1">{{ t("page.settings.network.exampleDesc") }}</div>
+              </div>
+
+              <div class="flex items-center justify-end gap-2">
+                <DocMindBadge v-if="hasNetworkProxyChanges" tone="warning">{{ t("page.settings.status.changed") }}</DocMindBadge>
+                <button
+                  class="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
+                  :disabled="networkLoading || networkSaving"
+                  @click="saveNetworkProxySettings"
+                >
+                  <Save :size="15" />
+                  {{ networkSaving ? t("page.settings.network.saving") : t("page.settings.network.save") }}
+                </button>
+              </div>
+            </div>
+          </section>
 
           <section class="rounded-lg border border-default bg-surface">
             <div class="flex items-center justify-between border-b border-default px-4 py-2.5">

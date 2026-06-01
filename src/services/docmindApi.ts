@@ -8,7 +8,10 @@ import type {
   QaConnectionTestView,
   QaHistoryView,
   QaMessageView,
+  QaModelProfileUpsertView,
+  QaModelProfileView,
   QaSessionView,
+  NetworkProxySettingsView,
   QaSettingsView,
   DocumentView,
   DocumentRefreshStartView,
@@ -72,6 +75,9 @@ export const docmindApi = {
   getQaSettings: () => invoke<QaSettingsView>("get_qa_settings"),
   saveQaSettings: (settings: QaSettingsView) =>
     invoke<QaSettingsView>("save_qa_settings", { settings }),
+  getNetworkProxySettings: () => invoke<NetworkProxySettingsView>("get_network_proxy_settings"),
+  saveNetworkProxySettings: (settings: NetworkProxySettingsView) =>
+    invoke<NetworkProxySettingsView>("save_network_proxy_settings", { settings }),
   cancelQaQuestion: (jobId: string) =>
     invoke<void>("cancel_qa_question", { jobId }),
   askQuestion: (
@@ -80,10 +86,18 @@ export const docmindApi = {
     limit = 6,
     sessionId?: string,
     recentQuestions: string[] = [],
+    profileId = "",
   ) =>
-    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit, sessionId, recentQuestions }),
+    invoke<QaAskStartView>("ask_question", { question, scopePaths, limit, sessionId, recentQuestions, profile_id: profileId }),
   testQaConnection: (settings: QaSettingsView) =>
     invoke<QaConnectionTestView>("test_qa_connection", { settings }),
+  listQaModelProfiles: () => invoke<QaModelProfileView[]>("list_qa_model_profiles"),
+  saveQaModelProfile: (profile: QaModelProfileUpsertView) =>
+    invoke<QaModelProfileView>("save_qa_model_profile", { profile }),
+  removeQaModelProfile: (profileId: string) =>
+    invoke<void>("remove_qa_model_profile", { profile_id: profileId }),
+  setDefaultQaModelProfile: (profileId: string) =>
+    invoke<QaModelProfileView>("set_default_qa_model_profile", { profile_id: profileId }),
   listQaHistory: (limit = 12) =>
     invoke<QaHistoryView[]>("list_qa_history", { limit }),
   removeQaHistory: (id: string) =>

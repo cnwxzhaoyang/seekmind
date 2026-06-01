@@ -33,6 +33,13 @@ pub fn reset_local_storage() -> Result<(), String> {
 pub fn run() {
     let database = tauri::async_runtime::block_on(docmind::storage::Database::open_or_init())
         .expect("failed to initialize DocMind SQLite database");
+    let network_proxy_settings =
+        tauri::async_runtime::block_on(database.get_network_proxy_settings())
+            .unwrap_or_else(|_| docmind::storage::types::NetworkProxySettings {
+                enabled: false,
+                proxy_url: String::new(),
+            });
+    docmind::sidecar::apply_network_proxy_environment(Some(&network_proxy_settings));
 
     let repair_database = database.clone();
 
@@ -93,6 +100,12 @@ pub fn run() {
             crate::docmind::qa::commands::cancel_qa_question,
             crate::docmind::qa::commands::get_qa_settings,
             crate::docmind::qa::commands::save_qa_settings,
+            crate::docmind::qa::commands::get_network_proxy_settings,
+            crate::docmind::qa::commands::save_network_proxy_settings,
+            crate::docmind::qa::commands::list_qa_model_profiles,
+            crate::docmind::qa::commands::save_qa_model_profile,
+            crate::docmind::qa::commands::remove_qa_model_profile,
+            crate::docmind::qa::commands::set_default_qa_model_profile,
             crate::docmind::qa::commands::test_qa_connection,
             crate::docmind::qa::commands::list_qa_history,
             crate::docmind::qa::commands::remove_qa_history,
