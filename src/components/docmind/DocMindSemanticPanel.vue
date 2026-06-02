@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
   <section class="settings-card-shell">
     <div class="settings-card-head">
       <div class="settings-card-head-left">
-        <span class="settings-card-icon settings-card-icon-purple">
+        <span class="settings-card-icon docmind-primary-icon">
           <Sparkles :size="18" />
         </span>
         <div class="min-w-0">
@@ -428,11 +428,6 @@ onBeforeUnmount(() => {
   color: white;
 }
 
-.settings-card-icon-purple {
-  background: linear-gradient(135deg, rgba(124, 92, 255, 0.82), rgba(91, 61, 210, 0.66));
-  box-shadow: 0 12px 26px rgba(124, 92, 255, 0.12);
-}
-
 .settings-card-title {
   font-size: 17px;
   font-weight: 850;
@@ -452,10 +447,6 @@ onBeforeUnmount(() => {
 
 html:not(.dark) .settings-card-shell {
   background: rgba(255, 255, 255, 0.92);
-}
-
-html:not(.dark) .settings-card-icon-purple {
-  background: linear-gradient(135deg, rgba(124, 92, 255, 0.95), rgba(91, 61, 210, 0.78));
 }
 
 html:not(.dark) .settings-card-title {

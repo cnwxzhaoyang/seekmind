@@ -520,7 +520,7 @@ onBeforeUnmount(() => {
             <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon settings-section-icon-blue">
+                  <span class="settings-section-icon docmind-primary-icon">
                     <SlidersHorizontal :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
             <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon settings-section-icon-purple">
+                  <span class="settings-section-icon docmind-primary-icon">
                     <Sparkles :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
             <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon settings-section-icon-indigo">
+                  <span class="settings-section-icon docmind-primary-icon">
                     <Languages :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -805,7 +805,7 @@ onBeforeUnmount(() => {
           <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
             <div class="settings-section-head">
               <div class="settings-section-head-left">
-                <span class="settings-section-icon settings-section-icon-blue">
+                <span class="settings-section-icon docmind-primary-icon">
                   <Globe :size="18" />
                 </span>
                 <div class="min-w-0">
@@ -882,7 +882,7 @@ onBeforeUnmount(() => {
           <section class="rounded-lg border border-default bg-surface">
             <div class="settings-section-head">
               <div class="settings-section-head-left">
-                <span class="settings-section-icon settings-section-icon-green">
+                <span class="settings-section-icon docmind-primary-icon">
                   <Shield :size="18" />
                 </span>
                 <div class="min-w-0">
@@ -946,7 +946,7 @@ onBeforeUnmount(() => {
   color: #eef5ff;
   background:
     radial-gradient(circle at 78% 12%, rgba(47, 129, 255, 0.08), transparent 34%),
-    radial-gradient(circle at 28% 22%, rgba(124, 92, 255, 0.06), transparent 32%),
+    radial-gradient(circle at 28% 22%, rgba(47, 129, 255, 0.05), transparent 32%),
     linear-gradient(135deg, #060b14 0%, #0a111b 42%, #0d1521 100%);
 }
 
@@ -1090,26 +1090,6 @@ onBeforeUnmount(() => {
   color: white;
 }
 
-.settings-section-icon-blue {
-  background: linear-gradient(135deg, rgba(47, 129, 255, 0.82), rgba(18, 103, 232, 0.66));
-  box-shadow: 0 12px 26px rgba(47, 129, 255, 0.12);
-}
-
-.settings-section-icon-purple {
-  background: linear-gradient(135deg, rgba(124, 92, 255, 0.82), rgba(91, 61, 210, 0.66));
-  box-shadow: 0 12px 26px rgba(124, 92, 255, 0.12);
-}
-
-.settings-section-icon-indigo {
-  background: linear-gradient(135deg, rgba(88, 166, 255, 0.8), rgba(47, 129, 255, 0.64));
-  box-shadow: 0 12px 26px rgba(88, 166, 255, 0.12);
-}
-
-.settings-section-icon-green {
-  background: linear-gradient(135deg, rgba(39, 174, 96, 0.82), rgba(13, 110, 63, 0.66));
-  box-shadow: 0 12px 26px rgba(39, 174, 96, 0.12);
-}
-
 .settings-section-title {
   font-size: 17px;
   font-weight: 850;
@@ -1221,7 +1201,7 @@ html:not(.dark) .settings-prototype-shell {
   color: #0f172a;
   background:
     radial-gradient(circle at 78% 12%, rgba(47, 129, 255, 0.11), transparent 34%),
-    radial-gradient(circle at 28% 22%, rgba(124, 92, 255, 0.08), transparent 32%),
+    radial-gradient(circle at 28% 22%, rgba(47, 129, 255, 0.07), transparent 32%),
     linear-gradient(135deg, #f8fbff 0%, #eef4fb 42%, #eaf2fb 100%);
 }
 
@@ -1356,22 +1336,6 @@ html:not(.dark) .settings-section-title {
 
 html:not(.dark) .settings-section-desc {
   color: #64748b;
-}
-
-html:not(.dark) .settings-section-icon-blue {
-  background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(18, 103, 232, 0.78));
-}
-
-html:not(.dark) .settings-section-icon-purple {
-  background: linear-gradient(135deg, rgba(124, 92, 255, 0.95), rgba(91, 61, 210, 0.78));
-}
-
-html:not(.dark) .settings-section-icon-indigo {
-  background: linear-gradient(135deg, rgba(88, 166, 255, 0.95), rgba(47, 129, 255, 0.78));
-}
-
-html:not(.dark) .settings-section-icon-green {
-  background: linear-gradient(135deg, rgba(39, 174, 96, 0.95), rgba(13, 110, 63, 0.75));
 }
 
 html:not(.dark) .settings-section-head-danger {

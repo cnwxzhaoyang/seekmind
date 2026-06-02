@@ -253,7 +253,7 @@ onMounted(async () => {
   <section class="settings-card-shell">
     <div class="settings-card-head">
       <div class="settings-card-head-left">
-        <span class="settings-card-icon settings-card-icon-green">
+        <span class="settings-card-icon docmind-primary-icon">
           <MessageSquareText :size="18" />
         </span>
         <div class="min-w-0">
@@ -581,11 +581,6 @@ onMounted(async () => {
   color: white;
 }
 
-.settings-card-icon-green {
-  background: linear-gradient(135deg, rgba(39, 174, 96, 0.82), rgba(13, 110, 63, 0.66));
-  box-shadow: 0 12px 26px rgba(39, 174, 96, 0.12);
-}
-
 .settings-card-title {
   font-size: 17px;
   font-weight: 850;
@@ -614,11 +609,6 @@ onMounted(async () => {
 
 html:not(.dark) .settings-card-shell {
   background: rgba(255, 255, 255, 0.92);
-}
-
-html:not(.dark) .settings-card-icon-green {
-  background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(13, 95, 215, 0.78));
-  box-shadow: 0 12px 26px rgba(47, 129, 255, 0.18);
 }
 
 html:not(.dark) .settings-card-title {

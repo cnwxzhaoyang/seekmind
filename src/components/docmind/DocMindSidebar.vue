@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description DocMind 侧边栏，承载全局导航、快捷访问与品牌入口。
+ */
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -8,7 +13,7 @@ import { useIndexDirTree } from "../../composables/useIndexDirTree";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
 import { docmindApi } from "../../services/docmindApi";
-import brandIconUrl from "../../../ui-prototype/knowledge_icon_v3_pack/icon_64x64.png";
+import brandIconUrl from "../../assets/app_icon_64x64.png";
 
 const { t } = useI18n();
 const route = useRoute();
