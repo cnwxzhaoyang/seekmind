@@ -417,9 +417,15 @@
       },
       "selectDir": "Select an index directory",
       "selectDoc": "Select a document",
+      "dirSelector": {
+        "label": "Current Directory",
+        "placeholder": "Switch directory",
+        "hint": "Switch to another directory directly from this page.",
+        "stats": "{docs} docs · {chunks} chunks"
+      },
       "empty": {
         "dirs": "Reading directories...",
-        "docs": "No documents in this directory.",
+        "docs": "No documents in this directory. Switch directories or reslice.",
         "chunks": "No chunks generated for this document yet.",
         "selectDocToView": "Select a document to view its chunks."
       },

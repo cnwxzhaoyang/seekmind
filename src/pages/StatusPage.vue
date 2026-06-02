@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 索引状态页面，展示索引控制、统计信息、进度和异常摘要。
+ */
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
@@ -6,15 +11,20 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   AlertCircle,
+  Database,
   Eye,
   Copy,
+  FileCheck,
+  FileClock,
   FileText,
+  FolderOpenDot,
   RefreshCw,
   ToggleLeft,
   ToggleRight,
   X,
   FolderPlus,
   UploadCloud,
+  TriangleAlert,
 } from "lucide-vue-next";
 import SvgIcon from "../components/SvgIcon.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -940,7 +950,7 @@ onBeforeUnmount(() => {
     <div class="panel-header">
       <div class="header-left">
         <div class="header-title">
-          <span class="title-icon"><SvgIcon icon="icon-database" size="lg" /></span>
+          <span class="title-icon docmind-page-header-icon"><Database :size="17" /></span>
           <h1>{{ t("page.status.title") }}</h1>
         </div>
         <p class="header-description">{{ t("page.status.subtitle") }}</p>
@@ -990,7 +1000,7 @@ onBeforeUnmount(() => {
         <!-- 索引控制 -->
         <div class="card">
           <div class="card-header">
-            <span class="card-icon"><SvgIcon icon="icon-settings" size="lg" /></span>
+            <span class="card-icon docmind-page-header-icon"><SvgIcon icon="icon-settings" size="lg" /></span>
             <h2>{{ t("page.status.section.control") }}</h2>
           </div>
           <p class="card-description">{{ t("page.status.section.controlDesc") }}</p>
@@ -1047,12 +1057,12 @@ onBeforeUnmount(() => {
         <!-- 统计信息 -->
         <div class="card">
           <div class="card-header">
-            <span class="card-icon"><SvgIcon icon="icon-chart" size="lg" /></span>
+            <span class="card-icon docmind-page-header-icon"><SvgIcon icon="icon-chart" size="lg" /></span>
             <h2>{{ t("page.status.section.statistics") }}</h2>
           </div>
           <div class="stats-grid">
             <div class="stat-item">
-              <span class="stat-icon indexed"><SvgIcon icon="icon-document" size="md" /></span>
+              <span class="stat-icon indexed" aria-hidden="true"><FileCheck :size="18" /></span>
               <div class="stat-content">
                 <div class="stat-label">{{ t("page.status.stats.indexedFiles") }}</div>
                 <div class="stat-value">{{ status?.indexed_docs ?? 0 }}</div>
@@ -1060,7 +1070,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="stat-item">
-              <span class="stat-icon"><SvgIcon icon="icon-folder" size="md" /></span>
+              <span class="stat-icon scanned" aria-hidden="true"><FolderOpenDot :size="18" /></span>
               <div class="stat-content">
                 <div class="stat-label">{{ t("page.status.stats.indexedCount") }}</div>
                 <div class="stat-value">{{ status?.scanned_docs ?? 0 }}</div>
@@ -1068,7 +1078,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="stat-item">
-              <span class="stat-icon error"><SvgIcon icon="icon-warning" size="md" /></span>
+              <span class="stat-icon error" aria-hidden="true"><TriangleAlert :size="18" /></span>
               <div class="stat-content">
                 <div class="stat-label">{{ t("page.status.stats.errorCount") }}</div>
                 <div class="stat-value error-value">{{ status?.failed_files ?? 0 }}</div>
@@ -1076,7 +1086,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="stat-item">
-              <span class="stat-icon pending"><SvgIcon icon="icon-file" size="md" /></span>
+              <span class="stat-icon pending" aria-hidden="true"><FileClock :size="18" /></span>
               <div class="stat-content">
                 <div class="stat-label">{{ t("page.status.stats.pendingFiles") }}</div>
                 <div class="stat-value">{{ pendingCount }}</div>
@@ -1089,7 +1099,7 @@ onBeforeUnmount(() => {
         <!-- 索引进度 -->
         <div class="card">
           <div class="card-header">
-            <span class="card-icon"><SvgIcon icon="icon-clock" size="lg" /></span>
+            <span class="card-icon docmind-page-header-icon"><SvgIcon icon="icon-clock" size="lg" /></span>
             <h2>{{ t("page.status.section.progress") }}</h2>
           </div>
 
@@ -1158,7 +1168,7 @@ onBeforeUnmount(() => {
         <div class="card">
           <div class="card-header">
             <!-- 对齐原型：错误摘要使用红色错误语义图标。 -->
-            <span class="card-icon error"><SvgIcon icon="icon-error" size="lg" /></span>
+            <span class="card-icon docmind-page-header-icon error"><SvgIcon icon="icon-error" size="lg" /></span>
             <h2>{{ t("page.status.section.errorSummary") }}</h2>
           </div>
 
@@ -1222,7 +1232,7 @@ onBeforeUnmount(() => {
         <!-- 索引信息 -->
         <div class="card info-card-large">
           <div class="card-header">
-            <span class="card-icon"><SvgIcon icon="icon-info" size="lg" /></span>
+            <span class="card-icon docmind-page-header-icon"><SvgIcon icon="icon-info" size="lg" /></span>
             <h2>{{ t("page.status.section.indexInfo") }}</h2>
             <span class="file-count">{{ dirs.length }} 个目录</span>
           </div>
@@ -1272,7 +1282,7 @@ onBeforeUnmount(() => {
         <div class="card">
           <div class="card-header">
             <!-- 对齐原型：最新异常使用警告图标，但保留异常红色语义。 -->
-            <span class="card-icon error"><SvgIcon icon="icon-warning" size="lg" /></span>
+            <span class="card-icon docmind-page-header-icon error"><SvgIcon icon="icon-warning" size="lg" /></span>
             <h2>{{ t("page.status.section.latestException") }}</h2>
             <span class="exception-count">{{ status?.failed_items?.length ?? 0 }}</span>
           </div>
@@ -1549,6 +1559,10 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.card-icon.error {
+  color: var(--color-danger);
+}
+
 .card-header h2 {
   font-size: 15px;
   font-weight: 600;
@@ -1641,7 +1655,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 12px;
   background-color: var(--color-page-bg);
-  border-radius: 6px;
+  border-radius: 12px;
   border: 1px solid var(--color-border);
 }
 
@@ -1651,21 +1665,34 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 10px;
   background-color: var(--color-surface-active);
   flex-shrink: 0;
+  border: 1px solid transparent;
 }
 
 .stat-icon.indexed {
   background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: rgba(47, 129, 255, 0.14);
+}
+
+.stat-icon.scanned {
+  background-color: rgba(47, 129, 255, 0.08);
+  color: var(--color-accent-text);
+  border-color: rgba(47, 129, 255, 0.12);
 }
 
 .stat-icon.error {
   background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: rgba(185, 28, 28, 0.14);
 }
 
 .stat-icon.pending {
   background-color: var(--color-amber-soft);
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.14);
 }
 
 .stat-content {
@@ -1789,41 +1816,56 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 10px;
   background-color: var(--color-page-bg);
-  border-radius: 6px;
-  border-left: 3px solid;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
 }
 
 .status-stat.success {
-  border-left-color: var(--color-success);
+  border-color: rgba(34, 197, 94, 0.18);
 }
 
 .status-stat.error {
-  border-left-color: var(--color-danger);
+  border-color: rgba(185, 28, 28, 0.18);
 }
 
 .status-stat.skipped {
-  border-left-color: var(--color-warning);
+  border-color: rgba(234, 179, 8, 0.18);
 }
 
 .status-stat .stat-icon {
-  width: 24px;
-  height: 24px;
-  background: none;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
 }
 
-.status-stat.success .stat-icon {
-  color: var(--color-success);
+.status-stat.indexed .stat-icon,
+.status-stat .stat-icon.indexed {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: rgba(47, 129, 255, 0.14);
 }
 
-.status-stat.error .stat-icon {
+.status-stat .stat-icon.scanned {
+  color: var(--color-accent-text);
+  background: rgba(47, 129, 255, 0.08);
+  border-color: rgba(47, 129, 255, 0.12);
+}
+
+.status-stat .stat-icon.error {
   color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border-color: rgba(185, 28, 28, 0.14);
 }
 
-.status-stat.skipped .stat-icon {
-  color: var(--color-warning);
+.status-stat .stat-icon.pending {
+  color: #b45309;
+  background: var(--color-amber-soft);
+  border-color: rgba(180, 83, 9, 0.14);
 }
 
 .status-stat .stat-label {

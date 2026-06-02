@@ -6,7 +6,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
+import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Settings, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindConfirmDialog from "../components/docmind/DocMindConfirmDialog.vue";
@@ -268,6 +268,7 @@ const settingsNavItems = computed(() => [
     id: "settings-rules",
     label: t("page.settings.section.rules"),
     hint: t("page.settings.rulesDesc"),
+    // 规则分区保留滑杆图标，和配置含义保持一致。
     icon: SlidersHorizontal,
   },
   {
@@ -376,13 +377,18 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="settings-prototype-shell flex h-full min-h-0 flex-col bg-page text-primary">
-    <header class="settings-prototype-topbar flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
-      <div class="min-w-0">
-        <h1 class="settings-prototype-title text-base font-semibold tracking-tight text-primary">{{ t("page.settings.title") }}</h1>
-        <p class="settings-prototype-subtitle docmind-item-meta mt-0.5">{{ t("page.settings.subtitle") }}</p>
+    <header class="settings-prototype-topbar">
+      <div class="settings-prototype-header-left">
+        <div class="settings-prototype-header-title">
+          <span class="settings-prototype-title-icon docmind-page-header-icon" aria-hidden="true">
+            <Settings :size="17" />
+          </span>
+          <h1 class="settings-prototype-title">{{ t("page.settings.title") }}</h1>
+        </div>
+        <p class="settings-prototype-subtitle">{{ t("page.settings.subtitle") }}</p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="settings-prototype-header-right">
         <button
           class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
           :disabled="loading || saving"
@@ -962,30 +968,60 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 0;
   z-index: 20;
-  margin: -26px -30px 20px;
-  padding: 24px 30px 14px;
-  height: auto;
-  align-items: flex-start;
-  background: linear-gradient(to bottom, rgba(10, 15, 24, 0.96), rgba(10, 15, 24, 0.78), rgba(10, 15, 24, 0));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 20px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(138, 161, 190, 0.18);
+  background-color: rgba(10, 15, 24, 0.92);
   backdrop-filter: blur(10px);
+}
+
+.settings-prototype-header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-prototype-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.settings-prototype-title-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent);
 }
 
 .settings-prototype-title {
   margin: 0;
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.04em;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: #eef5ff;
 }
 
 .settings-prototype-subtitle {
-  margin-top: 6px;
-  font-size: 15px;
-  line-height: 1.45;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
   color: #9aa9bd;
 }
 
-.settings-prototype-topbar > div:last-child > button {
+.settings-prototype-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.settings-prototype-header-right > button {
   height: 42px;
   padding: 0 16px;
   border-radius: 8px;
@@ -996,12 +1032,12 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.settings-prototype-topbar > div:last-child > button:first-child {
+.settings-prototype-header-right > button:first-child {
   color: #ffc76c;
   border-color: rgba(247, 184, 75, 0.34);
 }
 
-.settings-prototype-topbar > div:last-child > button:last-child {
+.settings-prototype-header-right > button:last-child {
   background: linear-gradient(135deg, #2f81ff, #1267e8);
   border-color: rgba(81, 151, 255, 0.8);
   box-shadow: 0 14px 34px rgba(47, 129, 255, 0.22);
@@ -1206,7 +1242,8 @@ html:not(.dark) .settings-prototype-shell {
 }
 
 html:not(.dark) .settings-prototype-topbar {
-  background: linear-gradient(to bottom, rgba(248, 251, 255, 0.98), rgba(248, 251, 255, 0.84), rgba(248, 251, 255, 0));
+  border-bottom-color: rgba(148, 163, 184, 0.2);
+  background-color: rgba(248, 251, 255, 0.96);
 }
 
 html:not(.dark) .settings-prototype-title {
@@ -1217,18 +1254,18 @@ html:not(.dark) .settings-prototype-subtitle {
   color: #64748b;
 }
 
-html:not(.dark) .settings-prototype-topbar > div:last-child > button {
+html:not(.dark) .settings-prototype-header-right > button {
   background: rgba(255, 255, 255, 0.86);
   border-color: rgba(148, 163, 184, 0.32);
   color: #334155;
 }
 
-html:not(.dark) .settings-prototype-topbar > div:last-child > button:first-child {
+html:not(.dark) .settings-prototype-header-right > button:first-child {
   color: #92400e;
   border-color: rgba(245, 158, 11, 0.28);
 }
 
-html:not(.dark) .settings-prototype-topbar > div:last-child > button:last-child {
+html:not(.dark) .settings-prototype-header-right > button:last-child {
   background: linear-gradient(135deg, #2f81ff, #1267e8);
   border-color: rgba(47, 129, 255, 0.44);
   color: white;
@@ -1356,12 +1393,11 @@ html:not(.dark) .settings-prototype-main .border-default {
   }
 
   .settings-prototype-topbar {
-    margin: -16px -16px 16px;
-    padding: 16px 16px 12px;
+    padding: 0 16px;
   }
 
   .settings-prototype-title {
-    font-size: 22px;
+    font-size: 16px;
   }
 
   .settings-prototype-subtitle {

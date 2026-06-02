@@ -148,7 +148,7 @@ onMounted(() => {
         :class="[
           sidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-2',
           activeKey === item.key
-            ? 'bg-accent-soft !text-accent-text font-medium ring-1 ring-inset ring-accent/35 shadow-sm shadow-accent/10'
+            ? 'border border-accent/20 bg-accent-soft !text-accent-text font-medium shadow-none'
             : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
         :title="sidebarCollapsed ? item.label : undefined"

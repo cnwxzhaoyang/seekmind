@@ -1,8 +1,13 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 切片页面，展示文档切片、预览与局部刷新操作。
+ */
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, RefreshCw, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -48,6 +53,7 @@ const actionMessage = ref("");
 const actionErrorMessage = ref("");
 const docFilter = ref("");
 const routeSyncReady = ref(false);
+const hasInitializedSelection = ref(false);
 const lastRoutePath = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
@@ -64,6 +70,25 @@ const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_e
 const currentDocument = computed(
   () => documents.value.find((item) => item.path === selectedDocPath.value) ?? null,
 );
+
+const selectedDir = computed(
+  () => dirs.value.find((item) => item.path === selectedDirPath.value) ?? null,
+);
+
+const formatDirectoryLabel = (path: string, tailSegments = 1) => {
+  if (!path.trim()) {
+    return path;
+  }
+
+  // 长目录名优先暴露末尾的关键路径，避免前缀把有意义的信息挤出可视区。
+  const segments = path.split(/[\\/]+/).filter(Boolean);
+  if (segments.length <= tailSegments) {
+    return segments.join(" / ");
+  }
+
+  const tail = segments.slice(-tailSegments).join(" / ");
+  return `${tail} · ${path}`;
+};
 
 const splitPanels = computed(() => [
   { key: "center", minSize: 320, flex: true },
@@ -276,7 +301,7 @@ const syncSelection = async (forceReload = false) => {
     const routeChanged = targetPath !== lastRoutePath.value;
     const targetDir = resolveDirFromPath(targetPath);
     const fallbackDir = dirs.value.find((dir) => dir.enabled)?.path || dirs.value[0]?.path || "";
-    const nextDir = targetDir || fallbackDir;
+    const nextDir = targetDir || (hasInitializedSelection.value ? selectedDirPath.value : fallbackDir);
     const dirChanged = nextDir !== selectedDirPath.value;
     const needsDocsReload = forceReload || dirChanged || documents.value.length === 0;
 
@@ -301,10 +326,33 @@ const syncSelection = async (forceReload = false) => {
     }
 
     lastRoutePath.value = targetPath;
+    hasInitializedSelection.value = true;
   } catch (error) {
     errorMessage.value = formatDocmindError(error, t("page.chunks.title"));
     console.error("[DocMind] chunks syncSelection failed", error);
   }
+};
+
+const switchDirectory = async (path: string) => {
+  if (!path || path === selectedDirPath.value) {
+    return;
+  }
+
+  errorMessage.value = "";
+  actionMessage.value = "";
+  actionErrorMessage.value = "";
+  selectedDirPath.value = path;
+  selectedDocPath.value = "";
+  documents.value = [];
+  chunks.value = [];
+  hasInitializedSelection.value = true;
+  loadingDocs.value = true;
+  void router.replace({ query: { ...route.query, path } });
+};
+
+const handleDirChange = (event: Event) => {
+  const nextDir = (event.target as HTMLSelectElement | null)?.value ?? "";
+  void switchDirectory(nextDir);
 };
 
 const setActionMessage = (message: string) => {
@@ -707,16 +755,19 @@ watch(
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-page text-primary">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.chunks.title") }}</h1>
+    <header class="docmind-page-topbar">
+      <div class="docmind-page-title-area">
+        <div class="docmind-page-title-row">
+          <span class="docmind-page-header-icon" aria-hidden="true">
+            <Layers3 :size="17" />
+          </span>
+          <h1 class="docmind-page-title">{{ t("page.chunks.title") }}</h1>
         </div>
-        <p class="docmind-item-meta mt-0.5">
+        <p class="docmind-page-subtitle">
           {{ t("page.chunks.subtitle") }}
         </p>
       </div>
-      <div class="flex items-center gap-3 text-sm text-dim">
+      <div class="docmind-page-actions text-sm text-dim">
         <div class="hidden sm:block">
           {{ t("page.chunks.parserInfo") }}
           <span class="font-medium text-secondary">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
@@ -755,12 +806,52 @@ watch(
 
   <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
-        <template #center>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/60 px-3 py-3">
+      <template #center>
+        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/60 px-3 py-3">
+            <div class="shrink-0 mb-3 rounded-md border border-default bg-surface px-3 py-2.5">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <FolderOpen :size="15" class="text-accent" />
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
+                      {{ t("page.chunks.dirSelector.label") }}
+                    </div>
+                  </div>
+                  <div class="mt-1 truncate text-sm font-medium text-primary">
+                    {{ selectedDir ? formatDirectoryLabel(selectedDir.path) : t("page.chunks.selectDir") }}
+                  </div>
+                  <div class="mt-1 text-[11px] text-muted">
+                    <span v-if="selectedDir">
+                      {{ t("page.chunks.dirSelector.stats", { docs: selectedDir.docs, chunks: selectedDir.chunks }) }}
+                    </span>
+                    <span v-else>
+                      {{ t("page.chunks.dirSelector.hint") }}
+                    </span>
+                  </div>
+                </div>
+                  <select
+                  class="min-w-[220px] max-w-[320px] rounded-md border border-default bg-input px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+                  :disabled="loading || loadingDocs || dirs.length === 0"
+                  :value="selectedDirPath"
+                  :title="selectedDir?.path || t('page.chunks.dirSelector.placeholder')"
+                  @change="handleDirChange"
+                >
+                  <option value="" disabled>
+                    {{ t("page.chunks.dirSelector.placeholder") }}
+                  </option>
+                  <option v-for="dir in dirs" :key="dir.path" :value="dir.path">
+                    {{ formatDirectoryLabel(dir.path) }} · {{ dir.docs }} / {{ dir.chunks }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
             <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
               <div>
-              <div class="docmind-section-label">{{ t("page.chunks.section.docList") }}</div>
-              <div class="docmind-item-meta mt-1">{{ selectedDirPath || t("page.chunks.selectDir") }}</div>
+                <div class="docmind-section-label">{{ t("page.chunks.section.docList") }}</div>
+                <div class="docmind-section-subtitle mt-1">
+                  {{ currentDocument ? currentDocument.file_name : selectedDir ? formatDirectoryLabel(selectedDir.path) : t("page.chunks.selectDir") }}
+                </div>
               </div>
               <div class="flex items-center gap-2">
                 <DocMindBadge tone="default">
@@ -845,7 +936,7 @@ watch(
             <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
               <div>
                 <div class="docmind-section-label">{{ t("page.chunks.section.chunkDetail") }}</div>
-                <div class="docmind-item-meta mt-1">
+                <div class="docmind-section-subtitle mt-1">
                   {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
                 </div>
                 <div

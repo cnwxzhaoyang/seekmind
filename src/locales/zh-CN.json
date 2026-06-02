@@ -418,9 +418,15 @@
       },
       "selectDir": "请选择一个索引目录",
       "selectDoc": "请选择一个文档",
+      "dirSelector": {
+        "label": "当前目录",
+        "placeholder": "切换目录",
+        "hint": "可在当前页直接切换到其他目录。",
+        "stats": "{docs} 文档 · {chunks} 切片"
+      },
       "empty": {
         "dirs": "正在读取目录...",
-        "docs": "当前目录没有已解析文档。",
+        "docs": "当前目录没有已解析文档，可切换目录或重新切片。",
         "chunks": "该文档暂未生成切片。",
         "selectDocToView": "选中文档后，这里会显示它被切成的每个段落块。"
       },

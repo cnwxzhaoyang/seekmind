@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 知识库页面，负责集合管理、最近访问和条目详情编辑。
+ */
 defineOptions({
   name: "AppCollectionsPage",
 });
@@ -7,7 +12,7 @@ import { computed, onActivated, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
-import { ClipboardCopy, Eye, FileDown, Files, FolderPlus, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
+import { BookMarked, ClipboardCopy, Eye, FileDown, Files, FolderPlus, Layers3, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
@@ -578,12 +583,17 @@ onActivated(async () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-panel text-primary">
-    <div class="flex items-center justify-between border-b border-default bg-surface px-5 py-4">
-      <div class="min-w-0">
-        <div class="text-lg font-semibold text-primary">{{ t("page.collections.title") }}</div>
-        <div class="mt-1 text-xs text-muted">{{ t("page.collections.subtitle") }}</div>
+    <header class="docmind-page-topbar">
+      <div class="docmind-page-title-area">
+        <div class="docmind-page-title-row">
+          <span class="docmind-page-header-icon" aria-hidden="true">
+            <BookMarked :size="17" />
+          </span>
+          <h1 class="docmind-page-title">{{ t("page.collections.title") }}</h1>
+        </div>
+        <p class="docmind-page-subtitle">{{ t("page.collections.subtitle") }}</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="docmind-page-actions">
         <button
           class="inline-flex items-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
           type="button"
@@ -603,7 +613,7 @@ onActivated(async () => {
           {{ t("page.collections.exportMarkdown") }}
         </button>
       </div>
-    </div>
+    </header>
 
     <div v-if="errorMessage" class="border-b border-danger-soft bg-danger-soft px-5 py-3 text-sm text-danger">
       {{ errorMessage }}
@@ -619,7 +629,7 @@ onActivated(async () => {
     ]">
       <template #left>
         <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-r border-default bg-sidebar/30">
-          <div class="border-b border-default p-4">
+          <div class="px-4 py-3">
             <div class="flex items-center justify-between gap-2">
               <div>
                 <div class="text-sm font-semibold text-primary">{{ t("page.collections.editorTitle") }}</div>
@@ -634,22 +644,22 @@ onActivated(async () => {
                 <Plus :size="15" />
               </button>
             </div>
-            <div class="mt-3 space-y-2">
+            <div class="mt-2 space-y-2">
               <input
                 v-model="collectionName"
-                class="w-full rounded-lg border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                class="w-full rounded-md border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 type="text"
                 :placeholder="t('page.collections.namePlaceholder')"
               >
               <textarea
                 v-model="collectionDescription"
-                class="min-h-[72px] w-full resize-none rounded-lg border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                class="min-h-[64px] w-full resize-none rounded-md border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 :placeholder="t('page.collections.descriptionPlaceholder')"
               />
             </div>
-            <div class="mt-3 flex items-center gap-2">
+            <div class="mt-2 flex items-center gap-2">
               <button
-                class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+                class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 :disabled="collectionSaving || !collectionName.trim()"
                 @click="saveCollection"
@@ -658,7 +668,7 @@ onActivated(async () => {
                 {{ selectedCollectionId ? t("page.collections.saveChanges") : t("page.collections.create") }}
               </button>
               <button
-                class="inline-flex items-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+                class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
                 type="button"
                 @click="startNewCollection"
               >
@@ -667,12 +677,12 @@ onActivated(async () => {
             </div>
           </div>
 
-          <div class="border-b border-default px-4 py-3">
+          <div class="border-b border-default px-4 py-2.5">
             <div class="relative">
               <Search class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" :size="15" />
               <input
                 v-model="collectionFilter"
-                class="w-full rounded-lg border border-default bg-surface py-2 pl-9 pr-3 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                class="w-full rounded-md border border-default bg-surface py-2 pl-9 pr-3 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 type="text"
                 :placeholder="t('page.collections.filterPlaceholder')"
               >
@@ -684,14 +694,14 @@ onActivated(async () => {
               <div class="text-sm font-semibold text-primary">{{ t("page.collections.recentTitle") }}</div>
               <div class="text-[11px] text-muted">{{ t("page.collections.recentSubtitle") }}</div>
             </div>
-            <div v-if="recentViews.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[11px] text-muted">
+            <div v-if="recentViews.length === 0" class="text-[11px] text-muted">
               {{ t("page.collections.recentEmpty") }}
             </div>
             <div v-else class="max-h-48 space-y-2 overflow-y-auto pr-1">
               <button
                 v-for="item in recentViews"
                 :key="`${item.target_type}:${item.target_id}`"
-                class="flex w-full items-start justify-between gap-3 rounded-lg border border-default bg-surface px-3 py-2 text-left transition hover:border-accent hover:bg-accent-soft/20"
+                class="flex w-full items-start justify-between gap-3 rounded-md border border-default bg-surface px-3 py-2 text-left transition hover:bg-accent-soft"
                 type="button"
                 @click="openRecentView(item)"
               >
@@ -707,32 +717,32 @@ onActivated(async () => {
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto p-2">
-            <div v-if="collectionsLoading" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
+          <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            <div v-if="collectionsLoading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
               {{ t("common.loading") }}
             </div>
-            <div v-else-if="filteredCollections.length === 0" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
+            <div v-else-if="filteredCollections.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
               {{ t("page.collections.emptyCollections") }}
             </div>
             <div v-else class="space-y-2">
               <div
                 v-for="collection in filteredCollections"
                 :key="collection.id"
-                class="rounded-lg border px-3 py-3 transition"
-                :class="selectedCollectionId === collection.id ? 'border-accent bg-accent-soft/20' : 'border-default bg-surface hover:border-accent'"
+                class="rounded-md border border-default bg-surface px-3 py-2.5 transition"
+                :class="selectedCollectionId === collection.id ? 'bg-accent-soft shadow-card' : 'hover:bg-surface-hover'"
                 @click="selectCollection(collection)"
                 @contextmenu.prevent="openCollectionMenu(collection, $event)"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
                     <div class="truncate text-sm font-medium text-primary">{{ collection.name }}</div>
-                    <div class="mt-1 max-h-10 overflow-hidden text-xs leading-5 text-muted">
+                    <div class="mt-0.5 max-h-9 overflow-hidden text-xs leading-4 text-muted">
                       {{ collection.description || t("page.collections.noDescription") }}
                     </div>
                   </div>
                   <DocMindBadge tone="default">{{ collection.item_count }}</DocMindBadge>
                 </div>
-                <div class="mt-2 text-[11px] text-dim">{{ collection.updated_at }}</div>
+                <div class="mt-1.5 text-[11px] text-dim">{{ collection.updated_at }}</div>
               </div>
             </div>
           </div>
@@ -741,63 +751,62 @@ onActivated(async () => {
 
       <template #middle>
         <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel">
-          <div class="border-b border-default px-4 py-3">
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-sm font-semibold text-primary">
-                  {{ selectedCollection?.name || t("page.collections.noCollectionSelected") }}
-                </div>
-                <div class="mt-1 text-xs text-muted">
-                  {{ selectedCollection?.description || t("page.collections.noDescription") }}
-                </div>
+          <div class="docmind-section-header docmind-section-header--balanced">
+            <span class="card-icon docmind-page-header-icon"><Layers3 :size="17" /></span>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-primary">
+                {{ selectedCollection?.name || t("page.collections.noCollectionSelected") }}
               </div>
-              <DocMindBadge tone="default">{{ t("page.collections.itemCount", { count: collectionItems.length }) }}</DocMindBadge>
+              <div class="mt-1 text-xs text-muted">
+                {{ selectedCollection?.description || t("page.collections.noDescription") }}
+              </div>
             </div>
-            <div v-if="selectedCollection" class="mt-3 rounded-lg border border-default bg-surface px-3 py-3">
-              <div class="flex items-center justify-between gap-2">
-                <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">{{ t("page.collections.tags") }}</div>
-                <div class="text-[10px] text-muted">{{ collectionTags.length }}</div>
-              </div>
-              <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
-                <div
-                  v-for="tag in collectionTags"
-                  :key="tag.id"
-                  class="inline-flex shrink-0 items-center gap-1 rounded-full border border-default bg-panel px-2 py-0.5 text-[11px] text-secondary"
-                >
-                  <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
-                  <button
-                    class="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition hover:bg-danger-soft hover:text-danger"
-                    type="button"
-                    :title="t('page.collections.removeTag')"
-                    @click.stop="removeCollectionTag(tag)"
-                  >
-                    <Trash2 :size="10" />
-                  </button>
-                </div>
-                <span v-if="collectionTags.length === 0" class="text-[11px] text-muted">{{ t("page.collections.noTags") }}</span>
-              </div>
-              <div class="mt-2 flex items-center gap-2">
-                <input
-                  v-model="collectionTagName"
-                  class="min-w-0 flex-1 rounded-md border border-default bg-panel px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:border-accent focus:outline-none"
-                  type="text"
-                  :placeholder="t('page.collections.tagPlaceholder')"
-                  @keydown.enter.prevent="addCollectionTag"
-                >
+            <DocMindBadge tone="default">{{ t("page.collections.itemCount", { count: collectionItems.length }) }}</DocMindBadge>
+          </div>
+          <div v-if="selectedCollection" class="docmind-content-block docmind-content-block--tight-top">
+            <div class="flex items-center justify-between gap-2">
+              <div class="docmind-content-block-title">{{ t("page.collections.tags") }}</div>
+              <div class="text-[10px] text-muted">{{ collectionTags.length }}</div>
+            </div>
+            <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
+              <div
+                v-for="tag in collectionTags"
+                :key="tag.id"
+                class="inline-flex shrink-0 items-center gap-1 rounded-full border border-default bg-panel px-2 py-0.5 text-[11px] text-secondary"
+              >
+                <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
                 <button
-                  class="inline-flex items-center gap-1.5 rounded-md border border-default bg-surface px-2.5 py-1.5 text-xs text-secondary transition hover:border-accent hover:text-primary"
+                  class="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition hover:bg-danger-soft hover:text-danger"
                   type="button"
-                  :disabled="!collectionTagName.trim()"
-                  @click="addCollectionTag"
+                  :title="t('page.collections.removeTag')"
+                  @click.stop="removeCollectionTag(tag)"
                 >
-                  <Plus :size="13" />
-                  {{ t("page.collections.addTag") }}
+                  <Trash2 :size="10" />
                 </button>
               </div>
+              <span v-if="collectionTags.length === 0" class="text-[11px] text-muted">{{ t("page.collections.noTags") }}</span>
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <input
+                v-model="collectionTagName"
+                class="min-w-0 flex-1 rounded-md border border-default bg-panel px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                type="text"
+                :placeholder="t('page.collections.tagPlaceholder')"
+                @keydown.enter.prevent="addCollectionTag"
+              >
+              <button
+                class="inline-flex items-center gap-1.5 rounded-md border border-default bg-surface px-2.5 py-1.5 text-xs text-secondary transition hover:border-accent hover:text-primary"
+                type="button"
+                :disabled="!collectionTagName.trim()"
+                @click="addCollectionTag"
+              >
+                <Plus :size="13" />
+                {{ t("page.collections.addTag") }}
+              </button>
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="min-h-0 flex-1 overflow-y-auto p-4 pt-3">
             <div v-if="!selectedCollection" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
               {{ t("page.collections.emptyCollections") }}
             </div>
@@ -811,8 +820,8 @@ onActivated(async () => {
               <article
                 v-for="item in collectionItems"
                 :key="item.id"
-                class="cursor-pointer rounded-lg border bg-surface p-3 transition"
-                :class="selectedItemId === item.id ? 'border-accent ring-1 ring-accent-soft' : 'border-default hover:border-accent'"
+                class="cursor-pointer rounded-lg border border-default bg-surface p-3 transition"
+                :class="selectedItemId === item.id ? 'bg-accent-soft shadow-card' : 'hover:bg-surface-hover'"
                 @click="selectItem(item)"
                 @contextmenu.prevent="openItemMenu(item, $event)"
               >
@@ -847,34 +856,38 @@ onActivated(async () => {
 
       <template #right>
         <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-default bg-panel/80">
-          <div class="border-b border-default px-4 py-3">
-            <div class="text-sm font-semibold text-primary">{{ t("page.collections.detailTitle") }}</div>
-            <div class="mt-1 text-xs text-muted">{{ t("page.collections.detailDesc") }}</div>
+          <div class="docmind-section-header docmind-section-header--balanced">
+            <span class="card-icon docmind-page-header-icon"><BookMarked :size="17" /></span>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-primary">{{ t("page.collections.detailTitle") }}</div>
+              <div class="mt-1 text-xs text-muted">{{ t("page.collections.detailDesc") }}</div>
+            </div>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">
             <div v-if="!selectedItem" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
               {{ t("page.collections.noItemSelected") }}
             </div>
-            <div v-else class="space-y-4">
-              <div class="rounded-lg border border-default bg-surface p-4">
-                <div class="flex items-start justify-between gap-3">
+            <div v-else class="space-y-2">
+              <div class="docmind-content-block docmind-content-block--super-tight-top">
+                <div class="docmind-section-header docmind-section-header--compact">
+                  <span class="card-icon docmind-page-header-icon"><Files :size="17" /></span>
                   <div class="min-w-0">
                     <div class="text-base font-semibold text-primary">{{ selectedItem.title }}</div>
                     <div class="mt-1 break-all text-xs text-muted">{{ selectedItem.path || t("common.none") }}</div>
                   </div>
                   <DocMindBadge tone="default">{{ itemTypeLabel(selectedItem) }}</DocMindBadge>
                 </div>
-                <div v-if="selectedItem.title_path" class="mt-3 rounded-md border border-default bg-panel/40 px-3 py-2">
-                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
+                <div v-if="selectedItem.title_path" class="mt-2 text-sm leading-6 text-primary">
+                  <span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
                     {{ t("page.collections.location") }}
-                  </div>
-                  <div class="mt-1 text-sm leading-6 text-primary">{{ selectedItem.title_path }}</div>
+                  </span>
+                  <div class="mt-1">{{ selectedItem.title_path }}</div>
                 </div>
               </div>
 
-              <div class="rounded-lg border border-default bg-surface p-3">
+              <div class="docmind-content-block">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="text-sm font-medium text-secondary">{{ t("page.collections.tags") }}</div>
+                  <div class="docmind-content-block-title">{{ t("page.collections.tags") }}</div>
                   <div class="text-[10px] text-muted">{{ itemTags.length }}</div>
                 </div>
                 <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -915,15 +928,15 @@ onActivated(async () => {
                 </div>
               </div>
 
-              <div class="rounded-lg border border-default bg-surface p-4">
-                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.collections.snippet") }}</div>
+              <div class="docmind-content-block">
+                <div class="docmind-content-block-title">{{ t("page.collections.snippet") }}</div>
                 <div class="whitespace-pre-wrap text-sm leading-7 text-primary">
                   {{ selectedItem.snippet || t("page.collections.noSnippet") }}
                 </div>
               </div>
 
-              <div class="rounded-lg border border-default bg-surface p-4">
-                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.collections.note") }}</div>
+              <div class="docmind-content-block">
+                <div class="docmind-content-block-title">{{ t("page.collections.note") }}</div>
                 <textarea
                   v-model="itemNoteDraft"
                   class="min-h-[160px] w-full resize-y rounded-lg border border-default bg-panel px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
@@ -939,61 +952,16 @@ onActivated(async () => {
                     <Pencil :size="16" />
                     {{ t("page.collections.saveNote") }}
                   </button>
-                  <button
-                    class="inline-flex items-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                    type="button"
-                    @click="copyItemCitation(selectedItem)"
-                  >
-                    <ClipboardCopy :size="16" />
-                    {{ t("page.collections.copyCitation") }}
-                  </button>
                 </div>
               </div>
 
-              <div class="rounded-lg border border-default bg-panel/40 p-4">
-                <div class="grid grid-cols-2 gap-2 text-xs text-muted">
+              <div class="docmind-content-block">
+                <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs leading-5 text-muted">
                   <div>{{ t("page.collections.createdAt") }}：{{ selectedItem.created_at }}</div>
                   <div>{{ t("page.collections.updatedAt") }}：{{ selectedItem.updated_at }}</div>
-                  <div>{{ t("page.collections.collectionId") }}：{{ selectedItem.collection_id }}</div>
-                  <div>{{ t("page.collections.sourceMeta") }}：{{ selectedItem.source_meta_json || t("common.none") }}</div>
+                  <div class="break-all">{{ t("page.collections.collectionId") }}：{{ selectedItem.collection_id }}</div>
+                  <div class="break-all">{{ t("page.collections.sourceMeta") }}：{{ selectedItem.source_meta_json || t("common.none") }}</div>
                 </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  :disabled="!selectedItem.path"
-                  @click="openItemFile(selectedItem)"
-                >
-                  <SquareArrowOutUpRight :size="16" />
-                  {{ t("page.collections.openFile") }}
-                </button>
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  :disabled="!selectedItem.path"
-                  @click="quickLookItem(selectedItem)"
-                >
-                  <Eye :size="16" />
-                  {{ t("page.collections.quickLook") }}
-                </button>
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  @click="copyItemPath(selectedItem)"
-                >
-                  <ClipboardCopy :size="16" />
-                  {{ t("page.collections.copyPath") }}
-                </button>
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-danger-soft bg-danger-soft px-3 py-2 text-sm text-danger transition hover:bg-danger-soft/80"
-                  type="button"
-                  @click="removeItem(selectedItem)"
-                >
-                  <Trash2 :size="16" />
-                  {{ t("page.collections.removeItem") }}
-                </button>
               </div>
             </div>
           </div>
