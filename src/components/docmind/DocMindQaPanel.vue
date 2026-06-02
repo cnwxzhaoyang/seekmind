@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 设置页中的 AI 回答配置面板，负责模型、参数与连通性测试。
+ */
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
@@ -245,18 +250,23 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="rounded-lg border border-default bg-surface">
-        <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-      <div>
-        <div class="docmind-section-label">{{ t("page.settings.qa.title") }}</div>
-        <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.desc") }}</div>
+  <section class="settings-card-shell">
+    <div class="settings-card-head">
+      <div class="settings-card-head-left">
+        <span class="settings-card-icon settings-card-icon-green">
+          <MessageSquareText :size="18" />
+        </span>
+        <div class="min-w-0">
+          <div class="settings-card-title">{{ t("page.settings.qa.title") }}</div>
+          <div class="settings-card-desc">{{ t("page.settings.qa.desc") }}</div>
+        </div>
       </div>
       <DocMindBadge :tone="enabled ? 'success' : 'default'">
         {{ enabled ? t("page.settings.qa.enabled") : t("page.settings.qa.disabled") }}
       </DocMindBadge>
     </div>
 
-    <div class="space-y-4 p-4">
+    <div class="settings-card-body space-y-4">
       <div v-if="errorMessage" class="rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
         {{ errorMessage }}
       </div>
@@ -265,7 +275,7 @@ onMounted(async () => {
         {{ infoMessage }}
       </div>
 
-      <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+      <div v-if="loading" class="settings-empty-state">
         {{ t("common.loading") }}
       </div>
 
@@ -535,3 +545,102 @@ onMounted(async () => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.settings-card-shell {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(10, 16, 28, 0.78));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-card-head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+}
+
+.settings-card-icon-green {
+  background: linear-gradient(135deg, rgba(39, 174, 96, 0.82), rgba(13, 110, 63, 0.66));
+  box-shadow: 0 12px 26px rgba(39, 174, 96, 0.12);
+}
+
+.settings-card-title {
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.settings-card-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.settings-card-body {
+  padding: 16px 18px 18px;
+}
+
+.settings-empty-state {
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  padding: 24px 16px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+html:not(.dark) .settings-card-shell {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+html:not(.dark) .settings-card-icon-green {
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(13, 95, 215, 0.78));
+  box-shadow: 0 12px 26px rgba(47, 129, 255, 0.18);
+}
+
+html:not(.dark) .settings-card-title {
+  color: #0f172a;
+}
+
+html:not(.dark) .settings-card-desc {
+  color: #64748b;
+}
+
+html:not(.dark) .settings-empty-state {
+  background: rgba(248, 250, 252, 0.96);
+  color: #64748b;
+}
+
+@media (max-width: 768px) {
+  .settings-card-head {
+    padding: 16px;
+  }
+
+  .settings-card-body {
+    padding: 14px 16px 16px;
+  }
+}
+</style>

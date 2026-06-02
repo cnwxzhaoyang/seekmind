@@ -119,6 +119,7 @@ export interface CurrentTaskView {
   state: string;
   current_dir: string;
   current_file: string;
+  started_at: number;
   progress: number;
   scanned: number;
   total: number;

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 设置页中的语义检索配置面板，负责模型选择、重建和调试。
+ */
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { RefreshCw, Save, Search, Sparkles } from "lucide-vue-next";
@@ -197,39 +202,45 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="rounded-lg border border-default bg-surface p-4">
-    <div class="mb-3 flex items-center justify-between">
-      <div>
-        <div class="docmind-section-label">{{ t("semantic.title") }}</div>
-        <div class="docmind-item-meta mt-1">{{ t("semantic.desc") }}</div>
+  <section class="settings-card-shell">
+    <div class="settings-card-head">
+      <div class="settings-card-head-left">
+        <span class="settings-card-icon settings-card-icon-purple">
+          <Sparkles :size="18" />
+        </span>
+        <div class="min-w-0">
+          <div class="settings-card-title">{{ t("semantic.title") }}</div>
+          <div class="settings-card-desc">{{ t("semantic.desc") }}</div>
+        </div>
       </div>
       <DocMindBadge tone="default">{{ semanticIndexStatusLabel }}</DocMindBadge>
     </div>
 
+    <div class="settings-card-body">
       <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm text-danger">
         {{ errorMessage }}
       </div>
 
-    <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-sm text-success">
-      {{ infoMessage }}
-    </div>
+      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-sm text-success">
+        {{ infoMessage }}
+      </div>
 
-    <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-sm text-muted">
-      {{ t("semantic.loading") }}
-    </div>
+      <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-sm text-muted">
+        {{ t("semantic.loading") }}
+      </div>
 
-    <div v-else-if="semanticStatus" class="space-y-4 text-sm">
-      <label class="block">
-        <div class="mb-2 docmind-section-label">{{ t("semantic.defaultModel") }}</div>
-        <select
-          v-model="selectedEmbeddingModelId"
-          class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-        >
-          <option v-for="model in embeddingModels" :key="model.id" :value="model.id">
-            {{ model.name }} · {{ model.provider }} · {{ t("semantic.dimension", { dim: model.dimension }) }}
-          </option>
-        </select>
-      </label>
+      <div v-else-if="semanticStatus" class="space-y-4 text-sm">
+        <label class="block">
+          <div class="mb-2 docmind-section-label">{{ t("semantic.defaultModel") }}</div>
+          <select
+            v-model="selectedEmbeddingModelId"
+            class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+          >
+            <option v-for="model in embeddingModels" :key="model.id" :value="model.id">
+              {{ model.name }} · {{ model.provider }} · {{ t("semantic.dimension", { dim: model.dimension }) }}
+            </option>
+          </select>
+        </label>
 
       <div v-if="semanticRebuildProgress" class="rounded-lg border border-default bg-panel px-4 py-4">
         <div class="flex items-center justify-between gap-3">
@@ -314,68 +325,154 @@ onBeforeUnmount(() => {
           {{ saving ? t("semantic.btn.processing") : t("semantic.btn.rebuild") }}
         </button>
       </div>
-    </div>
-
-    <div class="mt-4 rounded-lg border border-default bg-surface p-4">
-      <div class="mb-3 flex items-center justify-between">
-        <div>
-          <div class="docmind-section-label">{{ t("semantic.debug.title") }}</div>
-          <div class="docmind-item-meta mt-1">{{ t("semantic.debug.desc") }}</div>
-        </div>
-        <DocMindBadge tone="success">{{ t("semantic.debug.onlyLocal") }}</DocMindBadge>
       </div>
 
-      <div class="flex gap-2">
-        <input
-          v-model="semanticQuery"
-          type="text"
-          class="min-w-0 flex-1 rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-          :placeholder="t('semantic.debug.placeholder')"
-          @keyup.enter="runSemanticDebug"
-        />
-        <button
-          class="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-          :disabled="loadingSemanticDebug"
-          @click="runSemanticDebug"
-        >
-          <Search :size="16" />
-          {{ loadingSemanticDebug ? t("semantic.debug.debugging") : t("semantic.debug.debug") }}
-        </button>
-      </div>
-
-      <div v-if="semanticDebug" class="mt-4 space-y-3">
-        <div class="grid grid-cols-2 gap-3 text-sm">
-          <div class="rounded-lg bg-panel px-4 py-3">
-            <div class="docmind-item-meta">{{ t("semantic.debug.vectorDim") }}</div>
-            <div class="mt-1 docmind-metric-value text-primary">{{ semanticDebug.query_vector_dim }}</div>
+      <!-- 修复：调试区仍然属于 settings-card-body，避免模板层级缺失。 -->
+      <div class="mt-4 rounded-lg border border-default bg-panel p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <div>
+            <div class="docmind-section-label">{{ t("semantic.debug.title") }}</div>
+            <div class="docmind-item-meta mt-1">{{ t("semantic.debug.desc") }}</div>
           </div>
-          <div class="rounded-lg bg-panel px-4 py-3">
-            <div class="docmind-item-meta">{{ t("semantic.debug.hitCount") }}</div>
-            <div class="mt-1 docmind-metric-value text-primary">{{ semanticDebug.hit_count }}</div>
-          </div>
+          <DocMindBadge tone="success">{{ t("semantic.debug.onlyLocal") }}</DocMindBadge>
         </div>
 
-        <div class="rounded-lg bg-panel px-4 py-3 text-sm text-secondary">
-          <div>{{ t("semantic.debug.normalizedQuery", { query: semanticDebug.normalized_query || t("semantic.debug.empty") }) }}</div>
-          <div class="mt-1">{{ t("semantic.model", { name: semanticDebug.model.name }) }} / {{ semanticDebug.model.provider }}</div>
-          <div class="mt-1">{{ t("semantic.debug.status", { status: semanticDebug.index_status || "idle", error: semanticDebug.last_error || t("semantic.noError") }) }}</div>
-        </div>
-
-        <div v-if="semanticDebug.hits.length > 0" class="space-y-2">
-          <div
-            v-for="hit in semanticDebug.hits.slice(0, 3)"
-            :key="hit.chunk_id"
-            class="rounded-lg border border-default bg-surface px-4 py-3 text-sm"
+        <div class="flex gap-2">
+          <input
+            v-model="semanticQuery"
+            type="text"
+            class="min-w-0 flex-1 rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+            :placeholder="t('semantic.debug.placeholder')"
+            @keyup.enter="runSemanticDebug"
+          />
+          <button
+            class="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+            :disabled="loadingSemanticDebug"
+            @click="runSemanticDebug"
           >
-            <div class="flex items-center justify-between gap-3">
-              <div class="docmind-item-title">{{ hit.file_name }}</div>
-              <DocMindBadge tone="default">{{ hit.score.toFixed(3) }}</DocMindBadge>
+            <Search :size="16" />
+            {{ loadingSemanticDebug ? t("semantic.debug.debugging") : t("semantic.debug.debug") }}
+          </button>
+        </div>
+
+        <div v-if="semanticDebug" class="mt-4 space-y-3">
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div class="rounded-lg bg-panel px-4 py-3">
+              <div class="docmind-item-meta">{{ t("semantic.debug.vectorDim") }}</div>
+              <div class="mt-1 docmind-metric-value text-primary">{{ semanticDebug.query_vector_dim }}</div>
             </div>
-            <div class="docmind-item-meta mt-1">{{ hit.title_path || hit.heading || t("semantic.debug.noHitHeading") }}</div>
-            <div class="mt-2 line-clamp-2 text-sm text-secondary">{{ hit.snippet }}</div>
+            <div class="rounded-lg bg-panel px-4 py-3">
+              <div class="docmind-item-meta">{{ t("semantic.debug.hitCount") }}</div>
+              <div class="mt-1 docmind-metric-value text-primary">{{ semanticDebug.hit_count }}</div>
+            </div>
+          </div>
+
+          <div class="rounded-lg bg-panel px-4 py-3 text-sm text-secondary">
+            <div>{{ t("semantic.debug.normalizedQuery", { query: semanticDebug.normalized_query || t("semantic.debug.empty") }) }}</div>
+            <div class="mt-1">{{ t("semantic.model", { name: semanticDebug.model.name }) }} / {{ semanticDebug.model.provider }}</div>
+            <div class="mt-1">{{ t("semantic.debug.status", { status: semanticDebug.index_status || "idle", error: semanticDebug.last_error || t("semantic.noError") }) }}</div>
+          </div>
+
+          <div v-if="semanticDebug.hits.length > 0" class="space-y-2">
+            <div
+              v-for="hit in semanticDebug.hits.slice(0, 3)"
+              :key="hit.chunk_id"
+              class="rounded-lg border border-default bg-surface px-4 py-3 text-sm"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="docmind-item-title">{{ hit.file_name }}</div>
+                <DocMindBadge tone="default">{{ hit.score.toFixed(3) }}</DocMindBadge>
+              </div>
+              <div class="docmind-item-meta mt-1">{{ hit.title_path || hit.heading || t("semantic.debug.noHitHeading") }}</div>
+              <div class="mt-2 line-clamp-2 text-sm text-secondary">{{ hit.snippet }}</div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </section>
 </template>
+
+<style scoped>
+.settings-card-shell {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(10, 16, 28, 0.78));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-card-head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+}
+
+.settings-card-icon-purple {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.82), rgba(91, 61, 210, 0.66));
+  box-shadow: 0 12px 26px rgba(124, 92, 255, 0.12);
+}
+
+.settings-card-title {
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.settings-card-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.settings-card-body {
+  padding: 16px 18px 18px;
+}
+
+html:not(.dark) .settings-card-shell {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+html:not(.dark) .settings-card-icon-purple {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.95), rgba(91, 61, 210, 0.78));
+}
+
+html:not(.dark) .settings-card-title {
+  color: #0f172a;
+}
+
+html:not(.dark) .settings-card-desc {
+  color: #64748b;
+}
+
+@media (max-width: 768px) {
+  .settings-card-head {
+    padding: 16px;
+  }
+
+  .settings-card-body {
+    padding: 14px 16px 16px;
+  }
+}
+</style>

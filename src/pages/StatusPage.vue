@@ -51,7 +51,9 @@ const errorMessage = ref("");
 const infoMessage = ref("");
 const dashboardRefreshing = ref(false);
 const actionState = ref<"pausing" | "resuming" | null>(null);
+const nowTs = ref(Date.now());
 let pollTimer: number | null = null;
+let timeTicker: number | null = null;
 const indexRefreshJobResolvers = new Map<
   string,
   (payload: IndexRefreshProgressView) => void
@@ -401,6 +403,45 @@ const taskDisplayState = computed(() => {
     label: task.state || t("status.processing"),
     spinning: true,
   };
+});
+
+const formatDuration = (totalSeconds: number) => {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
+    return "--:--:--";
+  }
+
+  const seconds = Math.floor(totalSeconds);
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  const clock = [hours, minutes, remainder]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+
+  return days > 0 ? `${days}d ${clock}` : clock;
+};
+
+const currentTaskStartedAt = computed(() => status.value?.current_task?.started_at ?? 0);
+
+const currentTaskStartTimeText = computed(() => {
+  if (!currentTaskStartedAt.value) {
+    return "--";
+  }
+
+  return new Date(currentTaskStartedAt.value * 1000).toLocaleString();
+});
+
+const currentTaskDurationText = computed(() => {
+  if (!currentTaskStartedAt.value) {
+    return "--:--:--";
+  }
+
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor(nowTs.value / 1000) - currentTaskStartedAt.value,
+  );
+  return formatDuration(elapsedSeconds);
 });
 
 const indexProgressPercent = computed(() => {
@@ -863,10 +904,17 @@ onMounted(() => {
   void installDocumentRefreshListener();
   void installFileDropListener();
   void syncDashboardState();
+  timeTicker = window.setInterval(() => {
+    nowTs.value = Date.now();
+  }, 1000);
 });
 
 onBeforeUnmount(() => {
   stopPolling();
+  if (timeTicker !== null) {
+    window.clearInterval(timeTicker);
+    timeTicker = null;
+  }
   if (unlistenIndexRefreshProgress) {
     unlistenIndexRefreshProgress();
     unlistenIndexRefreshProgress = null;
@@ -888,21 +936,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="index-status-panel">
-    <!-- Office 提示 -->
-    <div v-if="officeNotice" class="office-notice-banner">
-      <AlertCircle :size="16" class="shrink-0 office-notice-icon" />
-      <div class="min-w-0">
-        <div class="office-notice-title">{{ officeNotice.title }}</div>
-        <div class="office-notice-desc">{{ officeNotice.desc }}</div>
-        <div class="office-notice-hint">{{ officeNotice.hint }}</div>
-      </div>
-    </div>
-
     <!-- 头部 -->
     <div class="panel-header">
       <div class="header-left">
         <div class="header-title">
-          <span class="title-icon"><SvgIcon icon="icon-database" size="xl" /></span>
+          <span class="title-icon"><SvgIcon icon="icon-database" size="lg" /></span>
           <h1>{{ t("page.status.title") }}</h1>
         </div>
         <p class="header-description">{{ t("page.status.subtitle") }}</p>
@@ -933,10 +971,22 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 主容器 -->
-    <div class="panel-content">
-      <!-- 左侧面板 -->
-      <div class="left-panel">
+    <!-- 修复：header 固定，内容区独立滚动，避免右侧滚动条把头部带走。 -->
+    <main class="panel-scroll">
+      <!-- Office 提示 -->
+      <div v-if="officeNotice" class="office-notice-banner">
+        <AlertCircle :size="16" class="shrink-0 office-notice-icon" />
+        <div class="min-w-0">
+          <div class="office-notice-title">{{ officeNotice.title }}</div>
+          <div class="office-notice-desc">{{ officeNotice.desc }}</div>
+          <div class="office-notice-hint">{{ officeNotice.hint }}</div>
+        </div>
+      </div>
+
+      <!-- 主容器 -->
+      <div class="panel-content">
+        <!-- 左侧面板 -->
+        <div class="left-panel">
         <!-- 索引控制 -->
         <div class="card">
           <div class="card-header">
@@ -1067,14 +1117,14 @@ onBeforeUnmount(() => {
               <span class="time-icon"><SvgIcon icon="icon-clock" size="sm" /></span>
               <div>
                 <div class="time-label">{{ t("page.status.progress.duration") }}</div>
-                <div class="time-value">--:--:--</div>
+                <div class="time-value">{{ currentTaskDurationText }}</div>
               </div>
             </div>
             <div class="time-item">
               <span class="time-icon"><SvgIcon icon="icon-clock" size="sm" /></span>
               <div>
                 <div class="time-label">{{ t("page.status.progress.startTime") }}</div>
-                <div class="time-value">--</div>
+                <div class="time-value">{{ currentTaskStartTimeText }}</div>
               </div>
             </div>
           </div>
@@ -1258,7 +1308,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </main>
 
     <DocMindContextMenu
       v-if="contextMenuVisible"
@@ -1280,10 +1331,11 @@ onBeforeUnmount(() => {
 .index-status-panel {
   background-color: var(--color-page-bg);
   color: var(--color-text-primary);
-  padding: 24px;
-  min-height: 100vh;
+  min-height: 0;
   height: 100%;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Office 提示 */
@@ -1323,36 +1375,44 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 20px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-header-bg);
 }
 
 .header-left {
   flex: 1;
+  min-width: 0;
 }
 
 .header-title {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
 
 .title-icon {
   display: inline-flex;
   align-items: center;
+  color: var(--color-accent);
 }
 
 .header-title h1 {
-  font-size: 24px;
+  font-size: 16px;
+  line-height: 1.25;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--color-text-primary);
   margin: 0;
 }
 
 .header-description {
   font-size: 13px;
+  line-height: 1.35;
   color: var(--color-text-secondary);
   margin: 0;
 }
@@ -1442,6 +1502,14 @@ onBeforeUnmount(() => {
 .refresh-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 内容滚动区 */
+.panel-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
 }
 
 /* 主容器 */
@@ -2086,10 +2154,15 @@ onBeforeUnmount(() => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+    min-height: unset;
+    padding: 12px 16px;
   }
   .header-right {
     width: 100%;
     flex-wrap: wrap;
+  }
+  .panel-scroll {
+    padding: 16px;
   }
   .control-buttons {
     flex-direction: column;

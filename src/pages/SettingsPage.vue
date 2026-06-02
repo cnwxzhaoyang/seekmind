@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 设置页，承载索引规则、语义检索、AI 回答和外观网络配置。
+ */
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
@@ -370,11 +375,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
-    <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
+  <div class="settings-prototype-shell flex h-full min-h-0 flex-col bg-page text-primary">
+    <header class="settings-prototype-topbar flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.settings.title") }}</h1>
-        <p class="docmind-item-meta mt-0.5">{{ t("page.settings.subtitle") }}</p>
+        <h1 class="settings-prototype-title text-base font-semibold tracking-tight text-primary">{{ t("page.settings.title") }}</h1>
+        <p class="settings-prototype-subtitle docmind-item-meta mt-0.5">{{ t("page.settings.subtitle") }}</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
@@ -397,7 +402,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main ref="mainScrollEl" class="min-h-0 flex-1 overflow-y-auto p-4">
+    <main ref="mainScrollEl" class="settings-prototype-main min-h-0 flex-1 overflow-y-auto p-4">
       <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
         {{ errorMessage }}
       </div>
@@ -410,17 +415,17 @@ onBeforeUnmount(() => {
         {{ t("page.settings.loading") }}
       </div>
 
-      <div v-else class="mx-auto grid w-full max-w-[1720px] gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside class="hidden min-h-0 min-w-0 self-start xl:sticky xl:top-4 xl:block">
-          <section class="rounded-lg border border-default bg-surface">
-            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+      <div v-else class="settings-workbench grid w-full gap-5 xl:grid-cols-[248px_minmax(0,1fr)]">
+        <aside class="settings-prototype-sidebar settings-sidebar-rail hidden min-h-0 min-w-0 self-start xl:sticky xl:top-4 xl:block">
+          <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
+            <div class="settings-sidebar-head flex items-center justify-between border-b border-default px-4 py-2.5">
               <div>
                 <div class="docmind-section-label">导航</div>
                 <div class="docmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
               </div>
               <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
             </div>
-            <div class="space-y-2 p-4">
+            <div class="settings-sidebar-nav space-y-2 p-3">
               <button
                 v-for="item in settingsNavItems"
                 :key="item.id"
@@ -448,21 +453,21 @@ onBeforeUnmount(() => {
                     <component :is="item.icon" :size="15" />
                   </span>
                   <span class="min-w-0">
-                    <span class="block text-sm font-medium leading-5">{{ item.label }}</span>
-                    <span class="mt-0.5 block text-[11px] leading-4 text-dim">{{ item.hint }}</span>
+                    <span class="block text-[12px] font-medium leading-5">{{ item.label }}</span>
+                    <span class="mt-0.5 block text-[10px] leading-4 text-dim">{{ item.hint }}</span>
                   </span>
                 </div>
               </button>
             </div>
           </section>
 
-          <section class="rounded-lg border border-default bg-surface">
+          <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
             <div class="border-b border-default px-4 py-2.5">
               <div class="docmind-section-label">快捷</div>
             </div>
-            <div class="grid gap-2 p-4">
+            <div class="grid gap-2 p-3">
               <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-4 py-2.5 text-sm font-medium text-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2.5 text-sm font-medium text-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
                 :disabled="loading || saving"
                 @click="resetToDefaults"
               >
@@ -470,7 +475,7 @@ onBeforeUnmount(() => {
                 {{ t("page.settings.btn.reset") }}
               </button>
               <button
-                class="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
+                class="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
                 :disabled="loading || saving"
                 @click="saveSettings"
               >
@@ -478,7 +483,7 @@ onBeforeUnmount(() => {
                 {{ saving ? t("page.settings.btn.saving") : t("page.settings.btn.save") }}
               </button>
               <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm font-medium text-danger transition hover:opacity-90"
+                class="inline-flex items-center justify-center gap-2 rounded-md border border-danger-soft bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger transition hover:opacity-90"
                 @click="scrollToSection('settings-danger')"
               >
                 <Trash2 :size="15" />
@@ -487,11 +492,11 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section class="rounded-lg border border-default bg-surface">
+          <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
             <div class="border-b border-default px-4 py-2.5">
               <div class="docmind-section-label">状态</div>
             </div>
-            <div class="space-y-3 p-4 text-sm">
+            <div class="space-y-3 p-3 text-sm">
               <div class="flex items-center justify-between gap-3">
                 <span class="text-dim">{{ t("page.settings.status.synced") }}</span>
                 <DocMindBadge :tone="hasChanges ? 'warning' : 'success'">{{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}</DocMindBadge>
@@ -513,18 +518,23 @@ onBeforeUnmount(() => {
         <div class="min-w-0 space-y-4">
           <div class="grid gap-4 xl:grid-cols-2">
             <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-              <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-                <div>
-                  <div class="docmind-section-label">{{ t("page.settings.section.rules") }}</div>
-                  <div class="docmind-item-meta mt-1">{{ t("page.settings.rulesDesc") }}</div>
+              <div class="settings-section-head">
+                <div class="settings-section-head-left">
+                  <span class="settings-section-icon settings-section-icon-blue">
+                    <SlidersHorizontal :size="18" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="settings-section-title">{{ t("page.settings.section.rules") }}</div>
+                    <div class="settings-section-desc">{{ t("page.settings.rulesDesc") }}</div>
+                  </div>
                 </div>
                 <DocMindBadge tone="default">{{ t("status.localEffective") }}</DocMindBadge>
               </div>
 
-              <div class="space-y-4 p-4">
+              <div class="space-y-5 p-4">
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                  <div class="docmind-section-label">{{ t("page.settings.label.excludeDirs") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.label.excludeDirs") }}</div>
                     <div class="docmind-item-meta mt-1">{{ t("page.settings.placeholder.dirs") }}</div>
                   </div>
                   <textarea
@@ -537,7 +547,7 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                  <div class="docmind-section-label">{{ t("page.settings.label.excludeExts") }}</div>
+                    <div class="docmind-section-label">{{ t("page.settings.label.excludeExts") }}</div>
                     <div class="docmind-item-meta mt-1">{{ t("page.settings.placeholder.exts") }}</div>
                   </div>
                   <textarea
@@ -573,15 +583,20 @@ onBeforeUnmount(() => {
             </section>
 
             <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-              <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-                <div>
-                  <div class="docmind-section-label">{{ t("page.settings.semantic.title") }}</div>
-                  <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
+              <div class="settings-section-head">
+                <div class="settings-section-head-left">
+                  <span class="settings-section-icon settings-section-icon-purple">
+                    <Sparkles :size="18" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="settings-section-title">{{ t("page.settings.semantic.title") }}</div>
+                    <div class="settings-section-desc">{{ t("page.settings.semantic.desc") }}</div>
+                  </div>
                 </div>
                 <DocMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</DocMindBadge>
               </div>
 
-              <div class="space-y-4 p-4">
+              <div class="space-y-5 p-4">
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
                     <div class="docmind-section-label">{{ t("page.settings.semantic.title") }}</div>
@@ -699,14 +714,19 @@ onBeforeUnmount(() => {
 
           <div class="grid gap-4 xl:grid-cols-2">
             <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-              <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-                <div>
-                  <div class="docmind-section-label">{{ t("page.settings.section.appearance") }}</div>
-                  <div class="docmind-item-meta mt-1">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
+              <div class="settings-section-head">
+                <div class="settings-section-head-left">
+                  <span class="settings-section-icon settings-section-icon-indigo">
+                    <Languages :size="18" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="settings-section-title">{{ t("page.settings.section.appearance") }}</div>
+                    <div class="settings-section-desc">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
+                  </div>
                 </div>
-                <Languages :size="15" class="text-muted" />
+                <DocMindBadge tone="default">{{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}</DocMindBadge>
               </div>
-              <div class="space-y-4 p-4">
+              <div class="space-y-5 p-4">
                 <div>
                   <div class="mb-2 docmind-section-label">{{ t("page.settings.language") }}</div>
                   <div class="grid gap-2">
@@ -767,7 +787,7 @@ onBeforeUnmount(() => {
             </section>
 
             <section class="rounded-lg border border-default bg-surface">
-              <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
+              <div class="settings-section-head">
                 <div>
                   <div class="docmind-section-label">{{ t("page.settings.section.instructions") }}</div>
                   <div class="docmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
@@ -783,17 +803,22 @@ onBeforeUnmount(() => {
           </div>
 
           <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-              <div>
-                <div class="docmind-section-label">{{ t("page.settings.network.title") }}</div>
-                <div class="docmind-item-meta mt-1">{{ t("page.settings.network.desc") }}</div>
+            <div class="settings-section-head">
+              <div class="settings-section-head-left">
+                <span class="settings-section-icon settings-section-icon-blue">
+                  <Globe :size="18" />
+                </span>
+                <div class="min-w-0">
+                  <div class="settings-section-title">{{ t("page.settings.network.title") }}</div>
+                  <div class="settings-section-desc">{{ t("page.settings.network.desc") }}</div>
+                </div>
               </div>
               <DocMindBadge :tone="networkProxyEnabled ? 'success' : 'default'">
                 {{ networkProxyEnabled ? t("page.settings.network.enabled") : t("page.settings.network.disabled") }}
               </DocMindBadge>
             </div>
 
-            <div class="space-y-4 p-4">
+            <div class="space-y-5 p-4">
               <div
                 v-if="networkErrorMessage"
                 class="rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger"
@@ -855,12 +880,17 @@ onBeforeUnmount(() => {
           </section>
 
           <section class="rounded-lg border border-default bg-surface">
-            <div class="flex items-center justify-between border-b border-default px-4 py-2.5">
-              <div>
-                <div class="docmind-section-label">{{ t("page.settings.section.privacy") }}</div>
-                <div class="docmind-item-meta mt-1">{{ t("page.settings.privacy.desc") }}</div>
+            <div class="settings-section-head">
+              <div class="settings-section-head-left">
+                <span class="settings-section-icon settings-section-icon-green">
+                  <Shield :size="18" />
+                </span>
+                <div class="min-w-0">
+                  <div class="settings-section-title">{{ t("page.settings.section.privacy") }}</div>
+                  <div class="settings-section-desc">{{ t("page.settings.privacy.desc") }}</div>
+                </div>
               </div>
-              <Shield :size="15" class="text-muted" />
+              <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
             </div>
             <div class="space-y-2 p-4 text-sm text-secondary">
               <p>{{ t("page.settings.privacy.localFirst") }}</p>
@@ -870,7 +900,7 @@ onBeforeUnmount(() => {
           </section>
 
           <section id="settings-danger" class="scroll-mt-4 rounded-lg border border-danger-soft bg-danger-soft px-4 py-3">
-            <div class="flex items-start justify-between gap-4">
+            <div class="settings-section-head settings-section-head-danger">
               <div class="min-w-0">
                 <div class="flex items-center gap-2 docmind-section-label text-danger">
                   <Trash2 :size="15" />
@@ -881,6 +911,9 @@ onBeforeUnmount(() => {
                   {{ t("page.settings.danger.detail") }}
                 </div>
               </div>
+              <DocMindBadge tone="warning">{{ t("page.settings.btn.clear") }}</DocMindBadge>
+            </div>
+            <div class="mt-4 flex justify-end">
               <button
                 class="inline-flex shrink-0 items-center gap-2 rounded-md bg-danger px-4 py-2 text-sm font-medium text-white hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="clearing"
@@ -907,3 +940,468 @@ onBeforeUnmount(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.settings-prototype-shell {
+  color: #eef5ff;
+  background:
+    radial-gradient(circle at 78% 12%, rgba(47, 129, 255, 0.08), transparent 34%),
+    radial-gradient(circle at 28% 22%, rgba(124, 92, 255, 0.06), transparent 32%),
+    linear-gradient(135deg, #060b14 0%, #0a111b 42%, #0d1521 100%);
+}
+
+.settings-prototype-main {
+  padding: 26px 30px 82px;
+}
+
+.settings-workbench {
+  align-items: start;
+}
+
+.settings-prototype-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: -26px -30px 20px;
+  padding: 24px 30px 14px;
+  height: auto;
+  align-items: flex-start;
+  background: linear-gradient(to bottom, rgba(10, 15, 24, 0.96), rgba(10, 15, 24, 0.78), rgba(10, 15, 24, 0));
+  backdrop-filter: blur(10px);
+}
+
+.settings-prototype-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.settings-prototype-subtitle {
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: #9aa9bd;
+}
+
+.settings-prototype-topbar > div:last-child > button {
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(105, 134, 171, 0.25);
+  background: rgba(17, 24, 39, 0.7);
+  color: #eef5ff;
+  font-weight: 800;
+  box-shadow: none;
+}
+
+.settings-prototype-topbar > div:last-child > button:first-child {
+  color: #ffc76c;
+  border-color: rgba(247, 184, 75, 0.34);
+}
+
+.settings-prototype-topbar > div:last-child > button:last-child {
+  background: linear-gradient(135deg, #2f81ff, #1267e8);
+  border-color: rgba(81, 151, 255, 0.8);
+  box-shadow: 0 14px 34px rgba(47, 129, 255, 0.22);
+}
+
+/* 修复：收敛深色主题的蓝色面积，保留层次但避免整页发蓝。 */
+.settings-prototype-main :is(section, .rounded-lg, .rounded-md) {
+  border-color: rgba(138, 161, 190, 0.18) !important;
+}
+
+.settings-prototype-main section,
+.settings-prototype-sidebar > section {
+  border-radius: 16px !important;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.84), rgba(10, 16, 28, 0.8)) !important;
+  box-shadow:
+    var(--shadow-card, 0 1px 2px rgba(0, 0, 0, 0.05)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.settings-prototype-sidebar > section {
+  background: rgba(14, 20, 32, 0.84) !important;
+  backdrop-filter: blur(18px);
+}
+
+.settings-sidebar-rail {
+  padding-right: 18px;
+  border-right: 1px solid rgba(138, 161, 190, 0.12);
+}
+
+.settings-sidebar-rail > section {
+  border-radius: 0 !important;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  background: transparent !important;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.settings-sidebar-rail > section:first-child {
+  border-top: 1px solid rgba(138, 161, 190, 0.12);
+  border-radius: 14px 14px 0 0 !important;
+}
+
+.settings-sidebar-rail > section:last-child {
+  border-radius: 0 0 14px 14px !important;
+}
+
+.settings-sidebar-shell {
+  overflow: hidden;
+}
+
+.settings-sidebar-head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.settings-sidebar-nav {
+  align-content: start;
+}
+
+.settings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-section-head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-section-icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 14px;
+  color: white;
+}
+
+.settings-section-icon-blue {
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.82), rgba(18, 103, 232, 0.66));
+  box-shadow: 0 12px 26px rgba(47, 129, 255, 0.12);
+}
+
+.settings-section-icon-purple {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.82), rgba(91, 61, 210, 0.66));
+  box-shadow: 0 12px 26px rgba(124, 92, 255, 0.12);
+}
+
+.settings-section-icon-indigo {
+  background: linear-gradient(135deg, rgba(88, 166, 255, 0.8), rgba(47, 129, 255, 0.64));
+  box-shadow: 0 12px 26px rgba(88, 166, 255, 0.12);
+}
+
+.settings-section-icon-green {
+  background: linear-gradient(135deg, rgba(39, 174, 96, 0.82), rgba(13, 110, 63, 0.66));
+  box-shadow: 0 12px 26px rgba(39, 174, 96, 0.12);
+}
+
+.settings-section-title {
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.settings-section-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.settings-section-head-danger {
+  align-items: flex-start;
+  background: rgba(255, 101, 101, 0.04);
+  border-bottom-color: transparent;
+  border-radius: 16px 16px 0 0;
+}
+
+.settings-prototype-sidebar .space-y-2.p-4,
+.settings-prototype-sidebar .space-y-2.p-3,
+.settings-sidebar-nav {
+  display: grid;
+  gap: 7px;
+}
+
+.settings-prototype-sidebar button {
+  min-height: 50px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: #bfd0e5;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.settings-prototype-sidebar button:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(138, 161, 190, 0.18);
+}
+
+.settings-prototype-sidebar button[class*="border-accent"] {
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.32), rgba(13, 95, 215, 0.2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.settings-prototype-sidebar .docmind-section-label,
+.settings-prototype-main .docmind-section-label {
+  color: #cbd8ea;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-prototype-sidebar .docmind-item-meta,
+.settings-prototype-main .docmind-item-meta {
+  color: #9aa9bd;
+}
+
+.settings-prototype-main input:not([type="checkbox"]):not([type="range"]),
+.settings-prototype-main textarea,
+.settings-prototype-main .rounded-lg.border.border-default.bg-input,
+.settings-prototype-main .rounded-lg.border.border-default.bg-panel {
+  background: rgba(15, 23, 42, 0.44) !important;
+  border-color: rgba(138, 161, 190, 0.18) !important;
+  color: #eef5ff !important;
+}
+
+.settings-prototype-main input::placeholder,
+.settings-prototype-main textarea::placeholder {
+  color: #697b92;
+}
+
+.settings-prototype-main input[type="checkbox"] {
+  accent-color: #2f81ff;
+}
+
+.settings-prototype-main input[type="range"] {
+  accent-color: #2f81ff;
+}
+
+.settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+.settings-prototype-main .rounded-md.border.border-default.bg-panel {
+  background: rgba(15, 23, 42, 0.54) !important;
+}
+
+.settings-prototype-main .rounded-md.border.border-danger-soft.bg-danger-soft,
+.settings-prototype-main .rounded-lg.border.border-danger-soft.bg-danger-soft {
+  background: rgba(68, 18, 24, 0.28) !important;
+  border-color: rgba(255, 101, 101, 0.25) !important;
+}
+
+.settings-prototype-main .bg-accent {
+  background: linear-gradient(135deg, #2f81ff, #1267e8) !important;
+}
+
+.settings-prototype-main .text-primary {
+  color: #eef5ff !important;
+}
+
+.settings-prototype-main .text-secondary,
+.settings-prototype-main .text-dim,
+.settings-prototype-main .text-muted {
+  color: #9aa9bd !important;
+}
+
+html:not(.dark) .settings-prototype-shell {
+  color: #0f172a;
+  background:
+    radial-gradient(circle at 78% 12%, rgba(47, 129, 255, 0.11), transparent 34%),
+    radial-gradient(circle at 28% 22%, rgba(124, 92, 255, 0.08), transparent 32%),
+    linear-gradient(135deg, #f8fbff 0%, #eef4fb 42%, #eaf2fb 100%);
+}
+
+html:not(.dark) .settings-prototype-topbar {
+  background: linear-gradient(to bottom, rgba(248, 251, 255, 0.98), rgba(248, 251, 255, 0.84), rgba(248, 251, 255, 0));
+}
+
+html:not(.dark) .settings-prototype-title {
+  color: #0f172a;
+}
+
+html:not(.dark) .settings-prototype-subtitle {
+  color: #64748b;
+}
+
+html:not(.dark) .settings-prototype-topbar > div:last-child > button {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(148, 163, 184, 0.32);
+  color: #334155;
+}
+
+html:not(.dark) .settings-prototype-topbar > div:last-child > button:first-child {
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+html:not(.dark) .settings-prototype-topbar > div:last-child > button:last-child {
+  background: linear-gradient(135deg, #2f81ff, #1267e8);
+  border-color: rgba(47, 129, 255, 0.44);
+  color: white;
+}
+
+html:not(.dark) .settings-prototype-main section,
+html:not(.dark) .settings-prototype-sidebar > section {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.045), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+html:not(.dark) .settings-prototype-sidebar > section {
+  background: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(14px);
+}
+
+html:not(.dark) .settings-sidebar-rail {
+  border-right-color: rgba(148, 163, 184, 0.16);
+}
+
+html:not(.dark) .settings-sidebar-rail > section {
+  background: transparent !important;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html:not(.dark) .settings-sidebar-rail > section:first-child {
+  border-top-color: rgba(148, 163, 184, 0.16);
+}
+
+html:not(.dark) .settings-prototype-sidebar button {
+  color: #334155;
+  background: rgba(248, 250, 252, 0.84);
+  box-shadow: none;
+}
+
+html:not(.dark) .settings-prototype-sidebar button:hover {
+  background: rgba(241, 245, 249, 0.96);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+html:not(.dark) .settings-prototype-sidebar button[class*="border-accent"] {
+  color: white;
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(13, 95, 215, 0.78));
+}
+
+/* 修复：浅色主题选中导航项的说明文字需要更高对比度，避免被亮蓝底吃掉。 */
+html:not(.dark) .settings-prototype-sidebar button[class*="border-accent"] .text-dim {
+  color: rgba(232, 241, 255, 0.88) !important;
+}
+
+html:not(.dark) .settings-prototype-sidebar .docmind-section-label,
+html:not(.dark) .settings-prototype-main .docmind-section-label {
+  color: #475569;
+}
+
+html:not(.dark) .settings-prototype-sidebar .docmind-item-meta,
+html:not(.dark) .settings-prototype-main .docmind-item-meta {
+  color: #64748b;
+}
+
+html:not(.dark) .settings-prototype-main input:not([type="checkbox"]):not([type="range"]),
+html:not(.dark) .settings-prototype-main textarea,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-input,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-panel {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .settings-prototype-main input::placeholder,
+html:not(.dark) .settings-prototype-main textarea::placeholder {
+  color: #94a3b8;
+}
+
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-md.border.border-default.bg-panel {
+  background: rgba(248, 250, 252, 0.94) !important;
+}
+
+html:not(.dark) .settings-prototype-main .rounded-md.border.border-danger-soft.bg-danger-soft,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-danger-soft.bg-danger-soft {
+  background: rgba(255, 241, 242, 0.9) !important;
+  border-color: rgba(248, 113, 113, 0.22) !important;
+}
+
+html:not(.dark) .settings-prototype-main .text-primary {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .settings-prototype-main .text-secondary,
+html:not(.dark) .settings-prototype-main .text-dim,
+html:not(.dark) .settings-prototype-main .text-muted {
+  color: #64748b !important;
+}
+
+html:not(.dark) .settings-section-head {
+  border-bottom-color: rgba(148, 163, 184, 0.2);
+}
+
+html:not(.dark) .settings-section-title {
+  color: #0f172a;
+}
+
+html:not(.dark) .settings-section-desc {
+  color: #64748b;
+}
+
+html:not(.dark) .settings-section-icon-blue {
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(18, 103, 232, 0.78));
+}
+
+html:not(.dark) .settings-section-icon-purple {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.95), rgba(91, 61, 210, 0.78));
+}
+
+html:not(.dark) .settings-section-icon-indigo {
+  background: linear-gradient(135deg, rgba(88, 166, 255, 0.95), rgba(47, 129, 255, 0.78));
+}
+
+html:not(.dark) .settings-section-icon-green {
+  background: linear-gradient(135deg, rgba(39, 174, 96, 0.95), rgba(13, 110, 63, 0.75));
+}
+
+html:not(.dark) .settings-section-head-danger {
+  background: rgba(255, 241, 242, 0.9);
+}
+
+html:not(.dark) .settings-prototype-main .bg-accent {
+  background: linear-gradient(135deg, #2f81ff, #1267e8) !important;
+}
+
+html:not(.dark) .settings-prototype-main .border-default {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+@media (max-width: 768px) {
+  .settings-prototype-main {
+    padding: 16px;
+  }
+
+  .settings-prototype-topbar {
+    margin: -16px -16px 16px;
+    padding: 16px 16px 12px;
+  }
+
+  .settings-prototype-title {
+    font-size: 22px;
+  }
+
+  .settings-prototype-subtitle {
+    font-size: 13px;
+  }
+}
+</style>

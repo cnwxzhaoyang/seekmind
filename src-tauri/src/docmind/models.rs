@@ -137,6 +137,7 @@ pub struct CurrentTaskView {
     pub state: String,
     pub current_dir: String,
     pub current_file: String,
+    pub started_at: i64,
     pub progress: u8,
     pub scanned: usize,
     pub total: usize,

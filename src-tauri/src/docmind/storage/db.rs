@@ -388,6 +388,7 @@ struct CurrentTaskRow {
     state: String,
     current_dir: String,
     current_file: String,
+    started_at: i64,
     progress: i64,
     scanned: i64,
     total: i64,
@@ -3629,11 +3630,35 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         warning: Option<&str>,
         pause_requested: bool,
     ) -> Result<(), sqlx::Error> {
+        let now = current_unix_ts();
+        let existing_started_at = sqlx::query_as::<_, CurrentTaskRow>(
+            r#"
+            SELECT label, details, state, current_dir, current_file, started_at, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested
+            FROM current_task
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .map(|row| {
+            // 修复：运行中/暂停中的任务更新时间要沿用首次启动时间，避免耗时跳变。
+            if matches!(row.state.as_str(), "running" | "paused") {
+                row.started_at.max(0)
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+        let started_at = if existing_started_at > 0 {
+            existing_started_at
+        } else {
+            now
+        };
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO current_task
-                (id, label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, label, details, state, current_dir, current_file, started_at, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(label)
@@ -3641,6 +3666,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         .bind(state)
         .bind(current_dir)
         .bind(current_file)
+        .bind(started_at)
         .bind(progress as i64)
         .bind(scanned as i64)
         .bind(total as i64)
@@ -3936,6 +3962,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 state TEXT NOT NULL DEFAULT 'idle',
                 current_dir TEXT NOT NULL DEFAULT '',
                 current_file TEXT NOT NULL DEFAULT '',
+                started_at INTEGER NOT NULL DEFAULT 0,
                 progress INTEGER NOT NULL,
                 scanned INTEGER NOT NULL,
                 total INTEGER NOT NULL,
@@ -4361,6 +4388,10 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             alter_statements
                 .push("ALTER TABLE current_task ADD COLUMN current_file TEXT NOT NULL DEFAULT ''");
         }
+        if !columns.contains("started_at") {
+            alter_statements
+                .push("ALTER TABLE current_task ADD COLUMN started_at INTEGER NOT NULL DEFAULT 0");
+        }
         if !columns.contains("succeeded") {
             alter_statements
                 .push("ALTER TABLE current_task ADD COLUMN succeeded INTEGER NOT NULL DEFAULT 0");
@@ -4735,7 +4766,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
     async fn current_task(&self) -> Result<Option<CurrentTaskView>, sqlx::Error> {
         let row = sqlx::query_as::<_, CurrentTaskRow>(
             r#"
-            SELECT label, details, state, current_dir, current_file, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested
+            SELECT label, details, state, current_dir, current_file, started_at, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested
             FROM current_task
             WHERE id = 1
             "#,
@@ -4749,6 +4780,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             state: row.state,
             current_dir: row.current_dir,
             current_file: row.current_file,
+            started_at: row.started_at,
             progress: row.progress as u8,
             scanned: row.scanned as usize,
             total: row.total as usize,

@@ -10,3 +10,4 @@ __pycache__/
 /src-tauri/app-resources/
 /src-tauri/resources/
 /.docmind-dev/
+/ui-prototype/
