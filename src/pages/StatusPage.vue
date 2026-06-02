@@ -1107,7 +1107,8 @@ onBeforeUnmount(() => {
         <!-- 错误摘要 -->
         <div class="card">
           <div class="card-header">
-            <span class="card-icon"><SvgIcon icon="icon-error" size="lg" /></span>
+            <!-- 对齐原型：错误摘要使用红色错误语义图标。 -->
+            <span class="card-icon error"><SvgIcon icon="icon-error" size="lg" /></span>
             <h2>{{ t("page.status.section.errorSummary") }}</h2>
           </div>
 
@@ -1220,7 +1221,8 @@ onBeforeUnmount(() => {
         <!-- 最新异常 -->
         <div class="card">
           <div class="card-header">
-            <span class="card-icon"><SvgIcon icon="icon-warning" size="lg" /></span>
+            <!-- 对齐原型：最新异常使用警告图标，但保留异常红色语义。 -->
+            <span class="card-icon error"><SvgIcon icon="icon-warning" size="lg" /></span>
             <h2>{{ t("page.status.section.latestException") }}</h2>
             <span class="exception-count">{{ status?.failed_items?.length ?? 0 }}</span>
           </div>

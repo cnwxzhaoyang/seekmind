@@ -5,11 +5,16 @@
     :height="iconSize"
     aria-hidden="true"
   >
-    <use :href="`#${icon}`" />
+    <use :href="`#${icon}`" :xlink:href="`#${icon}`" />
   </svg>
 </template>
 
 <script setup lang="ts">
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/02
+ * @Description 统一 SVG 图标组件，兼容当前 WebView 对 sprite 引用的解析方式。
+ */
 import { computed } from "vue";
 
 interface Props {
