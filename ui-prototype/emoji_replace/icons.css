@@ -1,0 +1,387 @@
+/**
+ * 图标系统样式文件
+ * 提供一致的图标样式和动画效果
+ */
+
+/* ==================== 基础样式 ==================== */
+
+.svg-icon {
+  display: inline-block;
+  vertical-align: -0.125em;
+  fill: currentColor;
+  overflow: visible;
+  transition: all 0.2s ease;
+}
+
+/* 图标大小 */
+.icon-sm {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-md {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-lg {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-xl {
+  width: 32px;
+  height: 32px;
+}
+
+/* ==================== 颜色变体 ==================== */
+
+.icon-primary {
+  color: #1f6feb;
+}
+
+.icon-success {
+  color: #4caf50;
+}
+
+.icon-warning {
+  color: #ffc857;
+}
+
+.icon-error {
+  color: #f85149;
+}
+
+.icon-info {
+  color: #58a6ff;
+}
+
+.icon-muted {
+  color: #8b949e;
+}
+
+.icon-light {
+  color: #e6edf3;
+}
+
+.icon-dark {
+  color: #0d1117;
+}
+
+/* ==================== 交互状态 ==================== */
+
+.icon-hover:hover {
+  opacity: 0.8;
+  transform: scale(1.1);
+}
+
+.icon-active {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.icon-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==================== 动画效果 ==================== */
+
+/* 旋转动画 */
+.icon-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 脉冲动画 */
+.icon-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* 闪烁动画 */
+.icon-blink {
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 49%, 100% {
+    opacity: 1;
+  }
+  50%, 99% {
+    opacity: 0;
+  }
+}
+
+/* 弹跳动画 */
+.icon-bounce {
+  animation: bounce 0.6s ease-in-out;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* 抖动动画 */
+.icon-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+/* 淡入动画 */
+.icon-fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 缩放动画 */
+.icon-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ==================== 按钮中的图标 ==================== */
+
+button .svg-icon {
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+button:hover .svg-icon {
+  transform: translateY(-1px);
+}
+
+button:active .svg-icon {
+  transform: translateY(0);
+}
+
+/* ==================== 导航中的图标 ==================== */
+
+nav .svg-icon {
+  margin-right: 8px;
+}
+
+nav a:hover .svg-icon {
+  color: #58a6ff;
+}
+
+nav a.active .svg-icon {
+  color: #1f6feb;
+}
+
+/* ==================== 表格中的图标 ==================== */
+
+table .svg-icon {
+  margin-right: 4px;
+}
+
+/* ==================== 卡片中的图标 ==================== */
+
+.card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: rgba(31, 111, 235, 0.1);
+  color: #1f6feb;
+}
+
+.card-icon.success {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.card-icon.warning {
+  background-color: rgba(255, 200, 87, 0.1);
+  color: #ffc857;
+}
+
+.card-icon.error {
+  background-color: rgba(248, 81, 73, 0.1);
+  color: #f85149;
+}
+
+.card-icon.info {
+  background-color: rgba(88, 166, 255, 0.1);
+  color: #58a6ff;
+}
+
+/* ==================== 状态指示器 ==================== */
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.status-dot.success {
+  background-color: #4caf50;
+}
+
+.status-dot.warning {
+  background-color: #ffc857;
+}
+
+.status-dot.error {
+  background-color: #f85149;
+}
+
+.status-dot.info {
+  background-color: #58a6ff;
+}
+
+.status-dot.static {
+  animation: none;
+}
+
+/* ==================== 加载状态 ==================== */
+
+.icon-loading {
+  animation: spin 1s linear infinite;
+}
+
+.icon-loading-dots {
+  animation: loadingDots 1.4s ease-in-out infinite;
+}
+
+@keyframes loadingDots {
+  0%, 80%, 100% {
+    opacity: 0.5;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* ==================== 响应式设计 ==================== */
+
+@media (max-width: 768px) {
+  .icon-sm {
+    width: 14px;
+    height: 14px;
+  }
+
+  .icon-md {
+    width: 18px;
+    height: 18px;
+  }
+
+  .icon-lg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .icon-xl {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* ==================== 深色模式支持 ==================== */
+
+@media (prefers-color-scheme: dark) {
+  .icon-light {
+    color: #e6edf3;
+  }
+
+  .icon-dark {
+    color: #0d1117;
+  }
+}
+
+/* ==================== 打印样式 ==================== */
+
+@media print {
+  .icon-spin,
+  .icon-pulse,
+  .icon-blink,
+  .icon-bounce,
+  .icon-shake {
+    animation: none;
+  }
+}
+
+/* ==================== 无障碍支持 ==================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .svg-icon {
+    transition: none;
+  }
+
+  .icon-spin,
+  .icon-pulse,
+  .icon-blink,
+  .icon-bounce,
+  .icon-shake,
+  .icon-fade-in,
+  .icon-scale-in {
+    animation: none;
+  }
+}
+
+/* ==================== 高对比度模式 ==================== */
+
+@media (prefers-contrast: more) {
+  .svg-icon {
+    stroke-width: 2;
+  }
+
+  .icon-muted {
+    color: #6e7681;
+  }
+}

@@ -545,6 +545,13 @@
       "section": {
         "taskOps": "Task Operations",
         "taskOpsDesc": "Pause, resume or re-index current task.",
+        "control": "Index Control",
+        "controlDesc": "Control the execution state of the indexing task. You can pause, resume, or restart the indexing process.",
+        "statistics": "Statistics",
+        "progress": "Index Progress",
+        "errorSummary": "Error Summary",
+        "indexInfo": "Index Info",
+        "latestException": "Latest Exception",
         "incrementalSummary": "Last Incremental Summary",
         "incrementalDesc": "Results from the most recent index run. Persisted after completion.",
         "parserStatus": "Parser Status",
@@ -557,7 +564,15 @@
         "scanned": "Scanned Docs",
         "indexed": "Indexed Docs",
         "chunks": "Chunks",
-        "failed": "Failed Files"
+        "failed": "Failed Files",
+        "indexedFiles": "Indexed Files",
+        "indexedFilesDesc": "Files successfully indexed",
+        "indexedCount": "Scanned Files",
+        "indexedCountDesc": "Total files processed",
+        "errorCount": "Errors",
+        "errorCountDesc": "Total errors during indexing",
+        "pendingFiles": "Pending Files",
+        "pendingFilesDesc": "Files waiting to be processed"
       },
       "incremental": {
         "updated": "Updated",
@@ -587,6 +602,37 @@
         "code": "Code {code}",
         "retryCount": "{count} retries"
       },
+      "progress": {
+        "overall": "Overall Progress",
+        "currentFile": "Current File",
+        "duration": "Duration",
+        "startTime": "Start Time",
+        "success": "Success",
+        "failed": "Failed",
+        "skipped": "Skipped"
+      },
+      "errorSummary": {
+        "totalErrors": "Total Errors",
+        "errorType": "Error Type",
+        "pythonVersion": "Python Version",
+        "timeout": "Timeout"
+      },
+      "indexInfo": {
+        "dirName": "Directory",
+        "docs": "Docs",
+        "chunks": "Chunks",
+        "selected": "{selected} / {total} directories selected",
+        "noDirs": "No index directories"
+      },
+      "exception": {
+        "errorFile": "Error File",
+        "exceptionTime": "Exception Time",
+        "message": "Error Message",
+        "stackTrace": "Stack Trace",
+        "noException": "No exceptions",
+        "viewAll": "View All Exceptions →"
+      },
+      "lastUpdate": "Last Update",
       "emptyDirs": "No index directories. Add one in the \"Index Dirs\" page first.",
       "dirStats": "{docs} docs · {chunks} paragraphs",
       "error": {

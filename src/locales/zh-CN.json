@@ -542,6 +542,13 @@
       "section": {
         "taskOps": "任务操作",
         "taskOpsDesc": "暂停、恢复或重新索引当前任务。",
+        "control": "索引控制",
+        "controlDesc": "控制索引任务的执行状态，您可以暂停、恢复或重新开始索引过程。",
+        "statistics": "统计信息",
+        "progress": "索引进度",
+        "errorSummary": "错误摘要",
+        "indexInfo": "索引信息",
+        "latestException": "最新异常",
         "incrementalSummary": "本次增量摘要",
         "incrementalDesc": "最近一次索引执行后的增量结果，任务结束后也会保留。",
         "parserStatus": "解析器状态",
@@ -554,7 +561,15 @@
         "scanned": "已扫描文档",
         "indexed": "已索引文档",
         "chunks": "段落块",
-        "failed": "失败文件"
+        "failed": "失败文件",
+        "indexedFiles": "已索引文件",
+        "indexedFilesDesc": "成功索引的文件",
+        "indexedCount": "已扫描文件",
+        "indexedCountDesc": "已处理的文件总数",
+        "errorCount": "错误数",
+        "errorCountDesc": "索引过程中错误总数",
+        "pendingFiles": "待处理文件数",
+        "pendingFilesDesc": "待处理的文件数量"
       },
       "incremental": {
         "updated": "更新",
@@ -584,6 +599,37 @@
         "code": "代码 {code}",
         "retryCount": "重试 {count} 次"
       },
+      "progress": {
+        "overall": "总体进度",
+        "currentFile": "正在索引文件",
+        "duration": "本次索引耗时",
+        "startTime": "开始时间",
+        "success": "成功",
+        "failed": "失败",
+        "skipped": "跳过"
+      },
+      "errorSummary": {
+        "totalErrors": "总错误数",
+        "errorType": "错误类型",
+        "pythonVersion": "Python 版本",
+        "timeout": "超时设置"
+      },
+      "indexInfo": {
+        "dirName": "目录名",
+        "docs": "文档数",
+        "chunks": "段落数",
+        "selected": "已选择 {selected} / {total} 个目录",
+        "noDirs": "暂无索引目录"
+      },
+      "exception": {
+        "errorFile": "错误文件",
+        "exceptionTime": "异常时间",
+        "message": "错误信息",
+        "stackTrace": "堆栈信息",
+        "noException": "暂无异常信息",
+        "viewAll": "查看所有异常 →"
+      },
+      "lastUpdate": "最后更新",
       "emptyDirs": "当前没有可索引目录，请先到\"文档目录\"页添加一个目录。",
       "dirStats": "{docs} 个文档 · {chunks} 个段落",
       "error": {
