@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct DiscoveredFile {
@@ -87,4 +88,38 @@ pub struct QaSettings {
 pub struct NetworkProxySettings {
     pub enabled: bool,
     pub proxy_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionItemInput {
+    pub collection_id: String,
+    pub item_type: String,
+    pub document_id: Option<String>,
+    pub chunk_id: Option<String>,
+    pub qa_session_id: Option<String>,
+    pub qa_message_id: Option<String>,
+    pub title: String,
+    pub path: Option<String>,
+    pub title_path: Option<String>,
+    pub snippet: Option<String>,
+    pub note: Option<String>,
+    pub source_meta_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionPatchInput {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionItemPatchInput {
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagPatchInput {
+    pub name: Option<String>,
+    pub color: Option<String>,
 }

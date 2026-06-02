@@ -17,13 +17,15 @@ use crate::docmind::models::{
     ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
     IndexDirView, IndexStatusView, PreviewBlockView, QaAnswerView, QaHistoryView, QaRetrievalView,
     QaMessageView, QaModelProfileUpsertView, QaModelProfileView, QaSessionView, QaSourceView,
-    RecentDocumentView, SearchHistoryView, SearchResultView,
+    RecentDocumentView, RecentViewEntry, SearchHistoryView, SearchResultView, CollectionItemView,
+    CollectionView, TagView,
 };
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::types::{
-    ChunkRecord, DocumentState, ExtractedDocument, IndexSettings, NetworkProxySettings, QaSettings,
+    ChunkRecord, CollectionItemInput, CollectionPatchInput, DocumentState, TagPatchInput,
+    ExtractedDocument, IndexSettings, NetworkProxySettings, QaSettings,
 };
 
 #[derive(Clone)]
@@ -219,11 +221,71 @@ struct RecentDocumentRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct RecentViewRow {
+    target_type: String,
+    target_id: String,
+    title: String,
+    path: String,
+    viewed_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct TagRow {
+    id: String,
+    name: String,
+    color: String,
+    target_count: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct TargetTagRow {
+    id: String,
+    name: String,
+    color: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct FavoriteRow {
     favorite_type: String,
     target: String,
     title: String,
     path: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CollectionRow {
+    id: String,
+    name: String,
+    description: String,
+    color: String,
+    sort_order: i64,
+    item_count: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CollectionItemRow {
+    id: String,
+    collection_id: String,
+    item_type: String,
+    document_id: String,
+    chunk_id: String,
+    qa_session_id: String,
+    qa_message_id: String,
+    title: String,
+    path: String,
+    title_path: String,
+    snippet: String,
+    note: String,
+    source_meta_json: String,
+    sort_order: i64,
     created_at: i64,
     updated_at: i64,
 }
@@ -414,6 +476,10 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_network_proxy_settings_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_collections_seed()
             .await
             .map_err(|error| error.to_string())?;
         database
@@ -1357,6 +1423,338 @@ impl Database {
         Ok(())
     }
 
+    pub async fn record_recent_view(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        title: &str,
+        path: &str,
+    ) -> Result<(), sqlx::Error> {
+        let target_type = normalize_recent_view_target_type(target_type);
+        let target_id = target_id.trim();
+        if target_type.is_empty() || target_id.is_empty() {
+            return Ok(());
+        }
+
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT INTO recent_views
+                (target_type, target_id, title, path, viewed_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(target_type, target_id) DO UPDATE SET
+                title = excluded.title,
+                path = excluded.path,
+                viewed_at = excluded.viewed_at
+            "#,
+        )
+        .bind(target_type)
+        .bind(target_id)
+        .bind(title.trim())
+        .bind(path.trim())
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_recent_views(&self, limit: i64) -> Result<Vec<RecentViewEntry>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, RecentViewRow>(
+            r#"
+            SELECT target_type, target_id, title, path, viewed_at
+            FROM recent_views
+            ORDER BY viewed_at DESC, title ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| RecentViewEntry {
+                target_type: row.target_type,
+                target_id: row.target_id,
+                title: row.title,
+                path: row.path,
+                viewed_at: format_unix_ts(row.viewed_at),
+            })
+            .collect())
+    }
+
+    pub async fn list_tags(&self) -> Result<Vec<TagView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, TagRow>(
+            r#"
+            SELECT
+                t.id,
+                t.name,
+                t.color,
+                COUNT(it.id) AS target_count,
+                t.created_at,
+                t.updated_at
+            FROM tags t
+            LEFT JOIN item_tags it ON it.tag_id = t.id
+            GROUP BY t.id, t.name, t.color, t.created_at, t.updated_at
+            ORDER BY t.updated_at DESC, t.created_at DESC, t.name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(tag_row_to_view).collect())
+    }
+
+    pub async fn create_tag(&self, name: &str, color: &str) -> Result<TagView, sqlx::Error> {
+        let normalized_name = normalize_tag_name(name);
+        let normalized_color = normalize_tag_color(color);
+        let now = current_unix_ts();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            INSERT INTO tags (id, name, color, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(&normalized_name)
+        .bind(&normalized_color)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(TagView {
+            id,
+            name: normalized_name,
+            color: normalized_color,
+            target_count: 0,
+            created_at: format_unix_ts(now),
+            updated_at: format_unix_ts(now),
+        })
+    }
+
+    pub async fn update_tag(&self, tag_id: &str, patch: &TagPatchInput) -> Result<TagView, sqlx::Error> {
+        let existing = sqlx::query_as::<_, TagRow>(
+            r#"
+            SELECT
+                t.id,
+                t.name,
+                t.color,
+                COUNT(it.id) AS target_count,
+                t.created_at,
+                t.updated_at
+            FROM tags t
+            LEFT JOIN item_tags it ON it.tag_id = t.id
+            WHERE t.id = ?
+            GROUP BY t.id, t.name, t.color, t.created_at, t.updated_at
+            "#,
+        )
+        .bind(tag_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(existing) = existing else {
+            return Err(sqlx::Error::RowNotFound);
+        };
+
+        let name = patch.name.as_deref().map(normalize_tag_name).unwrap_or(existing.name);
+        let color = patch
+            .color
+            .as_deref()
+            .map(normalize_tag_color)
+            .unwrap_or(existing.color);
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            UPDATE tags
+            SET name = ?, color = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&name)
+        .bind(&color)
+        .bind(now)
+        .bind(tag_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(TagView {
+            id: existing.id,
+            name,
+            color,
+            target_count: existing.target_count.max(0) as usize,
+            created_at: format_unix_ts(existing.created_at),
+            updated_at: format_unix_ts(now),
+        })
+    }
+
+    pub async fn delete_tag(&self, tag_id: &str) -> Result<(), sqlx::Error> {
+        if tag_id.trim().is_empty() {
+            return Ok(());
+        }
+        sqlx::query("DELETE FROM tags WHERE id = ?")
+            .bind(tag_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn list_target_tags(
+        &self,
+        target_type: &str,
+        target_id: &str,
+    ) -> Result<Vec<TagView>, sqlx::Error> {
+        let target_type = normalize_tag_target_type(target_type);
+        if target_type.is_empty() || target_id.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query_as::<_, TargetTagRow>(
+            r#"
+            SELECT t.id, t.name, t.color, t.created_at, t.updated_at
+            FROM item_tags it
+            JOIN tags t ON t.id = it.tag_id
+            WHERE it.target_type = ? AND it.target_id = ?
+            ORDER BY t.updated_at DESC, t.name ASC
+            "#,
+        )
+        .bind(target_type)
+        .bind(target_id.trim())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| TagView {
+                id: row.id,
+                name: row.name,
+                color: row.color,
+                target_count: 0,
+                created_at: format_unix_ts(row.created_at),
+                updated_at: format_unix_ts(row.updated_at),
+            })
+            .collect())
+    }
+
+    pub async fn add_tag_to_target(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        name: &str,
+        color: &str,
+    ) -> Result<TagView, sqlx::Error> {
+        let target_type = normalize_tag_target_type(target_type);
+        let target_id = target_id.trim();
+        if target_type.is_empty() || target_id.is_empty() {
+            return Err(sqlx::Error::RowNotFound);
+        }
+
+        let normalized_name = normalize_tag_name(name);
+        if normalized_name.is_empty() {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let normalized_color = normalize_tag_color(color);
+        let existing = sqlx::query_as::<_, TagRow>(
+            r#"
+            SELECT
+                t.id,
+                t.name,
+                t.color,
+                COUNT(it.id) AS target_count,
+                t.created_at,
+                t.updated_at
+            FROM tags t
+            LEFT JOIN item_tags it ON it.tag_id = t.id
+            WHERE lower(t.name) = lower(?)
+            GROUP BY t.id, t.name, t.color, t.created_at, t.updated_at
+            "#,
+        )
+        .bind(&normalized_name)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let tag = if let Some(existing) = existing {
+            existing
+        } else {
+            let now = current_unix_ts();
+            let id = Uuid::new_v4().to_string();
+            sqlx::query(
+                r#"
+                INSERT INTO tags (id, name, color, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(&normalized_name)
+            .bind(&normalized_color)
+            .bind(now)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+            TagRow {
+                id,
+                name: normalized_name.clone(),
+                color: normalized_color.clone(),
+                target_count: 0,
+                created_at: now,
+                updated_at: now,
+            }
+        };
+
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO item_tags (id, target_type, target_id, tag_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(target_type)
+        .bind(target_id)
+        .bind(&tag.id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query("UPDATE tags SET updated_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(&tag.id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(TagView {
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+            target_count: tag.target_count.max(0) as usize,
+            created_at: format_unix_ts(tag.created_at),
+            updated_at: format_unix_ts(now),
+        })
+    }
+
+    pub async fn remove_tag_from_target(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        tag_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let target_type = normalize_tag_target_type(target_type);
+        if target_type.is_empty() || target_id.trim().is_empty() || tag_id.trim().is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query(
+            "DELETE FROM item_tags WHERE target_type = ? AND target_id = ? AND tag_id = ?",
+        )
+        .bind(target_type)
+        .bind(target_id.trim())
+        .bind(tag_id.trim())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn create_qa_session(&self, title: &str) -> Result<QaSessionView, sqlx::Error> {
         let now = current_unix_ts();
         let id = Uuid::new_v4().to_string();
@@ -1607,6 +2005,438 @@ impl Database {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn list_collections(&self) -> Result<Vec<CollectionView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, CollectionRow>(
+            r#"
+            SELECT
+                c.id,
+                c.name,
+                c.description,
+                c.color,
+                c.sort_order,
+                COUNT(i.id) AS item_count,
+                c.created_at,
+                c.updated_at
+            FROM collections c
+            LEFT JOIN collection_items i ON i.collection_id = c.id
+            GROUP BY c.id, c.name, c.description, c.color, c.sort_order, c.created_at, c.updated_at
+            ORDER BY c.sort_order ASC, c.updated_at DESC, c.name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(collection_row_to_view).collect())
+    }
+
+    pub async fn create_collection(
+        &self,
+        name: &str,
+        description: &str,
+    ) -> Result<CollectionView, sqlx::Error> {
+        let now = current_unix_ts();
+        let sort_order = sqlx::query_scalar::<_, i64>(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM collections",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        let id = Uuid::new_v4().to_string();
+        let normalized_name = normalize_collection_name(name);
+        let normalized_description = normalize_collection_description(description);
+
+        sqlx::query(
+            r#"
+            INSERT INTO collections
+                (id, name, description, color, sort_order, created_at, updated_at)
+            VALUES (?, ?, ?, '', ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(&normalized_name)
+        .bind(&normalized_description)
+        .bind(sort_order)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(CollectionView {
+            id,
+            name: normalized_name,
+            description: normalized_description,
+            color: String::new(),
+            sort_order,
+            item_count: 0,
+            created_at: format_unix_ts(now),
+            updated_at: format_unix_ts(now),
+        })
+    }
+
+    pub async fn update_collection(
+        &self,
+        collection_id: &str,
+        patch: &CollectionPatchInput,
+    ) -> Result<CollectionView, sqlx::Error> {
+        let existing = sqlx::query_as::<_, CollectionRow>(
+            r#"
+            SELECT
+                c.id,
+                c.name,
+                c.description,
+                c.color,
+                c.sort_order,
+                COUNT(i.id) AS item_count,
+                c.created_at,
+                c.updated_at
+            FROM collections c
+            LEFT JOIN collection_items i ON i.collection_id = c.id
+            WHERE c.id = ?
+            GROUP BY c.id, c.name, c.description, c.color, c.sort_order, c.created_at, c.updated_at
+            LIMIT 1
+            "#,
+        )
+        .bind(collection_id.trim())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(existing) = existing else {
+            return Err(sqlx::Error::RowNotFound);
+        };
+
+        let next_name = patch
+            .name
+            .as_deref()
+            .map(normalize_collection_name)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(existing.name.clone());
+        let next_description = patch
+            .description
+            .as_deref()
+            .map(normalize_collection_description)
+            .unwrap_or(existing.description.clone());
+        let next_color = patch
+            .color
+            .as_deref()
+            .map(normalize_collection_color)
+            .unwrap_or(existing.color.clone());
+        let now = current_unix_ts();
+
+        sqlx::query(
+            r#"
+            UPDATE collections
+            SET name = ?, description = ?, color = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&next_name)
+        .bind(&next_description)
+        .bind(&next_color)
+        .bind(now)
+        .bind(collection_id.trim())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(CollectionView {
+            id: existing.id,
+            name: next_name,
+            description: next_description,
+            color: next_color,
+            sort_order: existing.sort_order,
+            item_count: existing.item_count.max(0) as usize,
+            created_at: format_unix_ts(existing.created_at),
+            updated_at: format_unix_ts(now),
+        })
+    }
+
+    pub async fn delete_collection(&self, collection_id: &str) -> Result<(), sqlx::Error> {
+        let collection_id = collection_id.trim();
+        if collection_id.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM collections WHERE id = ?")
+            .bind(collection_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn list_collection_items(
+        &self,
+        collection_id: &str,
+    ) -> Result<Vec<CollectionItemView>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, CollectionItemRow>(
+            r#"
+            SELECT
+                id,
+                collection_id,
+                item_type,
+                document_id,
+                chunk_id,
+                qa_session_id,
+                qa_message_id,
+                title,
+                path,
+                title_path,
+                snippet,
+                note,
+                source_meta_json,
+                sort_order,
+                created_at,
+                updated_at
+            FROM collection_items
+            WHERE collection_id = ?
+            ORDER BY sort_order ASC, updated_at DESC, title ASC
+            "#,
+        )
+        .bind(collection_id.trim())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(collection_item_row_to_view).collect())
+    }
+
+    pub async fn add_collection_item(
+        &self,
+        input: &CollectionItemInput,
+    ) -> Result<CollectionItemView, sqlx::Error> {
+        let collection_id = input.collection_id.trim();
+        if collection_id.is_empty() {
+            return Err(sqlx::Error::RowNotFound);
+        }
+
+        let item_type = normalize_collection_item_type(&input.item_type);
+        let document_id = input.document_id.clone().unwrap_or_default();
+        let chunk_id = input.chunk_id.clone().unwrap_or_default();
+        let qa_session_id = input.qa_session_id.clone().unwrap_or_default();
+        let qa_message_id = input.qa_message_id.clone().unwrap_or_default();
+        let title = input.title.trim().to_string();
+        let path = input.path.clone().unwrap_or_default();
+        let title_path = input.title_path.clone().unwrap_or_default();
+        let snippet = input.snippet.clone().unwrap_or_default();
+        let note = input.note.clone().unwrap_or_default();
+        let source_meta_json = input
+            .source_meta_json
+            .clone()
+            .unwrap_or_else(|| "{}".to_string());
+        let now = current_unix_ts();
+
+        let existing_id = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM collection_items
+            WHERE collection_id = ?
+              AND item_type = ?
+              AND document_id = ?
+              AND chunk_id = ?
+              AND qa_session_id = ?
+              AND qa_message_id = ?
+              AND path = ?
+              AND title_path = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(collection_id)
+        .bind(&item_type)
+        .bind(&document_id)
+        .bind(&chunk_id)
+        .bind(&qa_session_id)
+        .bind(&qa_message_id)
+        .bind(&path)
+        .bind(&title_path)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(existing_id) = existing_id {
+            sqlx::query(
+                r#"
+                UPDATE collection_items
+                SET title = ?, snippet = ?, note = ?, source_meta_json = ?, updated_at = ?
+                WHERE id = ?
+                "#,
+            )
+            .bind(&title)
+            .bind(&snippet)
+            .bind(&note)
+            .bind(&source_meta_json)
+            .bind(now)
+            .bind(&existing_id)
+            .execute(&self.pool)
+            .await?;
+
+            let row = sqlx::query_as::<_, CollectionItemRow>(
+                r#"
+                SELECT id, collection_id, item_type, document_id, chunk_id, qa_session_id, qa_message_id, title, path, title_path, snippet, note, source_meta_json, sort_order, created_at, updated_at
+                FROM collection_items
+                WHERE id = ?
+                "#,
+            )
+            .bind(&existing_id)
+            .fetch_one(&self.pool)
+            .await?;
+            return Ok(collection_item_row_to_view(row));
+        }
+
+        let sort_order = sqlx::query_scalar::<_, i64>(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM collection_items WHERE collection_id = ?",
+        )
+        .bind(collection_id)
+        .fetch_one(&self.pool)
+        .await?;
+        let id = Uuid::new_v4().to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO collection_items
+                (id, collection_id, item_type, document_id, chunk_id, qa_session_id, qa_message_id, title, path, title_path, snippet, note, source_meta_json, sort_order, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(collection_id)
+        .bind(&item_type)
+        .bind(&document_id)
+        .bind(&chunk_id)
+        .bind(&qa_session_id)
+        .bind(&qa_message_id)
+        .bind(&title)
+        .bind(&path)
+        .bind(&title_path)
+        .bind(&snippet)
+        .bind(&note)
+        .bind(&source_meta_json)
+        .bind(sort_order)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        let row = sqlx::query_as::<_, CollectionItemRow>(
+            r#"
+            SELECT id, collection_id, item_type, document_id, chunk_id, qa_session_id, qa_message_id, title, path, title_path, snippet, note, source_meta_json, sort_order, created_at, updated_at
+            FROM collection_items
+            WHERE id = ?
+            "#,
+        )
+        .bind(&id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(collection_item_row_to_view(row))
+    }
+
+    pub async fn update_collection_item_note(
+        &self,
+        item_id: &str,
+        note: &str,
+    ) -> Result<CollectionItemView, sqlx::Error> {
+        let item_id = item_id.trim();
+        if item_id.is_empty() {
+            return Err(sqlx::Error::RowNotFound);
+        }
+
+        let now = current_unix_ts();
+        sqlx::query(
+            r#"
+            UPDATE collection_items
+            SET note = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(note.trim())
+        .bind(now)
+        .bind(item_id)
+        .execute(&self.pool)
+        .await?;
+
+        let row = sqlx::query_as::<_, CollectionItemRow>(
+            r#"
+            SELECT id, collection_id, item_type, document_id, chunk_id, qa_session_id, qa_message_id, title, path, title_path, snippet, note, source_meta_json, sort_order, created_at, updated_at
+            FROM collection_items
+            WHERE id = ?
+            "#,
+        )
+        .bind(item_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(collection_item_row_to_view(row))
+    }
+
+    pub async fn remove_collection_item(&self, item_id: &str) -> Result<(), sqlx::Error> {
+        let item_id = item_id.trim();
+        if item_id.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query("DELETE FROM collection_items WHERE id = ?")
+            .bind(item_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn export_collection_markdown(
+        &self,
+        collection_id: &str,
+    ) -> Result<String, sqlx::Error> {
+        let collection = sqlx::query_as::<_, CollectionRow>(
+            r#"
+            SELECT
+                c.id,
+                c.name,
+                c.description,
+                c.color,
+                c.sort_order,
+                COUNT(i.id) AS item_count,
+                c.created_at,
+                c.updated_at
+            FROM collections c
+            LEFT JOIN collection_items i ON i.collection_id = c.id
+            WHERE c.id = ?
+            GROUP BY c.id, c.name, c.description, c.color, c.sort_order, c.created_at, c.updated_at
+            LIMIT 1
+            "#,
+        )
+        .bind(collection_id.trim())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(collection) = collection else {
+            return Err(sqlx::Error::RowNotFound);
+        };
+
+        let items = self.list_collection_items(collection_id).await?;
+        let mut markdown = String::new();
+        markdown.push_str(&format!("# {}\n\n", collection.name));
+        if !collection.description.trim().is_empty() {
+            markdown.push_str(&format!("> {}\n\n", collection.description.trim()));
+        }
+
+        for (index, item) in items.iter().enumerate() {
+            markdown.push_str(&format!("## {}. {}\n\n", index + 1, item.title.trim()));
+            markdown.push_str(&format!("- 类型：{}\n", item.item_type));
+            if !item.path.trim().is_empty() {
+                markdown.push_str(&format!("- 路径：{}\n", item.path.trim()));
+            }
+            if !item.title_path.trim().is_empty() {
+                markdown.push_str(&format!("- 定位：{}\n", item.title_path.trim()));
+            }
+            if !item.snippet.trim().is_empty() {
+                markdown.push_str("\n摘录：\n\n");
+                markdown.push_str(&format!("> {}\n", item.snippet.trim()));
+            }
+            if !item.note.trim().is_empty() {
+                markdown.push_str("\n备注：\n\n");
+                markdown.push_str(&item.note.trim());
+                markdown.push('\n');
+            }
+            markdown.push('\n');
+        }
+
+        Ok(markdown)
     }
 
     pub async fn default_embedding_model_available(&self) -> Result<bool, sqlx::Error> {
@@ -3224,6 +4054,36 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             )
             "#,
             r#"
+            CREATE TABLE IF NOT EXISTS recent_views (
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                path TEXT NOT NULL DEFAULT '',
+                viewed_at INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (target_type, target_id)
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS item_tags (
+                id TEXT PRIMARY KEY,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                tag_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                UNIQUE(target_type, target_id, tag_id)
+            )
+            "#,
+            r#"
             CREATE TABLE IF NOT EXISTS favorites (
                 target TEXT PRIMARY KEY,
                 favorite_type TEXT NOT NULL,
@@ -3231,6 +4091,38 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 path TEXT NOT NULL,
                 created_at INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS collections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                color TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS collection_items (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                document_id TEXT NOT NULL DEFAULT '',
+                chunk_id TEXT NOT NULL DEFAULT '',
+                qa_session_id TEXT NOT NULL DEFAULT '',
+                qa_message_id TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL,
+                path TEXT NOT NULL DEFAULT '',
+                title_path TEXT NOT NULL DEFAULT '',
+                snippet TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                source_meta_json TEXT NOT NULL DEFAULT '{}',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
             )
             "#,
             r#"
@@ -3354,6 +4246,14 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         if count == 0 {
             self.save_network_proxy_settings(&default_network_proxy_settings())
                 .await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_collections_seed(&self) -> Result<(), sqlx::Error> {
+        let count = scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM collections").await?;
+        if count == 0 {
+            self.create_collection("默认主题集合", "").await?;
         }
         Ok(())
     }
@@ -4368,6 +5268,120 @@ fn favorite_result_target(
         paragraph.map(|value| value.to_string()).unwrap_or_default(),
         page.map(|value| value.to_string()).unwrap_or_default()
     )
+}
+
+fn normalize_collection_name(name: &str) -> String {
+    let normalized = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return "新主题集合".to_string();
+    }
+
+    normalized.chars().take(40).collect()
+}
+
+fn normalize_collection_description(description: &str) -> String {
+    description.trim().chars().take(200).collect()
+}
+
+fn normalize_collection_color(color: &str) -> String {
+    color.trim().chars().take(32).collect()
+}
+
+fn normalize_collection_item_type(item_type: &str) -> String {
+    match item_type.trim().to_lowercase().as_str() {
+        "document" => "document".to_string(),
+        "chunk" => "chunk".to_string(),
+        "search" => "search".to_string(),
+        "qa_source" => "qa_source".to_string(),
+        other if other.is_empty() => "chunk".to_string(),
+        _ => "chunk".to_string(),
+    }
+}
+
+fn normalize_recent_view_target_type(target_type: &str) -> String {
+    match target_type.trim().to_lowercase().as_str() {
+        "document" => "document".to_string(),
+        "chunk" => "chunk".to_string(),
+        "collection" => "collection".to_string(),
+        "qa_session" => "qa_session".to_string(),
+        _ => String::new(),
+    }
+}
+
+fn normalize_tag_target_type(target_type: &str) -> String {
+    match target_type.trim().to_lowercase().as_str() {
+        "document" => "document".to_string(),
+        "chunk" => "chunk".to_string(),
+        "collection" => "collection".to_string(),
+        "collection_item" => "collection_item".to_string(),
+        _ => String::new(),
+    }
+}
+
+fn normalize_tag_name(name: &str) -> String {
+    name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(40).collect()
+}
+
+fn normalize_tag_color(color: &str) -> String {
+    color.trim().chars().take(32).collect()
+}
+
+fn collection_item_target_signature(item: &CollectionItemInput) -> String {
+    [
+        normalize_collection_item_type(&item.item_type),
+        item.document_id.clone().unwrap_or_default(),
+        item.chunk_id.clone().unwrap_or_default(),
+        item.qa_session_id.clone().unwrap_or_default(),
+        item.qa_message_id.clone().unwrap_or_default(),
+        item.path.clone().unwrap_or_default(),
+        item.title_path.clone().unwrap_or_default(),
+    ]
+    .join("|")
+}
+
+fn collection_row_to_view(row: CollectionRow) -> CollectionView {
+    CollectionView {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        color: row.color,
+        sort_order: row.sort_order,
+        item_count: row.item_count.max(0) as usize,
+        created_at: format_unix_ts(row.created_at),
+        updated_at: format_unix_ts(row.updated_at),
+    }
+}
+
+fn tag_row_to_view(row: TagRow) -> TagView {
+    TagView {
+        id: row.id,
+        name: row.name,
+        color: row.color,
+        target_count: row.target_count.max(0) as usize,
+        created_at: format_unix_ts(row.created_at),
+        updated_at: format_unix_ts(row.updated_at),
+    }
+}
+
+fn collection_item_row_to_view(row: CollectionItemRow) -> CollectionItemView {
+    CollectionItemView {
+        id: row.id,
+        collection_id: row.collection_id,
+        item_type: row.item_type,
+        document_id: row.document_id,
+        chunk_id: row.chunk_id,
+        qa_session_id: row.qa_session_id,
+        qa_message_id: row.qa_message_id,
+        title: row.title,
+        path: row.path,
+        title_path: row.title_path,
+        snippet: row.snippet,
+        note: row.note,
+        source_meta_json: row.source_meta_json,
+        sort_order: row.sort_order,
+        created_at: format_unix_ts(row.created_at),
+        updated_at: format_unix_ts(row.updated_at),
+    }
 }
 
 fn database_path() -> PathBuf {

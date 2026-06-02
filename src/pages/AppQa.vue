@@ -15,6 +15,7 @@ import {
   ArrowUp,
   ClipboardCopy,
   FileDown,
+  FolderPlus,
   Pencil,
   SlidersHorizontal,
   Trash2,
@@ -22,6 +23,7 @@ import {
   ChevronRight,
 } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPicker.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
@@ -30,12 +32,15 @@ import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   PreviewBlockView,
+  CollectionView,
+  CollectionItemInput,
   QaAnswerProgressView,
   QaAskStartView,
   QaMessageView,
   QaModelProfileView,
   QaSessionView,
   QaSettingsView,
+  QaSourceView,
 } from "../types/docmind";
 
 const { t } = useI18n();
@@ -59,6 +64,10 @@ const qaInfoMessage = ref("");
 const qaActiveJobId = ref("");
 const qaModelProfiles = ref<QaModelProfileView[]>([]);
 const qaProfileChoice = ref("__current__");
+const collections = ref<CollectionView[]>([]);
+const collectionPickerVisible = ref(false);
+const collectionPickerTarget = ref<QaSourceView | null>(null);
+const collectionPickerLoading = ref(false);
 const expandedMessages = ref<Record<string, boolean>>({});
 const editingSessionId = ref("");
 const editingSessionTitle = ref("");
@@ -351,6 +360,7 @@ const setCurrentSession = async (
     qaAnswer.value?.sources.find((item) => item.source_id === uiState.selectedSourceId)?.source_id ?? "";
   qaSessionTitle.value = qaSessions.value.find((item) => item.id === sessionId)?.title ?? qaSessionTitle.value;
   expandedMessages.value = uiState.expandedMessages ?? {};
+  await docmindApi.recordRecentView("qa_session", sessionId, qaSessionTitle.value || t("page.appQa.defaultSessionTitle"), "");
   chatShouldFollowLatest.value = true;
   void scrollChatToBottom(true);
 };
@@ -472,6 +482,7 @@ const ensureSession = async (title: string) => {
   qaSessionId.value = session.id;
   qaSessionTitle.value = session.title;
   await syncRouteSession(session.id);
+  await docmindApi.recordRecentView("qa_session", session.id, session.title, "");
   return session.id;
 };
 
@@ -739,6 +750,73 @@ const copySelectedQaCitation = async () => {
   await navigator.clipboard.writeText(selectedSourceCitation.value);
 };
 
+const loadCollections = async () => {
+  collectionPickerLoading.value = true;
+  try {
+    collections.value = await docmindApi.listCollections();
+  } catch (error) {
+    console.error("[DocMind] listCollections failed", error);
+  } finally {
+    collectionPickerLoading.value = false;
+  }
+};
+
+const openSourceCollectionPicker = async (source: NonNullable<typeof selectedSource.value>) => {
+  collectionPickerTarget.value = source;
+  collectionPickerVisible.value = true;
+  if (collections.value.length === 0) {
+    await loadCollections();
+  }
+};
+
+const addSelectedSourceToCollection = async (collectionId: string) => {
+  if (!selectedSource.value || !qaAnswer.value) {
+    return;
+  }
+
+  const source = selectedSource.value;
+  const collection = collections.value.find((entry) => entry.id === collectionId);
+  const input: CollectionItemInput = {
+    collection_id: collectionId,
+    item_type: "qa_source",
+    qa_session_id: qaAnswer.value.session_id,
+    qa_message_id: qaAnswer.value.id,
+    chunk_id: source.chunk_id,
+    title: source.file_name,
+    path: source.path,
+    title_path: source.title_path || source.heading,
+    snippet: source.snippet,
+    note: "",
+    source_meta_json: JSON.stringify({
+      source_id: source.source_id,
+      score: source.score,
+      rank_reason: source.rank_reason,
+      ext: source.ext,
+      paragraph: source.paragraph ?? null,
+      page: source.page ?? null,
+    }),
+  };
+
+  await docmindApi.addCollectionItem(input);
+  qaInfoMessage.value = t("page.collections.itemAddedToCollection", { name: collection?.name ?? t("common.none") });
+  collectionPickerVisible.value = false;
+  await loadCollections();
+};
+
+const createCollectionAndAddSource = async (name: string) => {
+  const created = await docmindApi.createCollection(name, "");
+  collections.value = [created, ...collections.value.filter((item) => item.id !== created.id)];
+  await addSelectedSourceToCollection(created.id);
+};
+
+const handleCollectionPickerSelect = async (collectionId: string) => {
+  await addSelectedSourceToCollection(collectionId);
+};
+
+const handleCollectionPickerCreate = async (name: string) => {
+  await createCollectionAndAddSource(name);
+};
+
 const buildSessionMarkdown = (title: string, messages: QaMessageView[]) => {
   const lines = [`# ${title}`, ""];
 
@@ -830,6 +908,7 @@ const viewQaChunks = async () => {
 onMounted(async () => {
   await installQaProgressListener();
   await loadInitialData();
+  await loadCollections();
 });
 
 onBeforeUnmount(() => {
@@ -1268,6 +1347,10 @@ watch(routeSessionId, async (next, previous) => {
               <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaPath">
                 {{ t("page.appSearch.detail.copyPath") }}
               </button>
+              <button class="inline-flex items-center justify-center gap-1.5 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="openSourceCollectionPicker(selectedSource)">
+                <FolderPlus :size="14" />
+                {{ t("page.collections.addToCollection") }}
+              </button>
               <button class="col-span-2 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaCitation">
                 {{ t("page.appSearch.detail.copyCitation") }}
               </button>
@@ -1285,6 +1368,16 @@ watch(routeSessionId, async (next, previous) => {
       :x="sessionMenuPosition.x"
       :y="sessionMenuPosition.y"
       @close="sessionMenuVisible = false"
+    />
+    <DocMindCollectionPicker
+      :visible="collectionPickerVisible"
+      :collections="collections"
+      :loading="collectionPickerLoading"
+      :title="collectionPickerTarget ? collectionPickerTarget.file_name : t('page.collections.pickerTitle')"
+      :subtitle="collectionPickerTarget ? collectionPickerTarget.path : t('page.collections.pickerSubtitle')"
+      @close="collectionPickerVisible = false"
+      @select="handleCollectionPickerSelect"
+      @create="handleCollectionPickerCreate"
     />
   </section>
 </template>

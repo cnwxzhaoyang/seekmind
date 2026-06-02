@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ChunkView,
+  CollectionItemInput,
+  CollectionItemPatchInput,
+  CollectionItemView,
+  CollectionPatchInput,
+  CollectionView,
   FavoriteView,
   QaAnswerView,
   QaAskStartView,
@@ -21,9 +26,12 @@ import type {
   EmbeddingModelView,
   ParserRuntimeView,
   RecentDocumentView,
+  RecentViewEntry,
   SearchHistoryView,
   SearchDebugView,
   SearchResultView,
+  TagPatchInput,
+  TagView,
   SemanticRebuildStartView,
   SemanticDebugView,
   SemanticModelStatusView,
@@ -68,10 +76,42 @@ export const docmindApi = {
     invoke<RecentDocumentView[]>("list_recent_documents", { limit }),
   removeRecentDocument: (path: string) =>
     invoke<void>("remove_recent_document", { path }),
+  listRecentViews: (limit = 12) =>
+    invoke<RecentViewEntry[]>("list_recent_views", { limit }),
+  recordRecentView: (targetType: string, targetId: string, title: string, path = "") =>
+    invoke<void>("record_recent_view", { targetType, targetId, title, path }),
+  listTags: () => invoke<TagView[]>("list_tags"),
+  listTargetTags: (targetType: string, targetId: string) =>
+    invoke<TagView[]>("list_target_tags", { targetType, targetId }),
+  createTag: (name: string, color = "") => invoke<TagView>("create_tag", { name, color }),
+  updateTag: (tagId: string, patch: TagPatchInput) =>
+    invoke<TagView>("update_tag", { tagId, patch }),
+  deleteTag: (tagId: string) => invoke<void>("delete_tag", { tagId }),
+  addTagToTarget: (targetType: string, targetId: string, name: string, color = "") =>
+    invoke<TagView>("add_tag_to_target", { targetType, targetId, name, color }),
+  removeTagFromTarget: (targetType: string, targetId: string, tagId: string) =>
+    invoke<void>("remove_tag_from_target", { targetType, targetId, tagId }),
   listFavorites: (limit = 12) =>
     invoke<FavoriteView[]>("list_favorites", { limit }),
   removeFavorite: (target: string) =>
     invoke<void>("remove_favorite", { target }),
+  listCollections: () => invoke<CollectionView[]>("list_collections"),
+  createCollection: (name: string, description = "") =>
+    invoke<CollectionView>("create_collection", { name, description }),
+  updateCollection: (collectionId: string, patch: CollectionPatchInput) =>
+    invoke<CollectionView>("update_collection", { collectionId, patch }),
+  deleteCollection: (collectionId: string) =>
+    invoke<void>("delete_collection", { collectionId }),
+  listCollectionItems: (collectionId: string) =>
+    invoke<CollectionItemView[]>("list_collection_items", { collectionId }),
+  addCollectionItem: (input: CollectionItemInput) =>
+    invoke<CollectionItemView>("add_collection_item", { input }),
+  updateCollectionItemNote: (itemId: string, patch: CollectionItemPatchInput) =>
+    invoke<CollectionItemView>("update_collection_item_note", { itemId, patch }),
+  removeCollectionItem: (itemId: string) =>
+    invoke<void>("remove_collection_item", { itemId }),
+  exportCollectionMarkdown: (collectionId: string, path: string) =>
+    invoke<string>("export_collection_markdown", { collectionId, path }),
   getQaSettings: () => invoke<QaSettingsView>("get_qa_settings"),
   saveQaSettings: (settings: QaSettingsView) =>
     invoke<QaSettingsView>("save_qa_settings", { settings }),

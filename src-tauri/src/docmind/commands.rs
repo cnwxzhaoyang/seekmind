@@ -1083,6 +1083,31 @@ pub async fn remove_recent_document(
 }
 
 #[tauri::command]
+pub async fn list_recent_views(
+    limit: usize,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<super::models::RecentViewEntry>, String> {
+    state
+        .list_recent_views(limit as i64)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn record_recent_view(
+    target_type: String,
+    target_id: String,
+    title: String,
+    path: String,
+    state: tauri::State<'_, Database>,
+) -> Result<(), String> {
+    state
+        .record_recent_view(&target_type, &target_id, &title, &path)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn list_favorites(
     limit: usize,
     state: tauri::State<'_, Database>,

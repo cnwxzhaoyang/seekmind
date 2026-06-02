@@ -7,8 +7,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, Link2, MessageSquareText, Search, SquareArrowOutUpRight } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPicker.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
@@ -23,6 +24,8 @@ const { t } = useI18n();
 import type {
   ChunkView,
   ParserRuntimeView,
+  CollectionView,
+  CollectionItemInput,
   QaAnswerView,
   QaAnswerProgressView,
   QaAskStartView,
@@ -71,6 +74,10 @@ let selectedContextRequestId = 0;
 let unlistenSearchDebugReport: null | (() => void) = null;
 let unlistenQaProgress: null | (() => void) = null;
 const { favorites, loadQuickAccessData } = useQuickAccessData();
+const collections = ref<CollectionView[]>([]);
+const collectionPickerVisible = ref(false);
+const collectionPickerTarget = ref<SearchResultView | null>(null);
+const collectionPickerLoading = ref(false);
 
 interface SearchResultGroup {
   path: string;
@@ -877,6 +884,85 @@ const toggleFavoriteResult = async (item: SearchResultView) => {
   await loadQuickAccessData();
 };
 
+const loadCollections = async () => {
+  collectionPickerLoading.value = true;
+  try {
+    collections.value = await docmindApi.listCollections();
+  } catch (error) {
+    console.error("[DocMind] listCollections failed", error);
+  } finally {
+    collectionPickerLoading.value = false;
+  }
+};
+
+const openResultCollectionPicker = async (item: SearchResultView) => {
+  collectionPickerTarget.value = item;
+  actionErrorMessage.value = "";
+  actionMessage.value = t("page.collections.pickerOpening");
+  collectionPickerVisible.value = true;
+  if (collections.value.length === 0) {
+    await loadCollections();
+  }
+};
+
+const addSelectedResultToCollection = async (collectionId: string) => {
+  if (!collectionPickerTarget.value) {
+    return;
+  }
+
+  const item = collectionPickerTarget.value;
+  const itemTitle = (item as SearchResultView & { fileName?: string }).fileName
+    || item.file_name
+    || item.path
+    || item.heading
+    || t("common.none");
+  const collection = collections.value.find((entry) => entry.id === collectionId);
+  const input: CollectionItemInput = {
+    collection_id: collectionId,
+    item_type: "chunk",
+    document_id: "",
+    chunk_id: item.id,
+    title: itemTitle,
+    path: item.path,
+    title_path: item.title_path || item.heading,
+    snippet: item.snippet,
+    note: "",
+    source_meta_json: JSON.stringify({
+      file_name: item.fileName,
+      ext: item.ext,
+      paragraph: item.paragraph ?? null,
+      page: item.page ?? null,
+      score: item.score,
+      rank_reason: item.rank_reason.summary,
+    }),
+  };
+
+  await docmindApi.addCollectionItem(input);
+  actionMessage.value = t("page.collections.itemAddedToCollection", { name: collection?.name ?? t("common.none") });
+  collectionPickerVisible.value = false;
+  await loadCollections();
+};
+
+const createCollectionAndAddResult = async (name: string) => {
+  const created = await docmindApi.createCollection(name, "");
+  collections.value = [created, ...collections.value.filter((item) => item.id !== created.id)];
+  await addSelectedResultToCollection(created.id);
+};
+
+const handleCollectionPickerSelect = async (collectionId: string) => {
+  if (!collectionPickerTarget.value) {
+    return;
+  }
+  await addSelectedResultToCollection(collectionId);
+};
+
+const handleCollectionPickerCreate = async (name: string) => {
+  if (!collectionPickerTarget.value) {
+    return;
+  }
+  await createCollectionAndAddResult(name);
+};
+
 const isResultFavorited = (
   path: string,
   heading: string,
@@ -896,6 +982,17 @@ const resultContextMenuItems = computed<ContextMenuItem[]>(() => {
   }
 
   return [
+    {
+      key: "addCollection",
+      label: t("page.collections.addToCollection"),
+      icon: FolderPlus,
+      handler: () => {
+        if (selected.value) {
+          void openResultCollectionPicker(selected.value);
+        }
+      },
+    },
+    { key: "divider-collection", label: "", divider: true },
     {
       key: "openFile",
       label: t("page.appSearch.detail.openFile"),
@@ -948,7 +1045,7 @@ const handleResultContextMenu = (event: MouseEvent) => {
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
   await installSearchDebugReportListener();
-  await Promise.all([loadParserRuntime(), loadQuickAccessData()]);
+  await Promise.all([loadParserRuntime(), loadQuickAccessData(), loadCollections()]);
   query.value = routeSearchQuery.value;
   if (query.value.trim()) {
     await runSearch();
@@ -1342,6 +1439,41 @@ watch(showDebugPanel, async (visible) => {
                 <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
               </div>
 
+              <div class="mb-4 grid grid-cols-2 gap-2">
+                <button
+                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+                  type="button"
+                  @click="openSelectedFile"
+                >
+                  <SquareArrowOutUpRight :size="16" />
+                  {{ t("page.appSearch.detail.openFile") }}
+                </button>
+                <button
+                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+                  type="button"
+                  @click="quickLookSelectedFile"
+                >
+                  <Eye :size="16" />
+                  {{ t("page.appSearch.detail.quickLook") }}
+                </button>
+                <button
+                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+                  type="button"
+                  @click="copySelectedPath"
+                >
+                  <ClipboardCopy :size="16" />
+                  {{ t("page.appSearch.detail.copyPath") }}
+                </button>
+                <button
+                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+                  type="button"
+                  @click="selected && openResultCollectionPicker(selected)"
+                >
+                  <FolderPlus :size="16" />
+                  {{ t("page.collections.addToCollection") }}
+                </button>
+              </div>
+
               <div class="mb-4 rounded-lg border border-default bg-surface p-4">
                 <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.detail.hitParagraph") }}</div>
                 <DocMindMarkdownRenderer
@@ -1502,6 +1634,16 @@ watch(showDebugPanel, async (visible) => {
         :x="resultMenuPosition.x"
         :y="resultMenuPosition.y"
         @close="resultMenuVisible = false"
+      />
+      <DocMindCollectionPicker
+        :visible="collectionPickerVisible"
+        :collections="collections"
+        :loading="collectionPickerLoading"
+        :title="collectionPickerTarget ? ((collectionPickerTarget as SearchResultView & { fileName?: string }).fileName || collectionPickerTarget.file_name || collectionPickerTarget.path || t('page.collections.pickerTitle')) : t('page.collections.pickerTitle')"
+        :subtitle="collectionPickerTarget ? collectionPickerTarget.path : t('page.collections.pickerSubtitle')"
+        @close="collectionPickerVisible = false"
+        @select="handleCollectionPickerSelect"
+        @create="handleCollectionPickerCreate"
       />
     </main>
   </div>

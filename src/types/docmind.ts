@@ -255,6 +255,28 @@ export interface RecentDocumentView {
   open_count: number;
 }
 
+export interface RecentViewEntry {
+  target_type: string;
+  target_id: string;
+  title: string;
+  path: string;
+  viewed_at: string;
+}
+
+export interface TagView {
+  id: string;
+  name: string;
+  color: string;
+  target_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TagPatchInput {
+  name?: string;
+  color?: string;
+}
+
 export interface FavoriteView {
   favorite_type: string;
   target: string;
@@ -262,6 +284,61 @@ export interface FavoriteView {
   path: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CollectionView {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  sort_order: number;
+  item_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CollectionItemView {
+  id: string;
+  collection_id: string;
+  item_type: string;
+  document_id: string;
+  chunk_id: string;
+  qa_session_id: string;
+  qa_message_id: string;
+  title: string;
+  path: string;
+  title_path: string;
+  snippet: string;
+  note: string;
+  source_meta_json: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CollectionPatchInput {
+  name?: string | null;
+  description?: string | null;
+  color?: string | null;
+}
+
+export interface CollectionItemInput {
+  collection_id: string;
+  item_type: string;
+  document_id?: string | null;
+  chunk_id?: string | null;
+  qa_session_id?: string | null;
+  qa_message_id?: string | null;
+  title: string;
+  path?: string | null;
+  title_path?: string | null;
+  snippet?: string | null;
+  note?: string | null;
+  source_meta_json?: string | null;
+}
+
+export interface CollectionItemPatchInput {
+  note?: string | null;
 }
 
 export interface QaSettingsView {

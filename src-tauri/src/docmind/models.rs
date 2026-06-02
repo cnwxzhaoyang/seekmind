@@ -287,11 +287,62 @@ pub struct RecentDocumentView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct RecentViewEntry {
+    pub target_type: String,
+    pub target_id: String,
+    pub title: String,
+    pub path: String,
+    pub viewed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TagView {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub target_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct FavoriteView {
     pub favorite_type: String,
     pub target: String,
     pub title: String,
     pub path: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CollectionView {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    pub sort_order: i64,
+    pub item_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CollectionItemView {
+    pub id: String,
+    pub collection_id: String,
+    pub item_type: String,
+    pub document_id: String,
+    pub chunk_id: String,
+    pub qa_session_id: String,
+    pub qa_message_id: String,
+    pub title: String,
+    pub path: String,
+    pub title_path: String,
+    pub snippet: String,
+    pub note: String,
+    pub source_meta_json: String,
+    pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
 }

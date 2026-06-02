@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
+import DocMindConfirmDialog from "../components/docmind/DocMindConfirmDialog.vue";
 import DocMindQaPanel from "../components/docmind/DocMindQaPanel.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
@@ -57,6 +58,7 @@ const networkInfoMessage = ref("");
 const loading = ref(false);
 const saving = ref(false);
 const clearing = ref(false);
+const showClearConfirm = ref(false);
 const errorMessage = ref("");
 const infoMessage = ref("");
 const activeSection = ref("settings-rules");
@@ -226,10 +228,11 @@ const resetToDefaults = () => {
 };
 
 const clearAllIndexes = async () => {
-  if (!window.confirm(t("page.settings.confirmClear"))) {
-    return;
-  }
+  showClearConfirm.value = true;
+};
 
+const handleClearConfirm = async () => {
+  showClearConfirm.value = false;
   clearing.value = true;
   errorMessage.value = "";
   infoMessage.value = "";
@@ -243,6 +246,10 @@ const clearAllIndexes = async () => {
   } finally {
     clearing.value = false;
   }
+};
+
+const handleClearCancel = () => {
+  showClearConfirm.value = false;
 };
 
 const scrollToSection = (id: string) => {
@@ -886,5 +893,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </main>
+
+    <DocMindConfirmDialog
+      :visible="showClearConfirm"
+      :title="t('page.settings.btn.clear')"
+      :message="t('page.settings.confirmClear')"
+      :confirm-text="t('page.settings.btn.clear')"
+      :cancel-text="t('common.cancel')"
+      :danger="true"
+      @confirm="handleClearConfirm"
+      @cancel="handleClearCancel"
+    />
   </div>
 </template>
