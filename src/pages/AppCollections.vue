@@ -14,6 +14,7 @@ import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.v
 import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { useInfoMessage } from "../composables/useInfoMessage";
 import type { CollectionItemView, CollectionView, RecentViewEntry, TagView } from "../types/docmind";
 
 const { t } = useI18n();
@@ -34,7 +35,7 @@ const collectionSaving = ref(false);
 const collectionsLoading = ref(false);
 const itemsLoading = ref(false);
 const errorMessage = ref("");
-const infoMessage = ref("");
+const { infoMessage } = useInfoMessage();
 const collectionMenuVisible = ref(false);
 const collectionMenuPosition = ref({ x: 0, y: 0 });
 const collectionMenuTarget = ref<CollectionView | null>(null);

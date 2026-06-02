@@ -13,6 +13,7 @@ import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { useInfoMessage } from "../composables/useInfoMessage";
 import { formatDirectoryCitation } from "../utils/citation";
 import type {
   DocumentRefreshProgressView,
@@ -33,7 +34,7 @@ const importing = ref(false);
 const dragActive = ref(false);
 const busyPath = ref<string | null>(null);
 const errorMessage = ref("");
-const infoMessage = ref("");
+const { infoMessage } = useInfoMessage();
 const refreshJobResolvers = new Map<string, (payload: IndexRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, IndexRefreshProgressView>();
 const documentRefreshResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();

@@ -8,6 +8,7 @@ import DocMindConfirmDialog from "../components/docmind/DocMindConfirmDialog.vue
 import DocMindQaPanel from "../components/docmind/DocMindQaPanel.vue";
 import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { useInfoMessage } from "../composables/useInfoMessage";
 import { setLocale as setI18nLocale } from "../i18n";
 import type { IndexSettingsView, NetworkProxySettingsView } from "../types/docmind";
 
@@ -60,7 +61,7 @@ const saving = ref(false);
 const clearing = ref(false);
 const showClearConfirm = ref(false);
 const errorMessage = ref("");
-const infoMessage = ref("");
+const { infoMessage } = useInfoMessage();
 const activeSection = ref("settings-rules");
 const mainScrollEl = ref<HTMLElement | null>(null);
 let sectionObserver: IntersectionObserver | null = null;

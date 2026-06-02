@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { Check, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import { docmindApi, formatDocmindError } from "../../services/docmindApi";
+import { useInfoMessage } from "../../composables/useInfoMessage";
 import type { QaConnectionTestView, QaModelProfileUpsertView, QaModelProfileView, QaSettingsView } from "../../types/docmind";
 
 const { t } = useI18n();
@@ -27,7 +28,7 @@ const profilesLoading = ref(false);
 const profileSaving = ref(false);
 const profileDeleting = ref(false);
 const errorMessage = ref("");
-const infoMessage = ref("");
+const { infoMessage } = useInfoMessage();
 const profileMessage = ref("");
 const profileErrorMessage = ref("");
 const connectionResult = ref<QaConnectionTestView | null>(null);

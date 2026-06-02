@@ -5,6 +5,7 @@ import { RefreshCw, Save, Search, Sparkles } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "./DocMindBadge.vue";
 import { docmindApi, formatDocmindError } from "../../services/docmindApi";
+import { useInfoMessage } from "../../composables/useInfoMessage";
 import type {
   EmbeddingModelView,
   SemanticDebugView,
@@ -25,7 +26,7 @@ const loadingSemanticDebug = ref(false);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref("");
-const infoMessage = ref("");
+const { infoMessage } = useInfoMessage();
 let unlistenSemanticProgress: null | (() => void) = null;
 
 const loadSemanticStatus = async () => {
