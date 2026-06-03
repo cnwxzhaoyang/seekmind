@@ -3,10 +3,10 @@ use crate::docmind::models::{
     QaConnectionTestView, QaHistoryView, QaMessageView, QaModelProfileUpsertView,
     QaModelProfileView, QaRetrievalView, QaSessionView, QaSettingsView, QaSourceView,
 };
+use crate::docmind::search::normalize_query;
 use crate::docmind::sidecar::apply_network_proxy_environment;
 use crate::docmind::storage::db::Database;
 use crate::docmind::storage::types::{NetworkProxySettings, QaSettings};
-use crate::docmind::search::normalize_query;
 
 use super::cancel::{cancel as cancel_qa_job, clear as clear_qa_job, register as register_qa_job};
 use super::client::{ask_model, ask_model_stream};
@@ -134,7 +134,8 @@ fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> 
         .filter(|term| !term.is_empty())
         .collect::<std::collections::HashSet<_>>();
     let stop_terms = [
-        "什么", "怎么", "如何", "是否", "这个", "那个", "它的", "它", "以及", "问题", "答案", "来源", "文档", "内容", "可以", "已经",
+        "什么", "怎么", "如何", "是否", "这个", "那个", "它的", "它", "以及", "问题", "答案",
+        "来源", "文档", "内容", "可以", "已经",
     ]
     .into_iter()
     .collect::<std::collections::HashSet<_>>();
@@ -186,14 +187,30 @@ fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> 
 }
 
 fn is_relation_follow_up(question: &str) -> bool {
-    ["这两者", "这二者", "二者", "两者", "它们", "前面两个", "前两个"]
-        .iter()
-        .any(|marker| question.contains(marker))
+    [
+        "这两者",
+        "这二者",
+        "二者",
+        "两者",
+        "它们",
+        "前面两个",
+        "前两个",
+    ]
+    .iter()
+    .any(|marker| question.contains(marker))
 }
 
 fn normalize_reference_subject(question: &str) -> String {
     let mut subject = question.trim().to_string();
-    for prefix in ["什么是", "何为", "请问", "介绍一下", "解释一下", "请介绍", "请解释"] {
+    for prefix in [
+        "什么是",
+        "何为",
+        "请问",
+        "介绍一下",
+        "解释一下",
+        "请介绍",
+        "请解释",
+    ] {
         subject = subject.trim_start_matches(prefix).trim().to_string();
     }
 
@@ -233,11 +250,12 @@ fn infer_relation_subjects(
     recent_questions: &[String],
 ) -> Option<(String, String)> {
     infer_relation_subjects_from_questions(
-        recent_questions
-            .iter()
-            .rev()
-            .map(String::as_str)
-            .chain(messages.iter().rev().map(|message| message.question.as_str())),
+        recent_questions.iter().rev().map(String::as_str).chain(
+            messages
+                .iter()
+                .rev()
+                .map(|message| message.question.as_str()),
+        ),
     )
 }
 
@@ -349,10 +367,11 @@ pub async fn cancel_qa_question(job_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn get_qa_settings(
-    state: tauri::State<'_, Database>,
-) -> Result<QaSettingsView, String> {
-    let settings = state.get_qa_settings().await.map_err(|error| error.to_string())?;
+pub async fn get_qa_settings(state: tauri::State<'_, Database>) -> Result<QaSettingsView, String> {
+    let settings = state
+        .get_qa_settings()
+        .await
+        .map_err(|error| error.to_string())?;
     let mut view = qa_settings_to_view(&settings);
     view.updated_at = state
         .get_qa_settings_updated_at()
@@ -641,7 +660,10 @@ pub async fn ask_question(
         return Err("问题不能为空".to_string());
     }
 
-    let settings = state.get_qa_settings().await.map_err(|error| error.to_string())?;
+    let settings = state
+        .get_qa_settings()
+        .await
+        .map_err(|error| error.to_string())?;
     let proxy_settings = state
         .get_network_proxy_settings()
         .await
@@ -662,7 +684,11 @@ pub async fn ask_question(
         }
         None => None,
     };
-    let connection_enabled = settings.enabled && selected_profile.as_ref().map(|item| item.enabled).unwrap_or(true);
+    let connection_enabled = settings.enabled
+        && selected_profile
+            .as_ref()
+            .map(|item| item.enabled)
+            .unwrap_or(true);
     let active_provider = selected_profile
         .as_ref()
         .map(|item| item.provider.clone())
@@ -679,7 +705,8 @@ pub async fn ask_question(
         .as_ref()
         .map(|item| item.model.clone())
         .unwrap_or_else(|| settings.model.clone());
-    let active_proxy_url = if proxy_settings.enabled && !proxy_settings.proxy_url.trim().is_empty() {
+    let active_proxy_url = if proxy_settings.enabled && !proxy_settings.proxy_url.trim().is_empty()
+    {
         Some(proxy_settings.proxy_url.clone())
     } else {
         None

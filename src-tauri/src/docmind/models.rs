@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description DocMind 前后端交互视图模型。
+ */
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,6 +79,8 @@ pub struct SearchResultView {
     pub modified: String,
     pub score: f32,
     pub rank_reason: SearchRankReasonView,
+    #[serde(default)]
+    pub preview_blocks: Vec<PreviewBlockView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -87,7 +94,7 @@ pub struct DocumentView {
     pub chunks: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewBlockView {
     pub block_index: usize,
     pub block_type: String,
@@ -428,6 +435,8 @@ pub struct QaSourceView {
     pub snippet: String,
     pub score: f32,
     pub rank_reason: String,
+    #[serde(default)]
+    pub preview_blocks: Vec<PreviewBlockView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description 问答上下文检索与来源构建。
+ */
 use std::collections::{HashMap, HashSet};
 
 use crate::docmind::models::{QaRetrievalView, QaSourceView};
@@ -59,12 +64,19 @@ fn build_prompt_block(
     lines.join("\n")
 }
 
-fn source_term_overlap(source: &crate::docmind::models::SearchResultView, terms: &[String]) -> usize {
+fn source_term_overlap(
+    source: &crate::docmind::models::SearchResultView,
+    terms: &[String],
+) -> usize {
     if terms.is_empty() {
         return 0;
     }
 
-    let title_haystack = format!("{} {} {}", source.file_name, source.title_path, source.heading).to_lowercase();
+    let title_haystack = format!(
+        "{} {} {}",
+        source.file_name, source.title_path, source.heading
+    )
+    .to_lowercase();
     let body_haystack = format!(
         "{} {} {} {} {}",
         source.file_name, source.title_path, source.heading, source.path, source.snippet
@@ -158,8 +170,13 @@ pub async fn build_qa_context(
 
         let matched_index = chunks.iter().position(|chunk| chunk.id == hit.id);
         let (previous, current, next) = if let Some(position) = matched_index {
-            let previous = chunks.get(position.saturating_sub(1)).map(|chunk| chunk.snippet.as_str());
-            let current = chunks.get(position).map(|chunk| chunk.snippet.as_str()).unwrap_or(hit.snippet.as_str());
+            let previous = chunks
+                .get(position.saturating_sub(1))
+                .map(|chunk| chunk.snippet.as_str());
+            let current = chunks
+                .get(position)
+                .map(|chunk| chunk.snippet.as_str())
+                .unwrap_or(hit.snippet.as_str());
             let next = chunks.get(position + 1).map(|chunk| chunk.snippet.as_str());
             (previous, current, next)
         } else {
@@ -192,6 +209,7 @@ pub async fn build_qa_context(
                 snippet: hit.snippet,
                 score: hit.score,
                 rank_reason: hit.rank_reason.summary,
+                preview_blocks: hit.preview_blocks,
             },
             block,
         });
@@ -206,8 +224,5 @@ pub async fn build_qa_context(
         semantic_fallback_reason,
     };
 
-    Ok(QaContext {
-        sources,
-        retrieval,
-    })
+    Ok(QaContext { sources, retrieval })
 }

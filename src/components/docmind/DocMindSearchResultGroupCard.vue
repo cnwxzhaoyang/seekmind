@@ -1,3 +1,8 @@
+<!--
+  @author MorningSun
+  @CreatedDate 2026/06/03
+  @Description 搜索结果文档分组卡片，负责文档级命中展示和展开片段列表。
+-->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
@@ -73,7 +78,7 @@ const emitContextMenu = (event: MouseEvent) => {
 <template>
   <section
     class="cursor-pointer rounded-lg border-t border-l border-light bg-surface p-3 shadow-card transition hover:shadow-card-hover"
-    :class="isSelected ? 'ring-1 ring-accent-soft' : ''"
+    :class="isSelected ? 'bg-accent-soft' : 'hover:bg-surface-hover'"
     role="button"
     tabindex="0"
     @click="emitSelect(group.topResult.id, 'group-card', $event)"

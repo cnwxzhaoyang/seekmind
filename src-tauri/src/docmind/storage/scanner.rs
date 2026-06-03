@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
-use crate::docmind::parser::types::ParserStreamEvent;
 use crate::docmind::parser::types::ParsedBlock;
+use crate::docmind::parser::types::ParserStreamEvent;
 use crate::docmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
 
 use super::types::{
@@ -95,14 +95,30 @@ pub fn extract_document(file: &DiscoveredFile) -> Result<ExtractedDocument, Stri
 
 pub fn parse_document(
     file: &DiscoveredFile,
-) -> Result<(ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>, ParseOutcome), String> {
+) -> Result<
+    (
+        ExtractedDocument,
+        Vec<ChunkRecord>,
+        Vec<ParsedBlock>,
+        ParseOutcome,
+    ),
+    String,
+> {
     parse_document_with_progress(file, |_| {})
 }
 
 pub fn parse_document_with_progress<F>(
     file: &DiscoveredFile,
     mut on_event: F,
-) -> Result<(ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>, ParseOutcome), String>
+) -> Result<
+    (
+        ExtractedDocument,
+        Vec<ChunkRecord>,
+        Vec<ParsedBlock>,
+        ParseOutcome,
+    ),
+    String,
+>
 where
     F: FnMut(ParserStreamEvent),
 {
@@ -136,7 +152,8 @@ where
                         return Err(warning);
                     }
 
-                    let fallback_warning = warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust：");
+                    let fallback_warning =
+                        warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust：");
                     let document = extract_document_at(&file.dir_path, &file.path)?;
                     let chunks = chunk_document(&document);
                     return Ok((
@@ -380,7 +397,11 @@ fn extract_doc_text_with_textutil(path: &Path) -> Result<String, String> {
     let normalized = normalize_whitespace(&text);
     let stderr = normalize_whitespace(&String::from_utf8_lossy(&output.stderr));
     if looks_like_textutil_error_output(&stderr) {
-        return Err(format!("textutil returned an error for {}: {}", path.to_string_lossy(), stderr));
+        return Err(format!(
+            "textutil returned an error for {}: {}",
+            path.to_string_lossy(),
+            stderr
+        ));
     }
     if looks_like_textutil_error_output(&normalized) {
         return Err(format!(
@@ -459,7 +480,9 @@ fn office_conversion_output_dir(path: &Path) -> PathBuf {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let dir = std::env::temp_dir().join("docmind-office-convert").join(key);
+    let dir = std::env::temp_dir()
+        .join("docmind-office-convert")
+        .join(key);
     let _ = fs::create_dir_all(&dir);
     dir
 }
@@ -498,7 +521,9 @@ fn convert_office_document(path: &Path, target_ext: &str) -> Option<PathBuf> {
     fs::read_dir(&output_dir)
         .ok()?
         .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .find(|candidate| candidate.extension().and_then(|value| value.to_str()) == Some(target_ext.as_str()))
+        .find(|candidate| {
+            candidate.extension().and_then(|value| value.to_str()) == Some(target_ext.as_str())
+        })
 }
 
 fn extract_office_text(path: &Path) -> Result<String, String> {

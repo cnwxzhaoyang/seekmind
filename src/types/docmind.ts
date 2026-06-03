@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description DocMind 前端视图类型定义。
+ */
 export interface IndexDirView {
   path: string;
   enabled: boolean;
@@ -40,6 +45,7 @@ export interface SearchResultView {
   modified: string;
   score: number;
   rank_reason: SearchRankReasonView;
+  preview_blocks?: PreviewBlockView[];
 }
 
 export interface SearchRankReasonView {
@@ -400,6 +406,7 @@ export interface QaSourceView {
   snippet: string;
   score: number;
   rank_reason: string;
+  preview_blocks?: PreviewBlockView[];
 }
 
 export interface QaRetrievalView {

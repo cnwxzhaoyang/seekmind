@@ -7,5 +7,5 @@ pub mod semantic;
 pub mod sidecar;
 pub mod storage;
 
-pub mod commands;
 pub mod collections;
+pub mod commands;

@@ -1,3 +1,8 @@
+<!--
+  @author MorningSun
+  @CreatedDate 2026/06/03
+  @Description 搜索结果片段卡片，负责列表展示、选中和收藏操作。
+-->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
@@ -67,9 +72,11 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
     class="w-full cursor-pointer rounded-lg border p-2.5 text-left transition"
     :class="[
       props.nested
-        ? 'border-transparent bg-transparent hover:bg-surface-hover/50'
+        ? props.selected
+          ? 'border-transparent bg-accent-soft'
+          : 'border-transparent bg-transparent hover:bg-surface-hover/50'
         : 'border-default bg-surface hover:border-accent',
-      props.selected ? 'ring-1 ring-accent-soft' : '',
+      !props.nested && props.selected ? 'bg-accent-soft' : '',
     ]"
     role="button"
     tabindex="0"

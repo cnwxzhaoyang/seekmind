@@ -1,3 +1,8 @@
+<!--
+  @author MorningSun
+  @CreatedDate 2026/06/03
+  @Description 结构化预览块渲染组件，支持段落、表格、图片等内容。
+-->
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -154,7 +159,6 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
     <div v-else-if="block.block_type === 'image'" class="preview-image rounded-lg border border-default bg-surface p-3">
       <div class="flex items-start gap-3">
         <div class="flex-1 min-w-0">
-          <div class="mb-2 text-sm font-medium text-primary">{{ imageTitle }}</div>
           <div class="rounded-md bg-panel p-2">
             <img
               v-if="imageSrc"
@@ -169,9 +173,6 @@ const logImagePreview = (state: "load" | "error", event: Event) => {
             </div>
           </div>
           <div class="mt-2 space-y-1 text-xs text-dim">
-            <div v-if="block.caption">说明：{{ block.caption }}</div>
-            <div v-if="block.ocr_text">备注：{{ block.ocr_text }}</div>
-            <div v-if="block.alt_text">Alt：{{ block.alt_text }}</div>
             <div v-if="block.asset_path" class="break-all">源文件：{{ block.asset_path }}</div>
           </div>
         </div>

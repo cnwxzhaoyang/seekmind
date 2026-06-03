@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description 问答面板，管理会话、回答内容与引用详情。
+ */
 <script setup lang="ts">
 defineOptions({
   name: "AppQaPage",
@@ -14,8 +19,10 @@ import {
   RefreshCw,
   ArrowUp,
   ClipboardCopy,
+  Eye,
   FileDown,
   FolderPlus,
+  SquareArrowOutUpRight,
   Pencil,
   SlidersHorizontal,
   Trash2,
@@ -27,11 +34,13 @@ import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPick
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
+import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { docmindApi, formatDocmindError } from "../services/docmindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   PreviewBlockView,
+  ChunkView,
   CollectionView,
   CollectionItemInput,
   QaAnswerProgressView,
@@ -74,10 +83,16 @@ const editingSessionTitle = ref("");
 const sessionMenuVisible = ref(false);
 const sessionMenuPosition = ref({ x: 0, y: 0 });
 const sessionMenuTarget = ref<QaSessionView | null>(null);
+const sourceMenuVisible = ref(false);
+const sourceMenuPosition = ref({ x: 0, y: 0 });
+const sourceMenuTarget = ref<QaSourceView | null>(null);
 const loading = ref(false);
+const loadingSelectedSourcePreview = ref(false);
 const qaQuestionInput = ref<HTMLTextAreaElement | null>(null);
 const qaChatScrollEl = ref<HTMLElement | null>(null);
 const chatShouldFollowLatest = ref(true);
+const selectedSourceHydratedPreviewBlocks = ref<PreviewBlockView[]>([]);
+let selectedSourcePreviewRequestId = 0;
 let unlistenQaProgress: null | (() => void) = null;
 const inFlightMessageStates = new Set(["searching", "generating", "streaming"]);
 
@@ -226,6 +241,65 @@ const sessionContextMenuItems = computed<ContextMenuItem[]>(() => [
   },
 ]);
 
+const sourceContextMenuItems = computed<ContextMenuItem[]>(() => [
+  {
+    key: "open",
+    label: t("common.openFile"),
+    icon: SquareArrowOutUpRight,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      void openSelectedQaFile();
+    },
+  },
+  {
+    key: "viewChunks",
+    label: t("common.viewChunks"),
+    icon: SlidersHorizontal,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      void viewQaChunks();
+    },
+  },
+  {
+    key: "quickLook",
+    label: t("page.appSearch.detail.quickLook"),
+    icon: Eye,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      void quickLookSelectedQaFile();
+    },
+  },
+  {
+    key: "copyPath",
+    label: t("page.appSearch.detail.copyPath"),
+    icon: ClipboardCopy,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      void copySelectedQaPath();
+    },
+  },
+  {
+    key: "addToCollection",
+    label: t("page.collections.addToCollection"),
+    icon: FolderPlus,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      if (sourceMenuTarget.value) {
+        void openSourceCollectionPicker(sourceMenuTarget.value);
+      }
+    },
+  },
+  {
+    key: "copyCitation",
+    label: t("page.appSearch.detail.copyCitation"),
+    icon: ClipboardCopy,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      void copySelectedQaCitation();
+    },
+  },
+]);
+
 const selectedSource = computed(() => {
   const message = qaAnswer.value;
   if (!message) {
@@ -246,6 +320,64 @@ const selectedSourceTitlePath = computed(() =>
     heading: selectedSource.value?.heading,
   }),
 );
+
+const resolveSourceChunk = (chunks: ChunkView[], source: QaSourceView) => {
+  const byId = chunks.find((chunk) => chunk.id === source.chunk_id);
+  if (byId) {
+    return byId;
+  }
+
+  const sourceSnippet = source.snippet.trim();
+  if (!sourceSnippet) {
+    return null;
+  }
+
+  return chunks.find((chunk) => {
+    const chunkSnippet = chunk.snippet.trim();
+    return chunkSnippet.includes(sourceSnippet) || sourceSnippet.includes(chunkSnippet);
+  }) ?? null;
+};
+
+const selectedSourcePreviewBlocks = computed(() => {
+  const sourceBlocks = selectedSource.value?.preview_blocks ?? [];
+  return sourceBlocks.length > 0 ? sourceBlocks : selectedSourceHydratedPreviewBlocks.value;
+});
+
+const loadSelectedSourcePreviewBlocks = async (source: QaSourceView | null) => {
+  const requestId = ++selectedSourcePreviewRequestId;
+  selectedSourceHydratedPreviewBlocks.value = [];
+
+  if (!source || source.preview_blocks?.length) {
+    return;
+  }
+
+  loadingSelectedSourcePreview.value = true;
+  try {
+    const chunks = await docmindApi.listDocumentChunks(source.path);
+    if (requestId !== selectedSourcePreviewRequestId) {
+      return;
+    }
+
+    const matchedChunk = resolveSourceChunk(chunks, source);
+    selectedSourceHydratedPreviewBlocks.value = matchedChunk?.preview_blocks ?? [];
+    console.debug("[DocMind] qa source preview blocks loaded", {
+      sourceId: source.source_id,
+      chunkId: source.chunk_id,
+      blockCount: selectedSourceHydratedPreviewBlocks.value.length,
+    });
+  } catch (error) {
+    console.warn("[DocMind] qa source preview blocks load failed", {
+      sourceId: source.source_id,
+      chunkId: source.chunk_id,
+      path: source.path,
+      error,
+    });
+  } finally {
+    if (requestId === selectedSourcePreviewRequestId) {
+      loadingSelectedSourcePreview.value = false;
+    }
+  }
+};
 
 const selectedSourceCitation = computed(() => {
   if (!selectedSource.value) {
@@ -419,6 +551,13 @@ const openSessionContextMenu = (session: QaSessionView, event: MouseEvent) => {
   sessionMenuTarget.value = session;
   sessionMenuPosition.value = { x: event.clientX, y: event.clientY };
   sessionMenuVisible.value = true;
+};
+
+const openSourceContextMenu = (source: QaSourceView, event: MouseEvent) => {
+  selectSource(source.source_id);
+  sourceMenuTarget.value = source;
+  sourceMenuPosition.value = { x: event.clientX, y: event.clientY };
+  sourceMenuVisible.value = true;
 };
 
 const closeSelectedSource = () => {
@@ -929,6 +1068,14 @@ watch(
   { deep: true },
 );
 
+watch(
+  selectedSource,
+  (source) => {
+    void loadSelectedSourcePreviewBlocks(source);
+  },
+  { immediate: true },
+);
+
 watch(routeSessionId, async (next, previous) => {
   if (route.path !== "/qa") {
     return;
@@ -1193,6 +1340,7 @@ watch(routeSessionId, async (next, previous) => {
                                 class="cursor-pointer transition"
                                 :class="qaSelectedSourceId === source.source_id ? 'bg-accent-soft' : 'hover:bg-surface-hover'"
                                 @click.stop="selectSource(source.source_id)"
+                                @contextmenu.prevent="openSourceContextMenu(source, $event)"
                               >
                                 <td class="px-3 py-2 align-top">
                                   <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
@@ -1328,33 +1476,22 @@ watch(routeSessionId, async (next, previous) => {
 
             <div class="rounded-lg border border-default bg-surface p-4">
               <div class="docmind-section-label">{{ t("page.appQa.referenceSnippet") }}</div>
-              <div class="mt-3 whitespace-pre-wrap rounded-md border border-default bg-panel/70 px-3 py-3 text-sm leading-7 text-secondary">
+              <div v-if="loadingSelectedSourcePreview && selectedSourcePreviewBlocks.length === 0" class="mt-3 rounded-md bg-panel/70 px-3 py-3 text-sm text-muted">
+                {{ t("common.loading") }}
+              </div>
+              <div v-else-if="selectedSourcePreviewBlocks.length > 0" class="mt-3 space-y-2">
+                <DocMindPreviewBlockRenderer
+                  v-for="block in selectedSourcePreviewBlocks"
+                  :key="block.block_index"
+                  :block="block"
+                />
+              </div>
+              <div v-else class="mt-3 whitespace-pre-wrap rounded-md border border-default bg-panel/70 px-3 py-3 text-sm leading-7 text-secondary">
                 {{ selectedSource.snippet }}
               </div>
               <p class="docmind-item-meta mt-3">{{ selectedSource.rank_reason }}</p>
             </div>
 
-            <div class="grid grid-cols-2 gap-2">
-              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="openSelectedQaFile">
-                {{ t("common.openFile") }}
-              </button>
-              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="viewQaChunks">
-                {{ t("common.viewChunks") }}
-              </button>
-              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="quickLookSelectedQaFile">
-                {{ t("page.appSearch.detail.quickLook") }}
-              </button>
-              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaPath">
-                {{ t("page.appSearch.detail.copyPath") }}
-              </button>
-              <button class="inline-flex items-center justify-center gap-1.5 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="openSourceCollectionPicker(selectedSource)">
-                <FolderPlus :size="14" />
-                {{ t("page.collections.addToCollection") }}
-              </button>
-              <button class="col-span-2 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaCitation">
-                {{ t("page.appSearch.detail.copyCitation") }}
-              </button>
-            </div>
           </div>
         </aside>
         <aside v-else class="flex h-full min-h-0 items-center justify-center border-l border-default bg-panel px-4 text-center text-xs text-muted">
@@ -1368,6 +1505,13 @@ watch(routeSessionId, async (next, previous) => {
       :x="sessionMenuPosition.x"
       :y="sessionMenuPosition.y"
       @close="sessionMenuVisible = false"
+    />
+    <DocMindContextMenu
+      v-if="sourceMenuVisible"
+      :items="sourceContextMenuItems"
+      :x="sourceMenuPosition.x"
+      :y="sourceMenuPosition.y"
+      @close="sourceMenuVisible = false"
     />
     <DocMindCollectionPicker
       :visible="collectionPickerVisible"

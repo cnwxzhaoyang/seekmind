@@ -347,9 +347,7 @@ pub fn python_parser_config_json() -> serde_json::Value {
 }
 
 fn office_converter_path() -> Option<String> {
-    let mut candidates = vec![
-        std::env::var("DOCMIND_OFFICE_BIN").ok(),
-    ];
+    let mut candidates = vec![std::env::var("DOCMIND_OFFICE_BIN").ok()];
 
     if cfg!(target_os = "windows") {
         candidates.extend([
@@ -370,10 +368,7 @@ fn office_converter_path() -> Option<String> {
             Some("/Applications/LibreOffice.app/Contents/MacOS/libreoffice".to_string()),
         ]);
     } else {
-        candidates.extend([
-            Some("soffice".to_string()),
-            Some("libreoffice".to_string()),
-        ]);
+        candidates.extend([Some("soffice".to_string()), Some("libreoffice".to_string())]);
     }
 
     candidates

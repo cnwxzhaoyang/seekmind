@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description DocMind 本地 SQLite 存储与查询实现。
+ */
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -14,18 +19,18 @@ use uuid::Uuid;
 
 use crate::docmind::file_ops;
 use crate::docmind::models::{
-    ChunkView, CurrentTaskView, DocumentView, FailedFileView, FavoriteView, HighlightSpan,
-    IndexDirView, IndexStatusView, PreviewBlockView, QaAnswerView, QaHistoryView, QaRetrievalView,
-    QaMessageView, QaModelProfileUpsertView, QaModelProfileView, QaSessionView, QaSourceView,
-    RecentDocumentView, RecentViewEntry, SearchHistoryView, SearchResultView, CollectionItemView,
-    CollectionView, TagView,
+    ChunkView, CollectionItemView, CollectionView, CurrentTaskView, DocumentView, FailedFileView,
+    FavoriteView, HighlightSpan, IndexDirView, IndexStatusView, PreviewBlockView, QaAnswerView,
+    QaHistoryView, QaMessageView, QaModelProfileUpsertView, QaModelProfileView, QaRetrievalView,
+    QaSessionView, QaSourceView, RecentDocumentView, RecentViewEntry, SearchHistoryView,
+    SearchResultView, TagView,
 };
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
 use crate::docmind::storage::types::{
-    ChunkRecord, CollectionItemInput, CollectionPatchInput, DocumentState, TagPatchInput,
-    ExtractedDocument, IndexSettings, NetworkProxySettings, QaSettings,
+    ChunkRecord, CollectionItemInput, CollectionPatchInput, DocumentState, ExtractedDocument,
+    IndexSettings, NetworkProxySettings, QaSettings, TagPatchInput,
 };
 
 #[derive(Clone)]
@@ -103,6 +108,7 @@ struct DirectoryAggregate {
 #[derive(Debug, sqlx::FromRow)]
 struct SearchRow {
     id: String,
+    document_id: String,
     file_name: String,
     path: String,
     ext: String,
@@ -113,6 +119,7 @@ struct SearchRow {
     modified: String,
     modified_at: i64,
     score: f32,
+    block_indexes_json: String,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +172,24 @@ struct ChunkRow {
 
 #[derive(Debug, sqlx::FromRow)]
 struct BlockRow {
+    block_index: i64,
+    block_type: String,
+    text: String,
+    heading: String,
+    level: Option<i64>,
+    page: Option<i64>,
+    language: String,
+    markdown: String,
+    html: String,
+    asset_path: String,
+    alt_text: String,
+    caption: String,
+    ocr_text: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct BlockWithDocumentRow {
+    document_id: String,
     block_index: i64,
     block_type: String,
     text: String,
@@ -831,9 +856,7 @@ impl Database {
             return Ok(());
         }
 
-        eprintln!(
-            "[DocMind] repairing empty Tantivy index from SQLite chunks={sqlite_chunks}"
-        );
+        eprintln!("[DocMind] repairing empty Tantivy index from SQLite chunks={sqlite_chunks}");
         self.search_index
             .clear_all()
             .map_err(sqlx::Error::Protocol)?;
@@ -1535,7 +1558,11 @@ impl Database {
         })
     }
 
-    pub async fn update_tag(&self, tag_id: &str, patch: &TagPatchInput) -> Result<TagView, sqlx::Error> {
+    pub async fn update_tag(
+        &self,
+        tag_id: &str,
+        patch: &TagPatchInput,
+    ) -> Result<TagView, sqlx::Error> {
         let existing = sqlx::query_as::<_, TagRow>(
             r#"
             SELECT
@@ -1559,7 +1586,11 @@ impl Database {
             return Err(sqlx::Error::RowNotFound);
         };
 
-        let name = patch.name.as_deref().map(normalize_tag_name).unwrap_or(existing.name);
+        let name = patch
+            .name
+            .as_deref()
+            .map(normalize_tag_name)
+            .unwrap_or(existing.name);
         let color = patch
             .color
             .as_deref()
@@ -1745,14 +1776,12 @@ impl Database {
             return Ok(());
         }
 
-        sqlx::query(
-            "DELETE FROM item_tags WHERE target_type = ? AND target_id = ? AND tag_id = ?",
-        )
-        .bind(target_type)
-        .bind(target_id.trim())
-        .bind(tag_id.trim())
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("DELETE FROM item_tags WHERE target_type = ? AND target_id = ? AND tag_id = ?")
+            .bind(target_type)
+            .bind(target_id.trim())
+            .bind(tag_id.trim())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -1854,7 +1883,10 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut messages = rows.into_iter().map(qa_message_row_to_view).collect::<Vec<_>>();
+        let mut messages = rows
+            .into_iter()
+            .map(qa_message_row_to_view)
+            .collect::<Vec<_>>();
         messages.reverse();
         Ok(messages)
     }
@@ -2618,43 +2650,83 @@ impl Database {
             .collect())
     }
 
-
-fn resolve_preview_asset_path(asset_path: &str, document_path: &str) -> String {
-    let cleaned = asset_path.trim();
-    if cleaned.is_empty() {
-        return String::new();
+    fn resolve_preview_asset_path(asset_path: &str, document_path: &str) -> String {
+        let cleaned = asset_path.trim();
+        if cleaned.is_empty() {
+            return String::new();
+        }
+        if cleaned.starts_with("http://")
+            || cleaned.starts_with("https://")
+            || cleaned.starts_with("data:")
+            || cleaned.starts_with("blob:")
+            || cleaned.starts_with("file:")
+            || Path::new(cleaned).is_absolute()
+        {
+            return cleaned.to_string();
+        }
+        let base = Path::new(document_path)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(document_path));
+        base.join(cleaned).to_string_lossy().into_owned()
     }
-    if cleaned.starts_with("http://")
-        || cleaned.starts_with("https://")
-        || cleaned.starts_with("data:")
-        || cleaned.starts_with("blob:")
-        || cleaned.starts_with("file:")
-        || Path::new(cleaned).is_absolute()
-    {
-        return cleaned.to_string();
-    }
-    let base = Path::new(document_path)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(document_path));
-    base.join(cleaned).to_string_lossy().into_owned()
-}
 
-fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_asset_path: &str) {
-    let exists = if resolved_asset_path.starts_with("http://")
-        || resolved_asset_path.starts_with("https://")
-        || resolved_asset_path.starts_with("data:")
-        || resolved_asset_path.starts_with("blob:")
-    {
-        "remote".to_string()
-    } else {
-        Path::new(resolved_asset_path).exists().to_string()
-    };
-    eprintln!(
+    fn log_preview_image_block(
+        document_path: &str,
+        raw_asset_path: &str,
+        resolved_asset_path: &str,
+    ) {
+        let exists = if resolved_asset_path.starts_with("http://")
+            || resolved_asset_path.starts_with("https://")
+            || resolved_asset_path.starts_with("data:")
+            || resolved_asset_path.starts_with("blob:")
+        {
+            "remote".to_string()
+        } else {
+            Path::new(resolved_asset_path).exists().to_string()
+        };
+        eprintln!(
         "[DocMind] preview image block document={} raw_asset_path={} resolved_asset_path={} exists={}",
         document_path, raw_asset_path, resolved_asset_path, exists
     );
-}
+    }
+
+    fn build_preview_block(
+        document_path: &str,
+        block_index: i64,
+        block_type: &str,
+        text: &str,
+        heading: &str,
+        level: Option<i64>,
+        page: Option<i64>,
+        language: &str,
+        markdown: &str,
+        html: &str,
+        raw_asset_path: &str,
+        alt_text: &str,
+        caption: &str,
+        ocr_text: &str,
+    ) -> PreviewBlockView {
+        let asset_path = Self::resolve_preview_asset_path(raw_asset_path, document_path);
+        if block_type == "image" {
+            Self::log_preview_image_block(document_path, raw_asset_path, &asset_path);
+        }
+        PreviewBlockView {
+            block_index: block_index as usize,
+            block_type: block_type.to_string(),
+            text: text.to_string(),
+            heading: heading.to_string(),
+            level: level.map(|value| value as u32),
+            page: page.map(|value| value as u32),
+            language: language.to_string(),
+            markdown: markdown.to_string(),
+            html: html.to_string(),
+            asset_path,
+            alt_text: alt_text.to_string(),
+            caption: caption.to_string(),
+            ocr_text: ocr_text.to_string(),
+        }
+    }
 
     pub async fn list_document_chunks(&self, path: &str) -> Result<Vec<ChunkView>, sqlx::Error> {
         let document_id = self.document_id_by_path(path).await?;
@@ -2707,25 +2779,22 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                     .iter()
                     .filter_map(|index| {
                         blocks_by_index.get(&(*index as i64)).map(|b| {
-                            let asset_path = Self::resolve_preview_asset_path(&b.asset_path, path);
-                            if b.block_type == "image" {
-                                Self::log_preview_image_block(path, &b.asset_path, &asset_path);
-                            }
-                            PreviewBlockView {
-                                block_index: b.block_index as usize,
-                                block_type: b.block_type.clone(),
-                                text: b.text.clone(),
-                                heading: b.heading.clone(),
-                                level: b.level.map(|v| v as u32),
-                                page: b.page.map(|v| v as u32),
-                                language: b.language.clone(),
-                                markdown: b.markdown.clone(),
-                                html: b.html.clone(),
-                                asset_path,
-                                alt_text: b.alt_text.clone(),
-                                caption: b.caption.clone(),
-                                ocr_text: b.ocr_text.clone(),
-                            }
+                            Self::build_preview_block(
+                                path,
+                                b.block_index,
+                                &b.block_type,
+                                &b.text,
+                                &b.heading,
+                                b.level,
+                                b.page,
+                                &b.language,
+                                &b.markdown,
+                                &b.html,
+                                &b.asset_path,
+                                &b.alt_text,
+                                &b.caption,
+                                &b.ocr_text,
+                            )
                         })
                     })
                     .collect();
@@ -2908,6 +2977,8 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         }
 
         let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
+        let mut preview_blocks_by_chunk_id =
+            self.fetch_preview_blocks_for_search_rows(&rows).await?;
         let mut rows_by_id = std::collections::HashMap::new();
         for row in rows {
             rows_by_id.insert(row.id.clone(), row);
@@ -3022,6 +3093,9 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                         modified: row.modified,
                         score: final_score,
                         rank_reason,
+                        preview_blocks: preview_blocks_by_chunk_id
+                            .remove(&chunk_id)
+                            .unwrap_or_default(),
                     },
                     raw_score,
                     final_score,
@@ -4693,7 +4767,6 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         Ok(())
     }
 
-
     async fn ensure_document_blocks_columns(&self) -> Result<(), sqlx::Error> {
         let existing = sqlx::query("PRAGMA table_info(document_blocks)")
             .fetch_all(&self.pool)
@@ -4707,29 +4780,24 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
 
         let mut alter_statements = Vec::new();
         if !columns.contains("asset_path") {
-            alter_statements.push(
-                "ALTER TABLE document_blocks ADD COLUMN asset_path TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE document_blocks ADD COLUMN asset_path TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("alt_text") {
-            alter_statements.push(
-                "ALTER TABLE document_blocks ADD COLUMN alt_text TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE document_blocks ADD COLUMN alt_text TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("caption") {
-            alter_statements.push(
-                "ALTER TABLE document_blocks ADD COLUMN caption TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE document_blocks ADD COLUMN caption TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("language") {
-            alter_statements.push(
-                "ALTER TABLE document_blocks ADD COLUMN language TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE document_blocks ADD COLUMN language TEXT NOT NULL DEFAULT ''");
         }
         if !columns.contains("ocr_text") {
-            alter_statements.push(
-                "ALTER TABLE document_blocks ADD COLUMN ocr_text TEXT NOT NULL DEFAULT ''",
-            );
+            alter_statements
+                .push("ALTER TABLE document_blocks ADD COLUMN ocr_text TEXT NOT NULL DEFAULT ''");
         }
 
         for statement in alter_statements {
@@ -4791,7 +4859,11 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             deleted: row.deleted as usize,
             warning: row.warning.and_then(|value| {
                 let trimmed = value.trim().to_string();
-                if trimmed.is_empty() { None } else { Some(trimmed) }
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
             }),
             pause_requested: row.pause_requested != 0,
         }))
@@ -4814,6 +4886,7 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
             r#"
             SELECT
                 c.id,
+                c.document_id,
                 d.file_name,
                 d.path,
                 d.ext,
@@ -4823,7 +4896,8 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
                 c.page,
                 d.modified,
                 d.modified_at,
-                c.score
+                c.score,
+                c.block_indexes_json
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             WHERE c.id IN ({})
@@ -4837,6 +4911,90 @@ fn log_preview_image_block(document_path: &str, raw_asset_path: &str, resolved_a
         }
 
         query_builder.fetch_all(&self.pool).await
+    }
+
+    async fn fetch_preview_blocks_for_search_rows(
+        &self,
+        rows: &[SearchRow],
+    ) -> Result<std::collections::HashMap<String, Vec<PreviewBlockView>>, sqlx::Error> {
+        if rows.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let mut document_ids = rows
+            .iter()
+            .map(|row| row.document_id.clone())
+            .collect::<Vec<_>>();
+        document_ids.sort();
+        document_ids.dedup();
+
+        let placeholders = std::iter::repeat("?")
+            .take(document_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            r#"
+            SELECT document_id, block_index, block_type, text, heading, level, page, language, markdown, html, asset_path, alt_text, caption, ocr_text
+            FROM document_blocks
+            WHERE document_id IN ({})
+            ORDER BY document_id, block_index
+            "#,
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query_as::<_, BlockWithDocumentRow>(&sql);
+        for document_id in &document_ids {
+            query_builder = query_builder.bind(document_id);
+        }
+
+        let block_rows = query_builder.fetch_all(&self.pool).await?;
+        let mut blocks_by_document = std::collections::HashMap::<
+            String,
+            std::collections::HashMap<i64, BlockWithDocumentRow>,
+        >::new();
+        for block in block_rows {
+            blocks_by_document
+                .entry(block.document_id.clone())
+                .or_default()
+                .insert(block.block_index, block);
+        }
+
+        let mut result = std::collections::HashMap::<String, Vec<PreviewBlockView>>::new();
+        for row in rows {
+            let block_indexes: Vec<usize> =
+                serde_json::from_str(&row.block_indexes_json).unwrap_or_default();
+            let Some(blocks_by_index) = blocks_by_document.get(&row.document_id) else {
+                result.insert(row.id.clone(), Vec::new());
+                continue;
+            };
+
+            let preview_blocks = block_indexes
+                .iter()
+                .filter_map(|index| {
+                    blocks_by_index.get(&(*index as i64)).map(|block| {
+                        Self::build_preview_block(
+                            &row.path,
+                            block.block_index,
+                            &block.block_type,
+                            &block.text,
+                            &block.heading,
+                            block.level,
+                            block.page,
+                            &block.language,
+                            &block.markdown,
+                            &block.html,
+                            &block.asset_path,
+                            &block.alt_text,
+                            &block.caption,
+                            &block.ocr_text,
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            result.insert(row.id.clone(), preview_blocks);
+        }
+
+        Ok(result)
     }
 
     async fn count_documents(&self) -> Result<i64, sqlx::Error> {
@@ -4883,14 +5041,15 @@ fn default_network_proxy_settings() -> NetworkProxySettings {
 
 fn qa_history_row_to_view(row: QaHistoryRow) -> QaHistoryView {
     let sources = serde_json::from_str::<Vec<QaSourceView>>(&row.sources_json).unwrap_or_default();
-    let retrieval = serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
-        search_mode: String::new(),
-        candidate_count: 0,
-        selected_count: 0,
-        semantic_enabled: false,
-        semantic_fallback: false,
-        semantic_fallback_reason: String::new(),
-    });
+    let retrieval =
+        serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
+            search_mode: String::new(),
+            candidate_count: 0,
+            selected_count: 0,
+            semantic_enabled: false,
+            semantic_fallback: false,
+            semantic_fallback_reason: String::new(),
+        });
 
     QaHistoryView {
         id: row.id,
@@ -4924,14 +5083,15 @@ fn qa_session_row_to_view(row: QaSessionRow) -> QaSessionView {
 
 fn qa_message_row_to_view(row: QaMessageRow) -> QaMessageView {
     let sources = serde_json::from_str::<Vec<QaSourceView>>(&row.sources_json).unwrap_or_default();
-    let retrieval = serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
-        search_mode: String::new(),
-        candidate_count: 0,
-        selected_count: 0,
-        semantic_enabled: false,
-        semantic_fallback: false,
-        semantic_fallback_reason: String::new(),
-    });
+    let retrieval =
+        serde_json::from_str::<QaRetrievalView>(&row.retrieval_json).unwrap_or(QaRetrievalView {
+            search_mode: String::new(),
+            candidate_count: 0,
+            selected_count: 0,
+            semantic_enabled: false,
+            semantic_fallback: false,
+            semantic_fallback_reason: String::new(),
+        });
 
     QaMessageView {
         id: row.id,
@@ -5351,7 +5511,12 @@ fn normalize_tag_target_type(target_type: &str) -> String {
 }
 
 fn normalize_tag_name(name: &str) -> String {
-    name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(40).collect()
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(40)
+        .collect()
 }
 
 fn normalize_tag_color(color: &str) -> String {

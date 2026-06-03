@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description 搜索面板，展示搜索结果、命中详情与快捷问答。
+ */
 <script setup lang="ts">
 defineOptions({
   name: "AppSearchPage",
@@ -14,6 +19,7 @@ import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
 import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
 import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
+import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
 import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { useQuickAccessData } from "../composables/useQuickAccessData";
@@ -186,6 +192,16 @@ const selectedChunk = computed(() => {
 
   return selectedDocumentChunks.value[selectedChunkIndex.value] ?? null;
 });
+
+const selectedPreviewBlocks = computed(() => {
+  const chunkBlocks = selectedChunk.value?.preview_blocks ?? [];
+  if (chunkBlocks.length > 0) {
+    return chunkBlocks;
+  }
+  return selected.value?.preview_blocks ?? [];
+});
+
+const qaSelectedPreviewBlocks = computed(() => qaSelectedSource.value?.preview_blocks ?? []);
 
 const selectedChunkPositionLabel = computed(() => {
   if (!selectedDocumentChunks.value.length || selectedChunkIndex.value < 0) {
@@ -1406,29 +1422,33 @@ watch(showDebugPanel, async (visible) => {
         </template>
 
         <template #right>
-          <aside class="min-h-0 flex-1 overflow-y-auto bg-panel/70 p-5">
+          <aside class="min-h-0 flex-1 overflow-y-auto bg-panel/70 px-5 py-4">
             <div v-if="!qaMode && selected" class="docmind-detail">
-              <div class="mb-4 rounded-lg border border-default bg-panel p-4">
-                <div class="flex items-start justify-between gap-3">
+              <div class="docmind-detail-block py-0">
+                <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="text-lg font-semibold text-primary">{{ selected.fileName }}</div>
-                    <div class="mt-1 break-all text-xs text-muted">{{ selected.path }}</div>
+                    <div class="truncate text-base font-semibold leading-6 text-primary" :title="selected.fileName">
+                      {{ selected.fileName }}
+                    </div>
+                    <div class="mt-0.5 truncate text-xs leading-5 text-muted" :title="selected.path">
+                      {{ selected.path }}
+                    </div>
                   </div>
-                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
+                  <div class="docmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
                     {{ selected.ext.toUpperCase() }}
                   </div>
                 </div>
-                <div v-if="selectedTitlePath" class="mt-3 rounded-md border border-default bg-surface px-3 py-2">
-                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
+                <div v-if="selectedTitlePath" class="docmind-detail-kv mt-2" :title="selectedTitlePath">
+                  <div class="docmind-detail-kv-label">
                     {{ t("page.appSearch.detail.titlePath") }}
                   </div>
-                  <div class="mt-1 text-sm leading-6 text-primary">
+                  <div class="docmind-detail-kv-value">
                     {{ selectedTitlePath }}
                   </div>
                 </div>
               </div>
 
-              <div class="mb-4 flex flex-wrap gap-2">
+              <div class="docmind-detail-block flex flex-wrap gap-1.5 py-2.5">
                 <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
                 <DocMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</DocMindBadge>
                 <DocMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</DocMindBadge>
@@ -1439,44 +1459,19 @@ watch(showDebugPanel, async (visible) => {
                 <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
               </div>
 
-              <div class="mb-4 grid grid-cols-2 gap-2">
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  @click="openSelectedFile"
-                >
-                  <SquareArrowOutUpRight :size="16" />
-                  {{ t("page.appSearch.detail.openFile") }}
-                </button>
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  @click="quickLookSelectedFile"
-                >
-                  <Eye :size="16" />
-                  {{ t("page.appSearch.detail.quickLook") }}
-                </button>
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  @click="copySelectedPath"
-                >
-                  <ClipboardCopy :size="16" />
-                  {{ t("page.appSearch.detail.copyPath") }}
-                </button>
-                <button
-                  class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
-                  type="button"
-                  @click="selected && openResultCollectionPicker(selected)"
-                >
-                  <FolderPlus :size="16" />
-                  {{ t("page.collections.addToCollection") }}
-                </button>
-              </div>
+              <!-- 修复：右侧命中详情不再重复展示文件操作，统一交给结果列表右键菜单承载，避免同一动作出现两个入口。 -->
 
-              <div class="mb-4 rounded-lg border border-default bg-surface p-4">
-                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.detail.hitParagraph") }}</div>
+              <div class="docmind-detail-block">
+                <div class="docmind-detail-title">{{ t("page.appSearch.detail.hitParagraph") }}</div>
+                <div v-if="selectedPreviewBlocks.length > 0" class="space-y-2">
+                  <DocMindPreviewBlockRenderer
+                    v-for="block in selectedPreviewBlocks"
+                    :key="block.block_index"
+                    :block="block"
+                  />
+                </div>
                 <DocMindMarkdownRenderer
+                  v-else
                   :block="{
                     block_index: 0,
                     block_type: 'paragraph',
@@ -1494,14 +1489,14 @@ watch(showDebugPanel, async (visible) => {
                 />
               </div>
 
-              <div class="rounded-lg border border-default bg-panel p-4">
-                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.detail.contextPreview") }}</div>
+              <div class="docmind-detail-block">
+                <div class="docmind-detail-title">{{ t("page.appSearch.detail.contextPreview") }}</div>
                 <div v-if="selectedChunk" class="space-y-3">
                   <div
                     v-for="item in selectedContextChunks"
                     :key="item.key"
-                    class="rounded-md border px-3 py-2"
-                    :class="item.key === 'current' ? 'border-accent bg-surface' : 'border-default bg-surface/70'"
+                    class="docmind-context-row"
+                    :class="item.key === 'current' ? 'docmind-context-row--active' : ''"
                   >
                     <div class="docmind-section-label" :class="item.key === 'current' ? 'text-accent-text' : 'text-dim'">
                       {{ item.label }}
@@ -1511,11 +1506,18 @@ watch(showDebugPanel, async (visible) => {
                     </div>
                     <div class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-primary' : 'text-secondary'">
                       <DocMindHighlightedText
-                        v-if="item.key === 'current'"
+                        v-if="item.key === 'current' && !(item.chunk?.preview_blocks?.length)"
                         :text="item.chunk?.snippet ?? ''"
                         :query="query"
                         :spans="selected.highlight_spans"
                       />
+                      <div v-else-if="item.chunk?.preview_blocks?.length" class="space-y-2">
+                        <DocMindPreviewBlockRenderer
+                          v-for="block in item.chunk.preview_blocks"
+                          :key="block.block_index"
+                          :block="block"
+                        />
+                      </div>
                       <DocMindMarkdownRenderer
                         v-else
                         :block="{
@@ -1536,18 +1538,10 @@ watch(showDebugPanel, async (visible) => {
                     </div>
                   </div>
                 </div>
-                <div v-else class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-sm text-muted">
+                <div v-else class="rounded-md bg-surface px-3 py-3 text-sm text-muted">
                   {{ t("page.appSearch.detail.noContext") }}
                 </div>
                 <p class="docmind-item-meta mt-3">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
-              </div>
-
-              <div class="mt-4 rounded-lg border border-default bg-surface p-4">
-                <div class="docmind-section-label">{{ t("searchResultCard.rankReason") }}</div>
-                <div class="mt-1 docmind-metric-value text-primary">{{ selected.rank_reason.summary || t("common.none") }}</div>
-                <div v-if="selected.rank_reason.boosts.length > 0" class="docmind-item-meta mt-1">
-                  {{ selected.rank_reason.boosts.join(" · ") }}
-                </div>
               </div>
 
               <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
@@ -1588,7 +1582,14 @@ watch(showDebugPanel, async (visible) => {
 
               <div class="mb-4 rounded-lg border border-default bg-surface p-4">
                 <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.qa.sourceSnippet") }}</div>
-                <div class="whitespace-pre-wrap text-sm leading-7 text-primary">
+                <div v-if="qaSelectedPreviewBlocks.length > 0" class="space-y-2">
+                  <DocMindPreviewBlockRenderer
+                    v-for="block in qaSelectedPreviewBlocks"
+                    :key="block.block_index"
+                    :block="block"
+                  />
+                </div>
+                <div v-else class="whitespace-pre-wrap text-sm leading-7 text-primary">
                   {{ qaSelectedSource.snippet }}
                 </div>
                 <p class="docmind-item-meta mt-3">{{ qaSelectedSource.rank_reason }}</p>

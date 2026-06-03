@@ -84,7 +84,9 @@ pub fn ask_model(
         builder = builder.bearer_auth(api_key.trim());
     }
 
-    let response = builder.send().map_err(|error| format_request_error("模型请求失败", error))?;
+    let response = builder
+        .send()
+        .map_err(|error| format_request_error("模型请求失败", error))?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
@@ -200,8 +202,8 @@ where
                 return Ok(answer);
             }
 
-            let chunk: ChatStreamChunk =
-                serde_json::from_str(payload).map_err(|error| format!("模型流解析失败: {error}"))?;
+            let chunk: ChatStreamChunk = serde_json::from_str(payload)
+                .map_err(|error| format!("模型流解析失败: {error}"))?;
             for choice in chunk.choices {
                 if let Some(content) = choice.delta.content {
                     if !content.is_empty() {

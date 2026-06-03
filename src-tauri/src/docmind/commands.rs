@@ -445,7 +445,8 @@ pub async fn refresh_document(
                 );
             }) {
                 Ok(parsed) => {
-                    let (document, chunks, blocks) = scanner::convert_python_document(&file, parsed);
+                    let (document, chunks, blocks) =
+                        scanner::convert_python_document(&file, parsed);
                     Ok((
                         document,
                         chunks,
@@ -993,7 +994,9 @@ fn available_tesseract_languages() -> Vec<String> {
                     .map(str::trim)
                     .filter(|line| !line.is_empty())
                     .filter(|line| {
-                        !line.to_lowercase().starts_with("list of available languages")
+                        !line
+                            .to_lowercase()
+                            .starts_with("list of available languages")
                     })
                     .map(ToOwned::to_owned)
                     .collect();
