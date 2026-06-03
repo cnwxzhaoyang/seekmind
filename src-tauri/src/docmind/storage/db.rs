@@ -2241,7 +2241,6 @@ impl Database {
         }
 
         let item_type = normalize_collection_item_type(&input.item_type);
-        let document_id = input.document_id.clone().unwrap_or_default();
         let chunk_id = input.chunk_id.clone().unwrap_or_default();
         let qa_session_id = input.qa_session_id.clone().unwrap_or_default();
         let qa_message_id = input.qa_message_id.clone().unwrap_or_default();
@@ -2255,6 +2254,23 @@ impl Database {
             .clone()
             .unwrap_or_else(|| "{}".to_string());
         let now = current_unix_ts();
+        let mut document_id = input.document_id.clone().unwrap_or_default();
+
+        if item_type == "document" && document_id.trim().is_empty() {
+            // 修复：文档级收藏必须回写真实 document_id，避免同一文档按不同 chunk 重复入库。
+            if path.trim().is_empty() {
+                eprintln!("[DocMind] add_collection_item document mode missing path");
+            } else if let Some(resolved_document_id) = self.document_id_by_path(&path).await? {
+                eprintln!("[DocMind] add_collection_item document mode resolved document_id for path={path}");
+                document_id = resolved_document_id;
+            } else {
+                eprintln!("[DocMind] add_collection_item document mode failed to resolve document_id for path={path}");
+            }
+        }
+
+        if item_type == "document" && document_id.trim().is_empty() {
+            return Err(sqlx::Error::RowNotFound);
+        }
 
         let existing_id = sqlx::query_scalar::<_, String>(
             r#"

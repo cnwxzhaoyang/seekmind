@@ -12,7 +12,7 @@ import { computed, onActivated, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
-import { BookMarked, ClipboardCopy, Eye, FileDown, Files, FolderPlus, Layers3, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
+import { BookMarked, ClipboardCopy, Eye, FileDown, FileText, Files, FolderPlus, Layers3, MessageSquareText, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
@@ -29,10 +29,12 @@ const collections = ref<CollectionView[]>([]);
 const recentViews = ref<RecentViewEntry[]>([]);
 const collectionTags = ref<TagView[]>([]);
 const itemTags = ref<TagView[]>([]);
+const collectionItemTagsMap = ref<Record<string, TagView[]>>({});
 const collectionItems = ref<CollectionItemView[]>([]);
 const selectedCollectionId = ref("");
 const selectedItemId = ref("");
 const collectionFilter = ref("");
+const itemTagFilter = ref("");
 const collectionName = ref("");
 const collectionDescription = ref("");
 const collectionTagName = ref("");
@@ -61,6 +63,19 @@ const recentViewTypeLabel = (item: RecentViewEntry) => {
       return t("page.collections.recentType.document");
     default:
       return t("page.collections.recentType.chunk");
+  }
+};
+
+const recentViewTypeIcon = (item: RecentViewEntry) => {
+  switch (item.target_type) {
+    case "collection":
+      return BookMarked;
+    case "qa_session":
+      return MessageSquareText;
+    case "document":
+      return FileText;
+    default:
+      return Files;
   }
 };
 
@@ -94,6 +109,90 @@ const itemTypeLabel = (item: CollectionItemView) => {
       return t("page.collections.itemType.qaSource");
     default:
       return t("page.collections.itemType.chunk");
+  }
+};
+
+const itemTypeTone = (item: CollectionItemView) => {
+  switch (item.item_type) {
+    case "document":
+      return "success";
+    case "search":
+      return "warning";
+    default:
+      return "default";
+  }
+};
+
+const availableItemTagFilters = computed(() => {
+  const tagsById = new Map<string, TagView & { count: number }>();
+  Object.values(collectionItemTagsMap.value).forEach((tags) => {
+    tags.forEach((tag) => {
+      const current = tagsById.get(tag.id);
+      if (current) {
+        current.count += 1;
+        return;
+      }
+      tagsById.set(tag.id, { ...tag, count: 1 });
+    });
+  });
+
+  return Array.from(tagsById.values()).sort((left, right) => {
+    if (right.count !== left.count) {
+      return right.count - left.count;
+    }
+    return left.name.localeCompare(right.name);
+  });
+});
+
+const filteredCollectionItems = computed(() => {
+  if (!itemTagFilter.value) {
+    return collectionItems.value;
+  }
+
+  return collectionItems.value.filter((item) =>
+    (collectionItemTagsMap.value[item.id] ?? []).some((tag) => tag.id === itemTagFilter.value),
+  );
+});
+
+const refreshItemSelectionByFilter = () => {
+  const visibleItems = filteredCollectionItems.value;
+  if (visibleItems.length === 0) {
+    selectedItemId.value = "";
+    itemNoteDraft.value = "";
+    void loadItemTags("");
+    return;
+  }
+
+  if (!visibleItems.some((item) => item.id === selectedItemId.value)) {
+    selectItem(visibleItems[0]);
+  }
+};
+
+const toggleItemTagFilter = (tagId: string) => {
+  itemTagFilter.value = itemTagFilter.value === tagId ? "" : tagId;
+  refreshItemSelectionByFilter();
+};
+
+const clearItemTagFilter = () => {
+  if (!itemTagFilter.value) {
+    return;
+  }
+  itemTagFilter.value = "";
+  if (!selectedItemId.value && collectionItems.value.length > 0) {
+    selectItem(collectionItems.value[0]);
+  }
+};
+
+const itemTypeIcon = (item: CollectionItemView) => {
+  switch (item.item_type) {
+    case "document":
+      return BookMarked;
+    case "search":
+      return Search;
+    case "qa_source":
+      return Layers3;
+    default:
+      return Files;
   }
 };
 
@@ -133,6 +232,29 @@ const loadItemTags = async (itemId: string) => {
     itemTags.value = await docmindApi.listTargetTags("collection_item", itemId);
   } catch (error) {
     console.error("[DocMind] listTargetTags(collection_item) failed", error);
+  }
+};
+
+const loadCollectionItemTags = async (items: CollectionItemView[]) => {
+  if (items.length === 0) {
+    collectionItemTagsMap.value = {};
+    itemTagFilter.value = "";
+    return;
+  }
+
+  const pairs = await Promise.all(items.map(async (item) => {
+    try {
+      const tags = await docmindApi.listTargetTags("collection_item", item.id);
+      return [item.id, tags] as const;
+    } catch (error) {
+      console.error(`[DocMind] listTargetTags(collection_item) failed item=${item.id}`, error);
+      return [item.id, [] as TagView[]] as const;
+    }
+  }));
+
+  collectionItemTagsMap.value = Object.fromEntries(pairs);
+  if (itemTagFilter.value && !availableItemTagFilters.value.some((tag) => tag.id === itemTagFilter.value)) {
+    itemTagFilter.value = "";
   }
 };
 
@@ -195,7 +317,13 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
   try {
     const items = await docmindApi.listCollectionItems(collectionId);
     collectionItems.value = items;
-    if (preserveSelected && selectedItemId.value && items.some((item) => item.id === selectedItemId.value)) {
+    await loadCollectionItemTags(items);
+
+    const visibleItems = itemTagFilter.value
+      ? items.filter((item) => (collectionItemTagsMap.value[item.id] ?? []).some((tag) => tag.id === itemTagFilter.value))
+      : items;
+
+    if (preserveSelected && selectedItemId.value && visibleItems.some((item) => item.id === selectedItemId.value)) {
       const current = items.find((item) => item.id === selectedItemId.value) ?? null;
       itemNoteDraft.value = current?.note ?? "";
       if (current) {
@@ -204,7 +332,7 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
       return;
     }
 
-    const next = items[0] ?? null;
+    const next = visibleItems[0] ?? null;
     selectedItemId.value = next?.id ?? "";
     itemNoteDraft.value = next?.note ?? "";
     await loadItemTags(next?.id ?? "");
@@ -228,6 +356,8 @@ const startNewCollection = () => {
   selectedCollectionId.value = "";
   resetEditor();
   collectionItems.value = [];
+  collectionItemTagsMap.value = {};
+  itemTagFilter.value = "";
   selectedItemId.value = "";
   itemNoteDraft.value = "";
   collectionTags.value = [];
@@ -705,9 +835,14 @@ onActivated(async () => {
                 type="button"
                 @click="openRecentView(item)"
               >
-                <div class="min-w-0">
-                  <div class="truncate text-sm font-medium text-primary">{{ item.title }}</div>
-                  <div class="mt-1 truncate text-[11px] text-muted">{{ item.path || t("common.none") }}</div>
+                <div class="flex min-w-0 items-start gap-2">
+                  <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-panel text-accent">
+                    <component :is="recentViewTypeIcon(item)" :size="14" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-medium text-primary">{{ item.title }}</div>
+                    <div class="mt-1 truncate text-[11px] text-muted">{{ item.path || t("common.none") }}</div>
+                  </div>
                 </div>
                 <div class="shrink-0 text-right">
                   <DocMindBadge tone="default">{{ recentViewTypeLabel(item) }}</DocMindBadge>
@@ -813,12 +948,41 @@ onActivated(async () => {
             <div v-else-if="itemsLoading" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
               {{ t("common.loading") }}
             </div>
-            <div v-else-if="collectionItems.length === 0" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
-              {{ t("page.collections.emptyItems") }}
-            </div>
             <div v-else class="space-y-3">
+              <div v-if="availableItemTagFilters.length > 0" class="rounded-lg border border-default bg-surface px-3 py-3">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
+                    {{ t("page.collections.itemTagFilter") }}
+                  </div>
+                  <button
+                    v-if="itemTagFilter"
+                    class="text-[11px] text-muted transition hover:text-primary"
+                    type="button"
+                    @click="clearItemTagFilter"
+                  >
+                    {{ t("page.collections.clearFilter") }}
+                  </button>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <button
+                    v-for="tag in availableItemTagFilters"
+                    :key="tag.id"
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition"
+                    :class="itemTagFilter === tag.id ? 'border-accent bg-accent-soft text-primary' : 'border-default bg-panel text-secondary hover:bg-surface-hover hover:text-primary'"
+                    type="button"
+                    @click="toggleItemTagFilter(tag.id)"
+                  >
+                    <span class="max-w-[8rem] truncate">{{ tag.name }}</span>
+                    <DocMindBadge tone="default">{{ tag.count }}</DocMindBadge>
+                  </button>
+                </div>
+              </div>
+              <div v-if="filteredCollectionItems.length === 0" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">
+                {{ itemTagFilter ? t("page.collections.noFilteredItems") : t("page.collections.emptyItems") }}
+              </div>
               <article
-                v-for="item in collectionItems"
+                v-else
+                v-for="item in filteredCollectionItems"
                 :key="item.id"
                 class="cursor-pointer rounded-lg border border-default bg-surface p-3 transition"
                 :class="selectedItemId === item.id ? 'bg-accent-soft shadow-card' : 'hover:bg-surface-hover'"
@@ -833,7 +997,7 @@ onActivated(async () => {
                         <div class="truncate text-sm font-medium text-primary">{{ item.title }}</div>
                         <div class="mt-1 text-[11px] text-muted">{{ item.path || t("common.none") }}</div>
                       </div>
-                      <DocMindBadge tone="default">{{ itemTypeLabel(item) }}</DocMindBadge>
+                      <DocMindBadge :tone="itemTypeTone(item)">{{ itemTypeLabel(item) }}</DocMindBadge>
                     </div>
                     <div v-if="item.title_path" class="mt-2 text-[11px] text-dim">
                       {{ t("page.collections.location") }}：{{ item.title_path }}
@@ -870,12 +1034,14 @@ onActivated(async () => {
             <div v-else class="space-y-2">
               <div class="docmind-content-block docmind-content-block--super-tight-top">
                 <div class="docmind-section-header docmind-section-header--compact">
-                  <span class="card-icon docmind-page-header-icon"><Files :size="17" /></span>
+                  <span class="card-icon docmind-page-header-icon">
+                    <component :is="itemTypeIcon(selectedItem)" :size="17" />
+                  </span>
                   <div class="min-w-0">
                     <div class="text-base font-semibold text-primary">{{ selectedItem.title }}</div>
                     <div class="mt-1 break-all text-xs text-muted">{{ selectedItem.path || t("common.none") }}</div>
                   </div>
-                  <DocMindBadge tone="default">{{ itemTypeLabel(selectedItem) }}</DocMindBadge>
+                  <DocMindBadge :tone="itemTypeTone(selectedItem)">{{ itemTypeLabel(selectedItem) }}</DocMindBadge>
                 </div>
                 <div v-if="selectedItem.title_path" class="mt-2 text-sm leading-6 text-primary">
                   <span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">

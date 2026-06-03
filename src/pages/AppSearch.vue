@@ -12,7 +12,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight } from "lucide-vue-next";
+import { AlertCircle, BookMarked, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPicker.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -83,6 +83,7 @@ const { favorites, loadQuickAccessData } = useQuickAccessData();
 const collections = ref<CollectionView[]>([]);
 const collectionPickerVisible = ref(false);
 const collectionPickerTarget = ref<SearchResultView | null>(null);
+const collectionPickerMode = ref<"chunk" | "document">("chunk");
 const collectionPickerLoading = ref(false);
 
 interface SearchResultGroup {
@@ -911,8 +912,9 @@ const loadCollections = async () => {
   }
 };
 
-const openResultCollectionPicker = async (item: SearchResultView) => {
+const openResultCollectionPicker = async (item: SearchResultView, mode: "chunk" | "document" = "chunk") => {
   collectionPickerTarget.value = item;
+  collectionPickerMode.value = mode;
   actionErrorMessage.value = "";
   actionMessage.value = t("page.collections.pickerOpening");
   collectionPickerVisible.value = true;
@@ -927,6 +929,7 @@ const addSelectedResultToCollection = async (collectionId: string) => {
   }
 
   const item = collectionPickerTarget.value;
+  const isDocumentCollection = collectionPickerMode.value === "document";
   const itemTitle = (item as SearchResultView & { fileName?: string }).fileName
     || item.file_name
     || item.path
@@ -935,15 +938,16 @@ const addSelectedResultToCollection = async (collectionId: string) => {
   const collection = collections.value.find((entry) => entry.id === collectionId);
   const input: CollectionItemInput = {
     collection_id: collectionId,
-    item_type: "chunk",
-    document_id: "",
-    chunk_id: item.id,
+    item_type: collectionPickerMode.value,
+    document_id: isDocumentCollection ? null : "",
+    chunk_id: isDocumentCollection ? null : item.id,
     title: itemTitle,
     path: item.path,
-    title_path: item.title_path || item.heading,
+    title_path: isDocumentCollection ? item.fileName : (item.title_path || item.heading),
     snippet: item.snippet,
     note: "",
     source_meta_json: JSON.stringify({
+      mode: collectionPickerMode.value,
       file_name: item.fileName,
       ext: item.ext,
       paragraph: item.paragraph ?? null,
@@ -1005,6 +1009,16 @@ const resultContextMenuItems = computed<ContextMenuItem[]>(() => {
       handler: () => {
         if (selected.value) {
           void openResultCollectionPicker(selected.value);
+        }
+      },
+    },
+    {
+      key: "collectDocument",
+      label: t("page.collections.collectDocument"),
+      icon: BookMarked,
+      handler: () => {
+        if (selected.value) {
+          void openResultCollectionPicker(selected.value, "document");
         }
       },
     },

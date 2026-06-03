@@ -19,6 +19,7 @@ import {
   RefreshCw,
   ArrowUp,
   ClipboardCopy,
+  BookMarked,
   Eye,
   FileDown,
   FolderPlus,
@@ -76,6 +77,7 @@ const qaProfileChoice = ref("__current__");
 const collections = ref<CollectionView[]>([]);
 const collectionPickerVisible = ref(false);
 const collectionPickerTarget = ref<QaSourceView | null>(null);
+const collectionPickerMode = ref<"qa_source" | "document">("qa_source");
 const collectionPickerLoading = ref(false);
 const expandedMessages = ref<Record<string, boolean>>({});
 const editingSessionId = ref("");
@@ -286,6 +288,17 @@ const sourceContextMenuItems = computed<ContextMenuItem[]>(() => [
     handler: () => {
       if (sourceMenuTarget.value) {
         void openSourceCollectionPicker(sourceMenuTarget.value);
+      }
+    },
+  },
+  {
+    key: "collectDocument",
+    label: t("page.collections.collectDocument"),
+    icon: BookMarked,
+    disabled: !sourceMenuTarget.value,
+    handler: () => {
+      if (sourceMenuTarget.value) {
+        void openSourceCollectionPicker(sourceMenuTarget.value, "document");
       }
     },
   },
@@ -900,8 +913,12 @@ const loadCollections = async () => {
   }
 };
 
-const openSourceCollectionPicker = async (source: NonNullable<typeof selectedSource.value>) => {
+const openSourceCollectionPicker = async (
+  source: NonNullable<typeof selectedSource.value>,
+  mode: "qa_source" | "document" = "qa_source",
+) => {
   collectionPickerTarget.value = source;
+  collectionPickerMode.value = mode;
   collectionPickerVisible.value = true;
   if (collections.value.length === 0) {
     await loadCollections();
@@ -914,19 +931,22 @@ const addSelectedSourceToCollection = async (collectionId: string) => {
   }
 
   const source = selectedSource.value;
+  const isDocumentCollection = collectionPickerMode.value === "document";
   const collection = collections.value.find((entry) => entry.id === collectionId);
   const input: CollectionItemInput = {
     collection_id: collectionId,
-    item_type: "qa_source",
-    qa_session_id: qaAnswer.value.session_id,
-    qa_message_id: qaAnswer.value.id,
-    chunk_id: source.chunk_id,
+    item_type: collectionPickerMode.value,
+    document_id: isDocumentCollection ? null : "",
+    chunk_id: isDocumentCollection ? null : source.chunk_id,
+    qa_session_id: isDocumentCollection ? null : qaAnswer.value.session_id,
+    qa_message_id: isDocumentCollection ? null : qaAnswer.value.id,
     title: source.file_name,
     path: source.path,
-    title_path: source.title_path || source.heading,
+    title_path: isDocumentCollection ? source.file_name : (source.title_path || source.heading),
     snippet: source.snippet,
     note: "",
     source_meta_json: JSON.stringify({
+      mode: collectionPickerMode.value,
       source_id: source.source_id,
       score: source.score,
       rank_reason: source.rank_reason,
