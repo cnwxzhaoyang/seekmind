@@ -4,9 +4,9 @@
  * @CreatedDate 2026/06/02
  * @Description 设置页中的 AI 回答配置面板，负责模型、参数与连通性测试。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Check, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
+import { Check, ChevronDown, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
 import DocMindBadge from "./DocMindBadge.vue";
 import { docmindApi, formatDocmindError } from "../../services/docmindApi";
 import { useInfoMessage } from "../../composables/useInfoMessage";
@@ -15,8 +15,13 @@ import type { QaConnectionTestView, QaModelProfileUpsertView, QaModelProfileView
 const { t } = useI18n();
 
 const savedSettings = ref<QaSettingsView | null>(null);
-const enabled = ref(false);
-const provider = ref("openai_compatible");
+// 修复：模型启用状态改为自动维持，不再暴露给用户手动切换，避免默认连接与当前配置状态分裂。
+const enabled = ref(true);
+type ProviderPreset = "openai_compatible" | "ollama" | "google_ai" | "deepseek" | "custom";
+
+const providerPresets: ProviderPreset[] = ["openai_compatible", "ollama", "google_ai", "deepseek", "custom"];
+const providerMode = ref<ProviderPreset>("openai_compatible");
+const customProvider = ref("");
 const baseUrl = ref("");
 const apiKey = ref("");
 const model = ref("");
@@ -30,7 +35,6 @@ const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 const profilesLoading = ref(false);
-const profileSaving = ref(false);
 const profileDeleting = ref(false);
 const errorMessage = ref("");
 const { infoMessage } = useInfoMessage();
@@ -38,8 +42,71 @@ const profileMessage = ref("");
 const profileErrorMessage = ref("");
 const connectionResult = ref<QaConnectionTestView | null>(null);
 const profiles = ref<QaModelProfileView[]>([]);
+const selectedProfileId = ref("");
 const editingProfileId = ref("");
-const profileName = ref("");
+const profilesReady = ref(false);
+
+const normalizeProviderValue = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+
+const resolveProviderMode = (value: string): ProviderPreset => {
+  const normalized = normalizeProviderValue(value);
+  return providerPresets.includes(normalized as ProviderPreset) ? (normalized as ProviderPreset) : "custom";
+};
+
+const providerValue = computed(() => (providerMode.value === "custom" ? customProvider.value.trim() : providerMode.value));
+// 兼容历史连接里出现的自定义 provider，避免旧配置在切换成下拉后丢失。
+const providerLabel = (value: string) => {
+  const normalized = normalizeProviderValue(value);
+  if (normalized === "openai_compatible") {
+    return t("page.settings.qa.providerOptions.openaiCompatible");
+  }
+  if (normalized === "ollama") {
+    return t("page.settings.qa.providerOptions.ollama");
+  }
+  if (normalized === "google_ai") {
+    return t("page.settings.qa.providerOptions.googleAi");
+  }
+  if (normalized === "deepseek") {
+    return t("page.settings.qa.providerOptions.deepSeek");
+  }
+
+  return value.trim() || t("page.settings.qa.providerOptions.custom");
+};
+
+const applyProviderValue = (value: string) => {
+  const mode = resolveProviderMode(value);
+  providerMode.value = mode;
+  customProvider.value = mode === "custom" ? value.trim() : "";
+};
+
+const findMatchingProfileId = (settings: QaSettingsView | null, list: QaModelProfileView[]) => {
+  if (!settings) {
+    return "";
+  }
+
+  const normalizedProvider = normalizeProviderValue(settings.provider);
+  const matched = list.find(
+    (item) =>
+      normalizeProviderValue(item.provider) === normalizedProvider &&
+      item.base_url.trim() === settings.base_url.trim() &&
+      item.api_key === settings.api_key &&
+      item.model.trim() === settings.model.trim(),
+  );
+
+  return matched?.id ?? "";
+};
+
+// 从预设切回自定义时，默认把上一个 provider 带进自定义输入框，减少手工重输。
+watch(providerMode, (next, prev) => {
+  if (next === "custom" && prev !== "custom" && !customProvider.value.trim()) {
+    customProvider.value = prev;
+    return;
+  }
+
+  if (next !== "custom" && prev === "custom") {
+    customProvider.value = "";
+  }
+});
 
 const hasChanges = computed(() => {
   if (!savedSettings.value) {
@@ -47,8 +114,7 @@ const hasChanges = computed(() => {
   }
 
   return (
-    enabled.value !== savedSettings.value.enabled ||
-    provider.value.trim() !== savedSettings.value.provider ||
+    providerValue.value !== savedSettings.value.provider ||
     baseUrl.value.trim() !== savedSettings.value.base_url ||
     apiKey.value !== savedSettings.value.api_key ||
     model.value.trim() !== savedSettings.value.model ||
@@ -62,8 +128,9 @@ const hasChanges = computed(() => {
 });
 
 const applySettings = (settings: QaSettingsView) => {
-  enabled.value = settings.enabled;
-  provider.value = settings.provider;
+  // 修复：启用状态由默认连接和保存逻辑自动推导，读取时统一视为已启用，避免旧配置残留 false 阻断问答。
+  enabled.value = true;
+  applyProviderValue(settings.provider);
   baseUrl.value = settings.base_url;
   apiKey.value = settings.api_key;
   model.value = settings.model;
@@ -77,9 +144,8 @@ const applySettings = (settings: QaSettingsView) => {
 
 const applyProfile = (profile: QaModelProfileView) => {
   editingProfileId.value = profile.id;
-  profileName.value = profile.name;
-  enabled.value = profile.enabled;
-  provider.value = profile.provider;
+  enabled.value = true;
+  applyProviderValue(profile.provider);
   baseUrl.value = profile.base_url;
   apiKey.value = profile.api_key;
   model.value = profile.model;
@@ -88,13 +154,28 @@ const applyProfile = (profile: QaModelProfileView) => {
 const loadProfiles = async () => {
   profilesLoading.value = true;
   profileErrorMessage.value = "";
+  profilesReady.value = false;
 
   try {
     profiles.value = await docmindApi.listQaModelProfiles();
+    if (profiles.value.length > 0) {
+      const matchedProfileId =
+        findMatchingProfileId(savedSettings.value, profiles.value) ||
+        profiles.value.find((item) => item.is_default)?.id ||
+        profiles.value[0]?.id ||
+        "";
+      if (!selectedProfileId.value) {
+        selectedProfileId.value = matchedProfileId;
+      }
+      if (!editingProfileId.value && matchedProfileId) {
+        editingProfileId.value = matchedProfileId;
+      }
+    }
   } catch (error) {
     profileErrorMessage.value = formatDocmindError(error, t("page.settings.qa.profileErrorLoad"));
     console.error("[DocMind] listQaModelProfiles failed", error);
   } finally {
+    profilesReady.value = true;
     profilesLoading.value = false;
   }
 };
@@ -116,36 +197,44 @@ const loadSettings = async () => {
   }
 };
 
-const saveProfile = async () => {
-  profileSaving.value = true;
+const buildConnectionProfileName = (settings: QaSettingsView) => {
+  const providerName = providerLabel(settings.provider).trim();
+  const modelName = settings.model.trim();
+  if (providerName && modelName) {
+    return `${providerName} · ${modelName}`;
+  }
+  return modelName || providerName || t("page.settings.qa.profileUnnamed");
+};
+
+const syncCurrentProfileToList = async (settings: QaSettingsView) => {
   profileErrorMessage.value = "";
   profileMessage.value = "";
 
   try {
+    const existing = profiles.value.find((item) => item.id === editingProfileId.value) ?? null;
     const payload: QaModelProfileUpsertView = {
-      id: editingProfileId.value || null,
-      name: profileName.value.trim() || model.value.trim() || t("page.settings.qa.profileUnnamed"),
-      provider: provider.value.trim() || "openai_compatible",
-      base_url: baseUrl.value.trim(),
-      api_key: apiKey.value,
-      model: model.value.trim(),
-      enabled: enabled.value,
-      is_default: false,
+      id: existing?.id ?? null,
+      name: existing?.name?.trim() || buildConnectionProfileName(settings),
+      provider: settings.provider,
+      base_url: settings.base_url,
+      api_key: settings.api_key,
+      model: settings.model,
+      enabled: true,
+      is_default: existing?.is_default ?? false,
     };
     const saved = await docmindApi.saveQaModelProfile(payload);
     profiles.value = [saved, ...profiles.value.filter((item) => item.id !== saved.id)];
+    selectedProfileId.value = saved.id;
     editingProfileId.value = saved.id;
-    profileName.value = saved.name;
     profileMessage.value = t("page.settings.qa.profileSaved", { name: saved.name });
   } catch (error) {
     profileErrorMessage.value = formatDocmindError(error, t("page.settings.qa.profileErrorSave"));
     console.error("[DocMind] saveQaModelProfile failed", error);
-  } finally {
-    profileSaving.value = false;
   }
 };
 
 const loadProfileToForm = (profile: QaModelProfileView) => {
+  selectedProfileId.value = profile.id;
   applyProfile(profile);
   profileMessage.value = t("page.settings.qa.profileLoaded", { name: profile.name });
 };
@@ -158,9 +247,11 @@ const deleteProfile = async (profile: QaModelProfileView) => {
   try {
     await docmindApi.removeQaModelProfile(profile.id);
     profiles.value = profiles.value.filter((item) => item.id !== profile.id);
+    if (selectedProfileId.value === profile.id) {
+      selectedProfileId.value = profiles.value.find((item) => item.is_default)?.id ?? profiles.value[0]?.id ?? "";
+    }
     if (editingProfileId.value === profile.id) {
       editingProfileId.value = "";
-      profileName.value = "";
     }
     profileMessage.value = t("page.settings.qa.profileDeleted", { name: profile.name });
   } catch (error) {
@@ -178,6 +269,9 @@ const setDefaultProfile = async (profile: QaModelProfileView) => {
   try {
     const saved = await docmindApi.setDefaultQaModelProfile(profile.id);
     profiles.value = profiles.value.map((item) => ({ ...item, is_default: item.id === saved.id }));
+    selectedProfileId.value = saved.id;
+    // 修复：默认连接即为当前启用连接，避免默认项与可用项状态不一致。
+    enabled.value = true;
     profileMessage.value = t("page.settings.qa.profileDefaulted", { name: saved.name });
   } catch (error) {
     profileErrorMessage.value = formatDocmindError(error, t("page.settings.qa.profileErrorDefault"));
@@ -186,8 +280,9 @@ const setDefaultProfile = async (profile: QaModelProfileView) => {
 };
 
 const buildSettingsPayload = (): QaSettingsView => ({
-  enabled: enabled.value,
-  provider: provider.value.trim() || "openai_compatible",
+  // 启用状态由默认连接自动维持，这里始终按已启用保存，避免旧数据把问答入口锁死。
+  enabled: true,
+  provider: providerValue.value || "openai_compatible",
   base_url: baseUrl.value.trim(),
   api_key: apiKey.value,
   model: model.value.trim(),
@@ -209,6 +304,7 @@ const saveSettings = async () => {
     const settings = await docmindApi.saveQaSettings(buildSettingsPayload());
     savedSettings.value = settings;
     applySettings(settings);
+    await syncCurrentProfileToList(settings);
     infoMessage.value = t("page.settings.qa.saved");
   } catch (error) {
     errorMessage.value = formatDocmindError(error, t("page.settings.qa.error.save"));
@@ -230,6 +326,7 @@ const testConnection = async () => {
     const settings = await docmindApi.saveQaSettings(payload);
     savedSettings.value = settings;
     applySettings(settings);
+    await syncCurrentProfileToList(settings);
     connectionResult.value = result;
     infoMessage.value = t("page.settings.qa.connectionSaved", { message: result.message });
   } catch (error) {
@@ -243,6 +340,21 @@ const testConnection = async () => {
 const refreshAll = async () => {
   await loadSettings();
 };
+
+watch(selectedProfileId, (next) => {
+  if (!profilesReady.value) {
+    return;
+  }
+
+  const profile = profiles.value.find((item) => item.id === next);
+  if (!profile) {
+    return;
+  }
+
+  if (editingProfileId.value !== profile.id) {
+    loadProfileToForm(profile);
+  }
+});
 
 onMounted(async () => {
   await refreshAll();
@@ -261,9 +373,7 @@ onMounted(async () => {
           <div class="settings-card-desc">{{ t("page.settings.qa.desc") }}</div>
         </div>
       </div>
-      <DocMindBadge :tone="enabled ? 'success' : 'default'">
-        {{ enabled ? t("page.settings.qa.enabled") : t("page.settings.qa.disabled") }}
-      </DocMindBadge>
+      <DocMindBadge tone="success">{{ t("page.settings.qa.enabled") }}</DocMindBadge>
     </div>
 
     <div class="settings-card-body space-y-4">
@@ -279,266 +389,232 @@ onMounted(async () => {
         {{ t("common.loading") }}
       </div>
 
-      <div v-else class="space-y-4">
-        <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
-          <div>
-            <div class="docmind-section-label">{{ t("page.settings.qa.enableLabel") }}</div>
-            <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.enableHint") }}</div>
-          </div>
-          <label class="inline-flex items-center gap-2 text-sm text-secondary">
-            <input v-model="enabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
-            {{ enabled ? t("page.settings.qa.enabled") : t("page.settings.qa.disabled") }}
-          </label>
-        </div>
+      <div v-else class="space-y-3">
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
+          <div class="space-y-3">
+            <div class="grid gap-3 xl:grid-cols-2">
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.provider") }}</div>
+                <div class="relative">
+                  <select
+                    v-model="providerMode"
+                    class="w-full appearance-none rounded-lg border border-default bg-input px-4 py-2.5 pr-10 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                  >
+                    <option v-for="option in providerPresets" :key="option" :value="option">
+                      {{ providerLabel(option) }}
+                    </option>
+                  </select>
+                  <ChevronDown :size="15" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-secondary" />
+                </div>
+                <input
+                  v-if="providerMode === 'custom'"
+                  v-model="customProvider"
+                  class="mt-1.5 w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                  :placeholder="t('page.settings.qa.providerCustomPlaceholder')"
+                />
+                <div class="mt-1 docmind-item-meta">{{ t("page.settings.qa.providerHint") }}</div>
+              </label>
 
-        <div class="grid gap-4 xl:grid-cols-2">
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.provider") }}</div>
-            <input
-              v-model="provider"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-              :placeholder="t('page.settings.qa.providerPlaceholder')"
-            />
-          </label>
-
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.model") }}</div>
-            <input
-              v-model="model"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-              :placeholder="t('page.settings.qa.modelPlaceholder')"
-            />
-          </label>
-        </div>
-
-        <div class="grid gap-4 xl:grid-cols-2">
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.baseUrl") }}</div>
-            <input
-              v-model="baseUrl"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-              :placeholder="t('page.settings.qa.baseUrlPlaceholder')"
-            />
-          </label>
-
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.apiKey") }}</div>
-            <input
-              v-model="apiKey"
-              type="password"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-              :placeholder="t('page.settings.qa.apiKeyPlaceholder')"
-            />
-          </label>
-        </div>
-
-        <div class="grid gap-4 xl:grid-cols-2">
-          <label class="block">
-            <div class="mb-2 flex items-center justify-between docmind-section-label">
-              <span>{{ t("page.settings.qa.temperature") }}</span>
-              <span>{{ temperature.toFixed(2) }}</span>
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.model") }}</div>
+                <input
+                  v-model="model"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                  :placeholder="t('page.settings.qa.modelPlaceholder')"
+                />
+              </label>
             </div>
-            <input v-model.number="temperature" type="range" min="0" max="2" step="0.05" class="w-full accent-accent" />
-          </label>
 
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.maxTokens") }}</div>
-            <input
-              v-model.number="maxOutputTokens"
-              type="number"
-              min="1"
-              step="1"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-            />
-          </label>
-        </div>
+            <div class="grid gap-3 xl:grid-cols-2">
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.baseUrl") }}</div>
+                <input
+                  v-model="baseUrl"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                  :placeholder="t('page.settings.qa.baseUrlPlaceholder')"
+                />
+              </label>
 
-        <div class="grid gap-4 xl:grid-cols-3">
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.contextLimit") }}</div>
-            <input
-              v-model.number="contextChunkLimit"
-              type="number"
-              min="1"
-              step="1"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-            />
-          </label>
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.tokenBudget") }}</div>
-            <input
-              v-model.number="contextTokenBudget"
-              type="number"
-              min="1"
-              step="1"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-            />
-          </label>
-          <label class="block">
-            <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.minEvidence") }}</div>
-            <input
-              v-model.number="minEvidenceCount"
-              type="number"
-              min="1"
-              step="1"
-              class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-            />
-          </label>
-        </div>
-
-        <label class="block">
-          <div class="mb-2 flex items-center justify-between docmind-section-label">
-            <span>{{ t("page.settings.qa.minRetrievalScore") }}</span>
-            <span>{{ minRetrievalScore.toFixed(2) }}</span>
-          </div>
-          <input v-model.number="minRetrievalScore" type="range" min="-1" max="1" step="0.05" class="w-full accent-accent" />
-        </label>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-            :disabled="loading || saving || testing || !hasChanges"
-            @click="saveSettings"
-          >
-            <Save :size="15" />
-            {{ saving ? t("page.settings.qa.saving") : t("page.settings.qa.save") }}
-          </button>
-          <button
-            class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-            :disabled="loading || saving || testing"
-            @click="refreshAll"
-          >
-            <RefreshCw :size="15" />
-            {{ t("page.settings.qa.refresh") }}
-          </button>
-          <button
-            class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-            :disabled="loading || saving || testing"
-            @click="testConnection"
-          >
-            <Shield :size="15" />
-            {{ testing ? t("page.settings.qa.testing") : t("page.settings.qa.testConnection") }}
-          </button>
-          <DocMindBadge tone="default">{{ t("page.settings.qa.localNotice") }}</DocMindBadge>
-        </div>
-
-        <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
-          {{ t("page.settings.qa.privacyHint") }}
-        </div>
-
-        <div v-if="connectionResult" class="rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
-          <div class="docmind-section-label">{{ t("page.settings.qa.connectionResult") }}</div>
-          <div class="mt-1">{{ connectionResult.message }}</div>
-        </div>
-
-        <div class="mx-auto w-full max-w-4xl rounded-lg border border-default bg-panel px-4 py-4">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <div class="docmind-section-label">{{ t("page.settings.qa.profileTitle") }}</div>
-              <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.profileDesc") }}</div>
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.apiKey") }}</div>
+                <input
+                  v-model="apiKey"
+                  type="password"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                  :placeholder="t('page.settings.qa.apiKeyPlaceholder')"
+                />
+              </label>
             </div>
-            <DocMindBadge tone="default">{{ profiles.length }}</DocMindBadge>
-          </div>
 
-          <div v-if="profileErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
-            {{ profileErrorMessage }}
-          </div>
-          <div v-if="profileMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
-            {{ profileMessage }}
-          </div>
+            <div class="grid gap-3 xl:grid-cols-2">
+              <label class="block">
+                <div class="mb-1.5 flex items-center justify-between docmind-section-label">
+                  <span>{{ t("page.settings.qa.temperature") }}</span>
+                  <span>{{ temperature.toFixed(2) }}</span>
+                </div>
+                <input v-model.number="temperature" type="range" min="0" max="2" step="0.05" class="w-full accent-accent" />
+              </label>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.maxTokens") }}</div>
+                <input
+                  v-model.number="maxOutputTokens"
+                  type="number"
+                  min="1"
+                  step="1"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                />
+              </label>
+            </div>
+
+            <div class="grid gap-3 xl:grid-cols-3">
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.contextLimit") }}</div>
+                <input
+                  v-model.number="contextChunkLimit"
+                  type="number"
+                  min="1"
+                  step="1"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                />
+              </label>
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.tokenBudget") }}</div>
+                <input
+                  v-model.number="contextTokenBudget"
+                  type="number"
+                  min="1"
+                  step="1"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                />
+              </label>
+              <label class="block">
+                <div class="mb-1.5 docmind-section-label">{{ t("page.settings.qa.minEvidence") }}</div>
+                <input
+                  v-model.number="minEvidenceCount"
+                  type="number"
+                  min="1"
+                  step="1"
+                  class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                />
+              </label>
+            </div>
+
             <label class="block">
-              <div class="mb-2 docmind-section-label">{{ t("page.settings.qa.profileName") }}</div>
-              <input
-                v-model="profileName"
-                class="w-full rounded-lg border border-default bg-input px-3 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-                :placeholder="t('page.settings.qa.profileNamePlaceholder')"
-              />
+              <div class="mb-1.5 flex items-center justify-between docmind-section-label">
+                <span>{{ t("page.settings.qa.minRetrievalScore") }}</span>
+                <span>{{ minRetrievalScore.toFixed(2) }}</span>
+              </div>
+              <input v-model.number="minRetrievalScore" type="range" min="-1" max="1" step="0.05" class="w-full accent-accent" />
             </label>
-            <div class="flex items-center gap-2 md:pb-0.5">
+
+            <div class="flex flex-wrap items-center gap-2">
               <button
-                class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="profilesLoading || profileSaving || profileDeleting || !baseUrl.trim() || !model.trim()"
-                @click="saveProfile"
+                class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="loading || saving || testing || !hasChanges"
+                @click="saveSettings"
               >
                 <Save :size="15" />
-                {{ profileSaving ? t("page.settings.qa.profileSaving") : t("page.settings.qa.profileSave") }}
+                {{ saving ? t("page.settings.qa.saving") : t("page.settings.qa.save") }}
               </button>
+              <button
+                class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="loading || saving || testing"
+                @click="refreshAll"
+              >
+                <RefreshCw :size="15" />
+                {{ t("page.settings.qa.refresh") }}
+              </button>
+              <button
+                class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                :disabled="loading || saving || testing"
+                @click="testConnection"
+              >
+                <Shield :size="15" />
+                {{ testing ? t("page.settings.qa.testing") : t("page.settings.qa.testConnection") }}
+              </button>
+            </div>
+
+            <div class="docmind-item-meta">
+              {{ t("page.settings.qa.localNotice") }}
+            </div>
+
+            <div v-if="connectionResult" class="rounded-lg border border-default bg-panel px-3 py-2.5 text-sm text-secondary">
+              <div class="docmind-section-label">{{ t("page.settings.qa.connectionResult") }}</div>
+              <div class="mt-1">{{ connectionResult.message }}</div>
             </div>
           </div>
 
-          <div class="mt-4">
-            <div v-if="profilesLoading" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-xs text-muted">
-              {{ t("common.loading") }}
-            </div>
-            <div v-else-if="profiles.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-xs text-muted">
-              {{ t("page.settings.qa.profileEmpty") }}
-            </div>
-            <div v-else class="space-y-2">
-              <div
-                v-for="profile in profiles"
-                :key="profile.id"
-                class="w-full rounded-lg border px-3 py-2.5 text-left transition"
-                :class="profile.is_default ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0 flex-1 cursor-pointer" @click="loadProfileToForm(profile)">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <div class="truncate text-sm font-medium text-primary">{{ profile.name }}</div>
-                      <DocMindBadge v-if="profile.is_default" tone="success">{{ t("page.settings.qa.profileDefault") }}</DocMindBadge>
-                      <DocMindBadge v-if="editingProfileId === profile.id" tone="default">{{ t("page.settings.qa.profileEditing") }}</DocMindBadge>
-                    </div>
-                    <div class="mt-1 truncate text-xs text-secondary">
-                      {{ profile.provider }} · {{ profile.model }} · {{ profile.base_url }}
-                    </div>
+          <div class="space-y-4">
+            <div class="rounded-lg border border-default bg-panel px-3 py-3">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="docmind-section-label">{{ t("page.settings.qa.profileTitle") }}</div>
+                  <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.profileDesc") }}</div>
+                </div>
+                <DocMindBadge tone="default">{{ profiles.length }}</DocMindBadge>
+              </div>
+
+              <div v-if="profileErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
+                {{ profileErrorMessage }}
+              </div>
+              <div v-if="profileMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
+                {{ profileMessage }}
+              </div>
+
+              <div class="mt-2">
+                <div class="qa-connection-list-scroll">
+                  <div v-if="profilesLoading" class="qa-connection-list-empty">
+                    {{ t("common.loading") }}
                   </div>
-                  <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                    <button
-                      class="inline-flex items-center gap-1 rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
-                      type="button"
-                      @click.stop="loadProfileToForm(profile)"
+                  <div v-else-if="profiles.length === 0" class="qa-connection-list-empty">
+                    {{ t("page.settings.qa.profileEmpty") }}
+                  </div>
+                  <div v-else class="space-y-1.5">
+                    <div
+                      v-for="profile in profiles"
+                      :key="profile.id"
+                      class="w-full rounded-md border px-2.5 py-2 text-left transition"
+                      :class="profile.id === selectedProfileId ? 'border-accent bg-accent-soft' : profile.is_default ? 'border-default bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
                     >
-                      {{ t("page.settings.qa.profileLoad") }}
-                    </button>
-                    <button
-                      v-if="!profile.is_default"
-                      class="inline-flex items-center gap-1 rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
-                      type="button"
-                      @click.stop="setDefaultProfile(profile)"
-                    >
-                      <Check :size="13" />
-                      {{ t("page.settings.qa.profileSetDefault") }}
-                    </button>
-                    <button
-                      class="inline-flex items-center gap-1 rounded-md border border-danger-soft bg-danger-soft px-2 py-1 text-[11px] text-danger hover:opacity-90"
-                      type="button"
-                      :disabled="profileDeleting"
-                      @click.stop="deleteProfile(profile)"
-                    >
-                      <Trash2 :size="13" />
-                      {{ t("common.delete") }}
-                    </button>
+                      <div class="flex items-center justify-between gap-2">
+                        <div class="min-w-0 flex-1 cursor-pointer" @click="selectedProfileId = profile.id">
+                          <div class="flex flex-wrap items-center gap-1.5">
+                            <div class="truncate text-[13px] font-medium text-primary">{{ profile.name }}</div>
+                            <DocMindBadge v-if="profile.is_default" tone="success">{{ t("page.settings.qa.profileDefault") }}</DocMindBadge>
+                          </div>
+                          <div class="mt-0.5 truncate text-[11px] leading-4 text-secondary">
+                            {{ providerLabel(profile.provider) }} · {{ profile.model }} · {{ profile.base_url }}
+                          </div>
+                        </div>
+                        <div class="flex shrink-0 items-center justify-end gap-1">
+                          <button
+                            v-if="!profile.is_default"
+                            class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover"
+                            type="button"
+                            :title="t('page.settings.qa.profileSetDefault')"
+                            :aria-label="t('page.settings.qa.profileSetDefault')"
+                            @click.stop="setDefaultProfile(profile)"
+                          >
+                            <Check :size="13" />
+                          </button>
+                          <button
+                            class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-danger-soft bg-danger-soft text-danger hover:opacity-90"
+                            type="button"
+                            :disabled="profileDeleting"
+                            :title="t('common.delete')"
+                            :aria-label="t('common.delete')"
+                            @click.stop="deleteProfile(profile)"
+                          >
+                            <Trash2 :size="13" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-default bg-panel px-4 py-3">
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <div class="docmind-section-label">{{ t("page.settings.qa.sessionEntryTitle") }}</div>
-              <div class="docmind-item-meta mt-1">{{ t("page.settings.qa.sessionEntryDesc") }}</div>
-            </div>
-            <RouterLink
-              to="/qa"
-              class="inline-flex shrink-0 items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
-            >
-              <MessageSquareText :size="15" />
-              {{ t("page.settings.qa.openQa") }}
-            </RouterLink>
           </div>
         </div>
       </div>
@@ -607,6 +683,25 @@ onMounted(async () => {
   color: var(--color-text-muted);
 }
 
+.qa-connection-list-scroll {
+  height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.qa-connection-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 360px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  padding: 24px 16px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 html:not(.dark) .settings-card-shell {
   background: rgba(255, 255, 255, 0.92);
 }
@@ -620,6 +715,11 @@ html:not(.dark) .settings-card-desc {
 }
 
 html:not(.dark) .settings-empty-state {
+  background: rgba(248, 250, 252, 0.96);
+  color: #64748b;
+}
+
+html:not(.dark) .qa-connection-list-empty {
   background: rgba(248, 250, 252, 0.96);
   color: #64748b;
 }

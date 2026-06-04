@@ -460,6 +460,7 @@ pub struct QaAnswerView {
     pub model: String,
     pub created_at: String,
     pub error: Option<String>,
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,6 +474,7 @@ pub struct QaHistoryView {
     pub model: String,
     pub created_at: String,
     pub error: Option<String>,
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -497,6 +499,7 @@ pub struct QaMessageView {
     pub created_at: String,
     pub updated_at: String,
     pub error: Option<String>,
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -517,10 +520,13 @@ pub struct QaAnswerProgressView {
     pub state: String,
     pub question: String,
     pub answer: String,
+    #[serde(default)]
+    pub answer_delta: String,
     pub sources: Vec<QaSourceView>,
     pub retrieval: QaRetrievalView,
     pub model: String,
     pub error: Option<String>,
+    pub warning: Option<String>,
     pub updated_at: String,
 }
 

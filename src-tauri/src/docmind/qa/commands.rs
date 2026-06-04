@@ -1,17 +1,19 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/04
+ * @Description 问答命令入口，当前已切换为 Python sidecar 优先路由。
+ */
 use crate::docmind::models::{
     NetworkProxySettingsView, QaAnswerProgressView, QaAnswerView, QaAskStartView,
     QaConnectionTestView, QaHistoryView, QaMessageView, QaModelProfileUpsertView,
     QaModelProfileView, QaRetrievalView, QaSessionView, QaSettingsView, QaSourceView,
 };
-use crate::docmind::search::normalize_query;
 use crate::docmind::sidecar::apply_network_proxy_environment;
 use crate::docmind::storage::db::Database;
 use crate::docmind::storage::types::{NetworkProxySettings, QaSettings};
 
 use super::cancel::{cancel as cancel_qa_job, clear as clear_qa_job, register as register_qa_job};
-use super::client::{ask_model, ask_model_stream};
-use super::context::build_qa_context;
-use super::models::QaContext;
+use super::python_client::{PythonQaClient, RagRequest, RagSettingsRequest};
 use futures_util::future::{AbortHandle, Abortable};
 use reqwest::Proxy;
 use std::{
@@ -19,6 +21,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::Emitter;
+use crate::docmind::storage::db::sqlite_database_path;
 
 fn qa_settings_to_view(settings: &QaSettings) -> QaSettingsView {
     QaSettingsView {
@@ -46,37 +49,6 @@ fn network_proxy_settings_to_view(
         proxy_url: settings.proxy_url.clone(),
         updated_at,
     }
-}
-
-fn build_system_prompt(context: &QaContext, session_context: Option<&str>) -> String {
-    let mut prompt = String::from(
-        "你是 DocMind 的本地文档问答引擎。只能基于给定来源回答，不能使用外部知识补全事实。\
-如果来源不足，直接说明无法从当前文档判断。回答要简短、具体、可回溯。\
-不要编造新的来源编号，不要输出与来源无关的结论。\
-如果能回答，请用与用户问题相同的语言输出，并尽量把结论控制在 3 到 6 句以内。\n\n可用来源如下：\n",
-    );
-
-    if let Some(session_context) = session_context.filter(|text| !text.trim().is_empty()) {
-        prompt.push_str("\n最近对话上下文（仅用于理解指代，不可当作事实来源）：\n");
-        prompt.push_str(session_context.trim());
-        prompt.push_str("\n\n");
-    }
-
-    for source in &context.sources {
-        prompt.push('\n');
-        prompt.push_str(&source.block);
-        prompt.push_str("\n\n");
-    }
-
-    prompt.push_str(
-        "输出要求：\n\
-1. 只输出最终答案正文，不要输出 JSON。\n\
-2. 不要列出你没有使用的来源。\n\
-3. 如果当前问题包含“这两者”“二者”“它们”“关系”等指代，必须先依据最近对话确定指代对象；不要把新检索到但不属于这些对象的来源当作比较对象。\n\
-4. 如果无法回答，直接说明证据不足，并说明建议补充哪些文档类型或关键词。\n",
-    );
-
-    prompt
 }
 
 fn truncate_prompt_text(text: &str, max_chars: usize) -> String {
@@ -113,206 +85,6 @@ fn build_session_context(messages: &[QaMessageView]) -> String {
     lines.join("\n")
 }
 
-fn push_unique_term(
-    terms: &mut Vec<String>,
-    seen: &mut std::collections::HashSet<String>,
-    term: impl AsRef<str>,
-) {
-    let normalized = term.as_ref().trim().to_lowercase();
-    if normalized.len() < 2 || seen.contains(&normalized) {
-        return;
-    }
-
-    seen.insert(normalized.clone());
-    terms.push(normalized);
-}
-
-fn build_session_terms(messages: &[QaMessageView], current_terms: &[String]) -> Vec<String> {
-    let current_set = current_terms
-        .iter()
-        .map(|term| term.trim().to_lowercase())
-        .filter(|term| !term.is_empty())
-        .collect::<std::collections::HashSet<_>>();
-    let stop_terms = [
-        "什么", "怎么", "如何", "是否", "这个", "那个", "它的", "它", "以及", "问题", "答案",
-        "来源", "文档", "内容", "可以", "已经",
-    ]
-    .into_iter()
-    .collect::<std::collections::HashSet<_>>();
-
-    let mut terms = Vec::new();
-    let mut seen = std::collections::HashSet::<String>::new();
-
-    for message in messages.iter().rev().take(3) {
-        let tokens = normalize_query(&message.question);
-        for token in tokens {
-            let normalized = token.trim().to_lowercase();
-            if normalized.is_empty()
-                || normalized.len() < 2
-                || current_set.contains(&normalized)
-                || stop_terms.contains(normalized.as_str())
-                || seen.contains(&normalized)
-            {
-                continue;
-            }
-
-            push_unique_term(&mut terms, &mut seen, normalized);
-            if terms.len() >= 6 {
-                return terms;
-            }
-        }
-    }
-
-    for message in messages.iter().rev().take(3) {
-        let tokens = normalize_query(&message.answer);
-        for token in tokens {
-            let normalized = token.trim().to_lowercase();
-            if normalized.is_empty()
-                || normalized.len() < 2
-                || current_set.contains(&normalized)
-                || stop_terms.contains(normalized.as_str())
-                || seen.contains(&normalized)
-            {
-                continue;
-            }
-
-            push_unique_term(&mut terms, &mut seen, normalized);
-            if terms.len() >= 8 {
-                return terms;
-            }
-        }
-    }
-
-    terms
-}
-
-fn is_relation_follow_up(question: &str) -> bool {
-    [
-        "这两者",
-        "这二者",
-        "二者",
-        "两者",
-        "它们",
-        "前面两个",
-        "前两个",
-    ]
-    .iter()
-    .any(|marker| question.contains(marker))
-}
-
-fn normalize_reference_subject(question: &str) -> String {
-    let mut subject = question.trim().to_string();
-    for prefix in [
-        "什么是",
-        "何为",
-        "请问",
-        "介绍一下",
-        "解释一下",
-        "请介绍",
-        "请解释",
-    ] {
-        subject = subject.trim_start_matches(prefix).trim().to_string();
-    }
-
-    for suffix in ["是什么", "是啥", "指什么"] {
-        subject = subject.trim_end_matches(suffix).trim().to_string();
-    }
-
-    subject
-        .trim_matches(|ch: char| ch == '？' || ch == '?' || ch == '。' || ch.is_whitespace())
-        .to_string()
-}
-
-fn infer_relation_subjects_from_questions<'a>(
-    questions: impl Iterator<Item = &'a str>,
-) -> Option<(String, String)> {
-    let subjects = questions
-        .filter_map(|question| {
-            let subject = normalize_reference_subject(question);
-            if subject.is_empty() || is_relation_follow_up(&subject) {
-                None
-            } else {
-                Some(subject)
-            }
-        })
-        .take(2)
-        .collect::<Vec<_>>();
-
-    if subjects.len() == 2 {
-        Some((subjects[1].clone(), subjects[0].clone()))
-    } else {
-        None
-    }
-}
-
-fn infer_relation_subjects(
-    messages: &[QaMessageView],
-    recent_questions: &[String],
-) -> Option<(String, String)> {
-    infer_relation_subjects_from_questions(
-        recent_questions.iter().rev().map(String::as_str).chain(
-            messages
-                .iter()
-                .rev()
-                .map(|message| message.question.as_str()),
-        ),
-    )
-}
-
-struct QuestionRewrite {
-    retrieval_question: String,
-    relation_hint: Option<String>,
-    boost_terms: Vec<String>,
-}
-
-fn rewrite_follow_up_question(
-    question: &str,
-    messages: &[QaMessageView],
-    recent_questions: &[String],
-) -> QuestionRewrite {
-    if !is_relation_follow_up(question) {
-        return QuestionRewrite {
-            retrieval_question: question.to_string(),
-            relation_hint: None,
-            boost_terms: normalize_query(question),
-        };
-    }
-
-    if let Some((left, right)) = infer_relation_subjects(messages, recent_questions) {
-        let rewritten = format!("{left} 与 {right} 的关系");
-        let hint = format!("当前问题中的“这两者”指代：{left} 与 {right}。请围绕这两个对象回答。");
-        let mut boost_terms = Vec::new();
-        let mut seen = std::collections::HashSet::<String>::new();
-        for term in [
-            left.as_str(),
-            right.as_str(),
-            "关系",
-            "关联",
-            "组成",
-            "分解",
-            "包含",
-            "工作分解结构",
-        ] {
-            push_unique_term(&mut boost_terms, &mut seen, term);
-        }
-        for term in normalize_query(&rewritten) {
-            push_unique_term(&mut boost_terms, &mut seen, term);
-        }
-
-        QuestionRewrite {
-            retrieval_question: rewritten,
-            relation_hint: Some(hint),
-            boost_terms,
-        }
-    } else {
-        QuestionRewrite {
-            retrieval_question: question.to_string(),
-            relation_hint: None,
-            boost_terms: normalize_query(question),
-        }
-    }
-}
-
 fn build_answer_view(
     id: String,
     question: String,
@@ -323,6 +95,7 @@ fn build_answer_view(
     model: String,
     created_at: String,
     error: Option<String>,
+    warning: Option<String>,
 ) -> QaAnswerView {
     QaAnswerView {
         id,
@@ -334,6 +107,7 @@ fn build_answer_view(
         model,
         created_at,
         error,
+        warning,
     }
 }
 
@@ -342,20 +116,24 @@ fn build_progress_view(
     state: String,
     question: String,
     answer: String,
+    answer_delta: String,
     sources: Vec<crate::docmind::models::QaSourceView>,
     retrieval: crate::docmind::models::QaRetrievalView,
     model: String,
     error: Option<String>,
+    warning: Option<String>,
 ) -> QaAnswerProgressView {
     QaAnswerProgressView {
         job_id,
         state,
         question,
         answer,
+        answer_delta,
         sources,
         retrieval,
         model,
         error,
+        warning,
         updated_at: chrono::Utc::now().to_rfc3339(),
     }
 }
@@ -386,7 +164,8 @@ pub async fn save_qa_settings(
     state: tauri::State<'_, Database>,
 ) -> Result<QaSettingsView, String> {
     let payload = QaSettings {
-        enabled: settings.enabled,
+        // 修复：问答连接不再暴露手动启用开关，保存时统一写入启用态，避免默认连接和可用状态分裂。
+        enabled: true,
         provider: settings.provider,
         base_url: settings.base_url,
         api_key: settings.api_key,
@@ -520,6 +299,7 @@ pub async fn test_qa_connection(
     let base_url = settings.base_url.clone();
     let api_key = settings.api_key.clone();
     let model = settings.model.clone();
+    let provider = settings.provider.clone();
     let proxy_settings = state
         .get_network_proxy_settings()
         .await
@@ -531,16 +311,138 @@ pub async fn test_qa_connection(
     };
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        ask_model(
-            &base_url,
-            &api_key,
-            &model,
-            "ping",
-            "You are a connection test for DocMind. Reply with a short confirmation only.",
-            0.0,
-            16,
-            proxy_url.as_deref(),
-        )
+        // 这里只做最薄的健康检查，不再保留完整问答实现。
+        eprintln!(
+            "[DocMind] testing qa model connection provider={} model={} base_url={}",
+            provider, model, base_url
+        );
+        let mut builder = reqwest::blocking::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(8))
+            .timeout(std::time::Duration::from_secs(120));
+        if let Some(proxy_url) = proxy_url.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            let proxy = Proxy::all(proxy_url).map_err(|error| format!("代理地址无效: {error}"))?;
+            builder = builder.proxy(proxy);
+        }
+        let client = builder.build().map_err(|error| error.to_string())?;
+        let is_ollama = provider.to_lowercase().contains("ollama")
+            || base_url.contains("11434")
+            || base_url.contains("/api/");
+        let prompt = "You are a connection test for DocMind. Reply with a short confirmation only.";
+        let user_content = "ping";
+
+        let test_openai_compatible = |client: &reqwest::blocking::Client| -> Result<String, String> {
+            let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+            let payload = serde_json::json!({
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": user_content
+                    }
+                ],
+                "temperature": 0.0,
+                "max_tokens": 16,
+                "stream": false
+            });
+            let mut request = client.post(url).json(&payload);
+            if !api_key.trim().is_empty() {
+                request = request.bearer_auth(api_key.trim());
+            }
+            let response = request
+                .send()
+                .map_err(|error| format!("模型请求失败: {error}"))?;
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().unwrap_or_default();
+                return Err(format!("模型请求失败: {status} {body}"));
+            }
+            let parsed: serde_json::Value = response
+                .json()
+                .map_err(|error| format!("模型响应解析失败: {error}"))?;
+            let message = parsed["choices"]
+                .as_array()
+                .and_then(|choices| choices.first())
+                .and_then(|choice| {
+                    choice["message"]["content"]
+                        .as_str()
+                        .or_else(|| choice["message"]["reasoning_content"].as_str())
+                        .or_else(|| choice["message"]["thinking"].as_str())
+                })
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            Ok(message)
+        };
+
+        let test_ollama_native = |client: &reqwest::blocking::Client| -> Result<String, String> {
+            let mut native_base = base_url.trim_end_matches('/').to_string();
+            if native_base.ends_with("/v1") {
+                native_base.truncate(native_base.len() - 3);
+            } else if native_base.ends_with("/openai") {
+                native_base.truncate(native_base.len() - 7);
+            }
+            let url = format!("{}/api/chat", native_base.trim_end_matches('/'));
+            let payload = serde_json::json!({
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": user_content
+                    }
+                ],
+                "stream": false,
+                "think": false,
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": 16
+                }
+            });
+            let mut request = client.post(url).json(&payload);
+            if !api_key.trim().is_empty() {
+                request = request.bearer_auth(api_key.trim());
+            }
+            let response = request
+                .send()
+                .map_err(|error| format!("模型请求失败: {error}"))?;
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().unwrap_or_default();
+                return Err(format!("模型请求失败: {status} {body}"));
+            }
+            let parsed: serde_json::Value = response
+                .json()
+                .map_err(|error| format!("模型响应解析失败: {error}"))?;
+            let message = parsed["message"]["content"]
+                .as_str()
+                .or_else(|| parsed["message"]["thinking"].as_str())
+                .or_else(|| parsed["response"].as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            Ok(message)
+        };
+
+        let mut message = test_openai_compatible(&client)?;
+        if message.is_empty() && is_ollama {
+            // 修复：Ollama 的 OpenAI-compatible 端点在思考型模型上可能返回空 content，
+            // 这里回退到原生 /api/chat，以避免把可用模型误判为“模型返回为空”。
+            eprintln!(
+                "[DocMind] qa connection empty on openai-compatible endpoint, retrying ollama native api"
+            );
+            message = test_ollama_native(&client)?;
+        }
+        if message.is_empty() {
+            return Err("模型返回为空".to_string());
+        }
+        Ok(message)
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -660,6 +562,9 @@ pub async fn ask_question(
         return Err("问题不能为空".to_string());
     }
 
+    // 迁移期保留问题重写，但 RAG 核心已经下沉到 Python sidecar，Rust 侧不再维护旧的构建/生成链路。
+    let _ = limit; // Python 侧根据 SQLite 自主召回，Rust 端不再做 chunk 限制搬运。
+
     let settings = state
         .get_qa_settings()
         .await
@@ -684,11 +589,6 @@ pub async fn ask_question(
         }
         None => None,
     };
-    let connection_enabled = settings.enabled
-        && selected_profile
-            .as_ref()
-            .map(|item| item.enabled)
-            .unwrap_or(true);
     let active_provider = selected_profile
         .as_ref()
         .map(|item| item.provider.clone())
@@ -697,7 +597,7 @@ pub async fn ask_question(
         .as_ref()
         .map(|item| item.base_url.clone())
         .unwrap_or_else(|| settings.base_url.clone());
-    let active_api_key = selected_profile
+    let _active_api_key = selected_profile
         .as_ref()
         .map(|item| item.api_key.clone())
         .unwrap_or_else(|| settings.api_key.clone());
@@ -705,7 +605,7 @@ pub async fn ask_question(
         .as_ref()
         .map(|item| item.model.clone())
         .unwrap_or_else(|| settings.model.clone());
-    let active_proxy_url = if proxy_settings.enabled && !proxy_settings.proxy_url.trim().is_empty()
+    let _active_proxy_url = if proxy_settings.enabled && !proxy_settings.proxy_url.trim().is_empty()
     {
         Some(proxy_settings.proxy_url.clone())
     } else {
@@ -726,27 +626,8 @@ pub async fn ask_question(
         Vec::new()
     };
     let recent_questions = recent_questions.unwrap_or_default();
-    let question_rewrite =
-        rewrite_follow_up_question(&normalized_question, &session_messages, &recent_questions);
-    let mut session_context = build_session_context(&session_messages);
-    if let Some(relation_hint) = question_rewrite.relation_hint.as_deref() {
-        if !session_context.is_empty() {
-            session_context.push('\n');
-        }
-        session_context.push_str(&relation_hint);
-    }
-    let mut boost_terms = question_rewrite.boost_terms.clone();
-    let mut seen_boost_terms = boost_terms
-        .iter()
-        .map(|term| term.trim().to_lowercase())
-        .filter(|term| !term.is_empty())
-        .collect::<std::collections::HashSet<_>>();
-    for term in build_session_terms(
-        &session_messages,
-        &normalize_query(&question_rewrite.retrieval_question),
-    ) {
-        push_unique_term(&mut boost_terms, &mut seen_boost_terms, term);
-    }
+    let session_context = build_session_context(&session_messages);
+
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     register_qa_job(job_id.clone(), abort_handle);
     let database = state.inner().clone();
@@ -756,8 +637,8 @@ pub async fn ask_question(
         let _ = app.emit("docmind:qa:answer-progress", payload);
     };
 
-    if !connection_enabled
-        || active_provider.trim().is_empty()
+    let python_client = PythonQaClient::from_env();
+    if active_provider.trim().is_empty()
         || active_base_url.trim().is_empty()
         || active_model.trim().is_empty()
     {
@@ -767,7 +648,7 @@ pub async fn ask_question(
             String::new(),
             "model_not_configured".to_string(),
             Vec::new(),
-            crate::docmind::models::QaRetrievalView {
+            QaRetrievalView {
                 search_mode: String::new(),
                 candidate_count: 0,
                 selected_count: 0,
@@ -778,16 +659,65 @@ pub async fn ask_question(
             active_model.clone(),
             created_at,
             Some("问答模型未启用或未配置".to_string()),
+            None,
         );
         emit_progress(build_progress_view(
             job_id.clone(),
             "model_not_configured".to_string(),
             normalized_question.clone(),
             String::new(),
+            String::new(),
             Vec::new(),
             answer.retrieval.clone(),
             answer.model.clone(),
             answer.error.clone(),
+            answer.warning.clone(),
+        ));
+        let _ = state
+            .record_qa_answer(&answer, normalized_session_id.as_deref())
+            .await;
+        clear_qa_job(&job_id);
+        return Ok(QaAskStartView {
+            job_id,
+            status: answer,
+        });
+    }
+
+    if !python_client.is_configured() {
+        // 迁移期明确禁用 Rust 旧链路，避免把 sidecar 缺失误导成可回退路径。
+        eprintln!(
+            "[DocMind] python qa sidecar unavailable; Rust fallback qa path has been removed"
+        );
+        let answer = build_answer_view(
+            answer_id,
+            normalized_question.clone(),
+            String::new(),
+            "failed".to_string(),
+            Vec::new(),
+            QaRetrievalView {
+                search_mode: String::new(),
+                candidate_count: 0,
+                selected_count: 0,
+                semantic_enabled: false,
+                semantic_fallback: false,
+                semantic_fallback_reason: String::new(),
+            },
+            active_model.clone(),
+            created_at,
+            Some("问答 sidecar 未配置，Rust 旧问答链路已移除".to_string()),
+            None,
+        );
+        emit_progress(build_progress_view(
+            job_id.clone(),
+            "failed".to_string(),
+            normalized_question.clone(),
+            String::new(),
+            String::new(),
+            Vec::new(),
+            answer.retrieval.clone(),
+            answer.model.clone(),
+            answer.error.clone(),
+            answer.warning.clone(),
         ));
         let _ = state
             .record_qa_answer(&answer, normalized_session_id.as_deref())
@@ -804,6 +734,7 @@ pub async fn ask_question(
         "searching".to_string(),
         normalized_question.clone(),
         String::new(),
+        String::new(),
         Vec::new(),
         QaRetrievalView {
             search_mode: String::new(),
@@ -815,24 +746,22 @@ pub async fn ask_question(
         },
         active_model.clone(),
         None,
+        None,
     ));
 
     let question_for_task = normalized_question.clone();
-    let retrieval_question_for_task = question_rewrite.retrieval_question.clone();
-    let scope_paths_for_task = scope_paths.clone();
-    let settings_for_task = settings.clone();
-    let database_for_task = database.clone();
-    let session_id_for_task = normalized_session_id.clone();
-    let boost_terms_for_task = boost_terms.clone();
     let session_context_for_task = session_context.clone();
+    let scope_paths_for_task = scope_paths.clone();
+    let recent_questions_for_task = recent_questions.clone();
+    let settings_for_task = settings.clone();
+    let session_id_for_task = normalized_session_id.clone();
     let app_for_task = app.clone();
     let job_id_for_task = job_id.clone();
     let answer_id_for_task = answer_id.clone();
     let created_at_for_task = created_at.clone();
     let model_for_task = active_model.clone();
-    let base_url_for_task = active_base_url.clone();
-    let api_key_for_task = active_api_key.clone();
-    let proxy_url_for_task = active_proxy_url.clone();
+    let database_for_task = database.clone();
+    let python_client_for_task = python_client.clone();
     let cancel_app = app.clone();
     let cancel_job_id = job_id.clone();
     let cancel_answer_id = answer_id.clone();
@@ -843,6 +772,7 @@ pub async fn ask_question(
     let cancel_session_id = normalized_session_id.clone();
     let cancel_meta_for_cancel = cancel_meta.clone();
     let clear_job_id = job_id.clone();
+    let database_path = sqlite_database_path().to_string_lossy().to_string();
     let start_status = build_answer_view(
         answer_id.clone(),
         normalized_question.clone(),
@@ -860,28 +790,110 @@ pub async fn ask_question(
         active_model.clone(),
         created_at.clone(),
         None,
+        None,
     );
 
     tauri::async_runtime::spawn(async move {
         let task = Abortable::new(
             async move {
-                let context = match build_qa_context(
-                    &database_for_task,
-                    &retrieval_question_for_task,
-                    &scope_paths_for_task,
-                    &settings_for_task,
-                    limit,
-                    &boost_terms_for_task,
-                )
-                .await
-                {
-                    Ok(context) => context,
+                let request = RagRequest {
+                    request_id: job_id_for_task.clone(),
+                    command: "rag_answer_stream".to_string(),
+                    db_path: database_path.clone(),
+                    question: question_for_task.clone(),
+                    session_id: session_id_for_task.clone(),
+                    scope_paths: scope_paths_for_task.clone(),
+                    session_context: session_context_for_task.clone(),
+                    recent_questions: recent_questions_for_task.clone(),
+                    settings: RagSettingsRequest {
+                        provider: settings_for_task.provider.clone(),
+                        base_url: settings_for_task.base_url.clone(),
+                        api_key: settings_for_task.api_key.clone(),
+                        model: settings_for_task.model.clone(),
+                        temperature: settings_for_task.temperature,
+                        max_output_tokens: settings_for_task.max_output_tokens,
+                        context_chunk_limit: settings_for_task.context_chunk_limit,
+                        context_token_budget: settings_for_task.context_token_budget,
+                        min_evidence_count: settings_for_task.min_evidence_count,
+                        min_retrieval_score: settings_for_task.min_retrieval_score,
+                    },
+                };
+
+                eprintln!(
+                    "[DocMind] routing qa request {} to python sidecar, scope_paths={}, session_context_bytes={}",
+                    job_id_for_task,
+                    request.scope_paths.len(),
+                    request.session_context.len()
+                );
+
+                // 修复：Python 侧会逐步吐出 answer_delta，这里必须累计成当前正文后再转发给前端。
+                // 只裁掉最前面的空白，避免模型流式首包带来的空行把 Markdown 预览撑出大段空白。
+                let mut streamed_answer = String::new();
+                let response = match python_client_for_task.ask_question_stream(&request, |event| {
+                    if let Some(delta) = event.answer_delta.as_deref() {
+                        if streamed_answer.is_empty() {
+                            let trimmed = delta.trim_start();
+                            if !trimmed.is_empty() {
+                                streamed_answer.push_str(trimmed);
+                            }
+                        } else {
+                            streamed_answer.push_str(delta);
+                        }
+                    }
+                    let stage = match event.stage.as_str() {
+                        "bootstrap" | "retrieve" => "searching",
+                        "prompt" | "generate" => "generating",
+                        "answer_delta" => "streaming",
+                        "verify" => "verifying",
+                        // 修复：Python 的 finish 只是最终 response 前的阶段事件，不携带正文；终态 answered 只能由最终 response 发出。
+                        "finish" => "verifying",
+                        "failed" => "failed",
+                        _ => "running",
+                    };
+                    let _ = app_for_task.emit(
+                        "docmind:qa:answer-progress",
+                        build_progress_view(
+                            job_id_for_task.clone(),
+                            stage.to_string(),
+                            question_for_task.clone(),
+                            streamed_answer.clone(),
+                            event.answer_delta.clone().unwrap_or_default(),
+                            Vec::new(),
+                            QaRetrievalView {
+                                search_mode: String::new(),
+                                candidate_count: 0,
+                                selected_count: 0,
+                                semantic_enabled: false,
+                                semantic_fallback: false,
+                                semantic_fallback_reason: String::new(),
+                            },
+                            model_for_task.clone(),
+                            None,
+                            event.warning.clone(),
+                        ),
+                    );
+                }) {
+                    Ok(response) => response,
                     Err(error) => {
+                        let is_timeout = matches!(
+                            error,
+                            super::python_client::QaClientError::Timeout
+                        );
+                        let state = if is_timeout { "cancelled" } else { "failed" };
+                        let error_message = if is_timeout {
+                            "Python 问答 sidecar 超时".to_string()
+                        } else {
+                            error.to_string()
+                        };
+                        eprintln!(
+                            "[DocMind] qa request {} failed in python sidecar: {}",
+                            job_id_for_task, error_message
+                        );
                         let answer = build_answer_view(
-                            answer_id_for_task,
+                            answer_id_for_task.clone(),
                             question_for_task.clone(),
                             String::new(),
-                            "failed".to_string(),
+                            state.to_string(),
                             Vec::new(),
                             QaRetrievalView {
                                 search_mode: String::new(),
@@ -893,19 +905,22 @@ pub async fn ask_question(
                             },
                             model_for_task.clone(),
                             created_at_for_task.clone(),
-                            Some(error.clone()),
+                            Some(error_message.clone()),
+                            None,
                         );
                         let _ = app_for_task.emit(
                             "docmind:qa:answer-progress",
-                            build_progress_view(
-                                job_id_for_task.clone(),
-                                "failed".to_string(),
-                                question_for_task.clone(),
-                                String::new(),
-                                Vec::new(),
-                                answer.retrieval.clone(),
-                                answer.model.clone(),
+                        build_progress_view(
+                            job_id_for_task.clone(),
+                            state.to_string(),
+                            question_for_task.clone(),
+                            String::new(),
+                            String::new(),
+                            Vec::new(),
+                            answer.retrieval.clone(),
+                            answer.model.clone(),
                                 answer.error.clone(),
+                                answer.warning.clone(),
                             ),
                         );
                         let _ = database_for_task
@@ -915,168 +930,71 @@ pub async fn ask_question(
                     }
                 };
 
-                if context.sources.len() < settings_for_task.min_evidence_count {
-                    let sources = context
-                        .sources
-                        .into_iter()
-                        .map(|item| item.source)
-                        .collect::<Vec<_>>();
-                    let retrieval = context.retrieval;
-                    let evidence_error = format!(
-                        "无法从当前已索引文档中找到足够来源来回答这个问题；候选 {} 条，选中 {} 条，最少需要 {} 条",
-                        retrieval.candidate_count,
-                        retrieval.selected_count,
-                        settings_for_task.min_evidence_count
-                    );
-                    let answer = build_answer_view(
-                        answer_id_for_task,
-                        question_for_task.clone(),
-                        String::new(),
-                        "insufficient_evidence".to_string(),
-                        sources.clone(),
-                        retrieval,
-                        model_for_task.clone(),
-                        created_at_for_task.clone(),
-                        Some(evidence_error),
-                    );
-                    let _ = app_for_task.emit(
-                        "docmind:qa:answer-progress",
-                        build_progress_view(
-                            job_id_for_task.clone(),
-                            "insufficient_evidence".to_string(),
-                            question_for_task.clone(),
-                            String::new(),
-                            sources,
-                            answer.retrieval.clone(),
-                            answer.model.clone(),
-                            answer.error.clone(),
-                        ),
-                    );
-                    let _ = database_for_task
-                        .record_qa_answer(&answer, session_id_for_task.as_deref())
-                        .await;
-                    return Ok::<(), String>(());
-                }
-
-                let prompt = build_system_prompt(&context, Some(session_context_for_task.as_str()));
-                let sources = context
-                    .sources
-                    .iter()
-                    .map(|item| item.source.clone())
-                    .collect::<Vec<_>>();
-                let retrieval = context.retrieval.clone();
+                let retrieval = response.retrieval.clone().unwrap_or(QaRetrievalView {
+                    search_mode: String::new(),
+                    candidate_count: 0,
+                    selected_count: 0,
+                    semantic_enabled: false,
+                    semantic_fallback: false,
+                    semantic_fallback_reason: String::new(),
+                });
+                let sources = response.sources.clone();
+                let state = if response.state.trim().is_empty() {
+                    if response.ok {
+                        "answered".to_string()
+                    } else {
+                        "failed".to_string()
+                    }
+                } else {
+                    response.state.clone()
+                };
+                let error_message = response.error.as_ref().map(|error| {
+                    if error.message.trim().is_empty() {
+                        error.code.clone()
+                    } else {
+                        error.message.clone()
+                    }
+                });
+                let warning = response.warning.clone();
                 if let Ok(mut guard) = cancel_meta.lock() {
                     *guard = Some((sources.clone(), retrieval.clone()));
                 }
+                if let Some(ref warning_message) = warning {
+                    eprintln!(
+                        "[DocMind] qa request {} warning from python sidecar: {}",
+                        job_id_for_task, warning_message
+                    );
+                }
+                let answer = build_answer_view(
+                    answer_id_for_task.clone(),
+                    question_for_task.clone(),
+                    response.answer.clone(),
+                    state.clone(),
+                    sources.clone(),
+                    retrieval.clone(),
+                    model_for_task.clone(),
+                    created_at_for_task.clone(),
+                    error_message.clone(),
+                    warning.clone(),
+                );
                 let _ = app_for_task.emit(
                     "docmind:qa:answer-progress",
                     build_progress_view(
                         job_id_for_task.clone(),
-                        "generating".to_string(),
+                        state.clone(),
                         question_for_task.clone(),
+                        response.answer.clone(),
                         String::new(),
                         sources.clone(),
                         retrieval.clone(),
                         model_for_task.clone(),
-                        None,
+                        error_message.clone(),
+                        warning.clone(),
                     ),
                 );
-
-                let streamed = ask_model_stream(
-                    &base_url_for_task,
-                    &api_key_for_task,
-                    &active_model,
-                    &question_for_task,
-                    &prompt,
-                    settings_for_task.temperature,
-                    settings_for_task.max_output_tokens,
-                    proxy_url_for_task.as_deref(),
-                    |partial| {
-                        let _ = app_for_task.emit(
-                            "docmind:qa:answer-progress",
-                            build_progress_view(
-                                job_id_for_task.clone(),
-                                "streaming".to_string(),
-                                question_for_task.clone(),
-                                partial,
-                                sources.clone(),
-                                retrieval.clone(),
-                                model_for_task.clone(),
-                                None,
-                            ),
-                        );
-                        Ok(())
-                    },
-                )
-                .await;
-
-                match streamed {
-                    Ok(answer_text) => {
-                        let answer = build_answer_view(
-                            answer_id_for_task,
-                            question_for_task.clone(),
-                            answer_text.clone(),
-                            "answered".to_string(),
-                            sources.clone(),
-                            retrieval.clone(),
-                            model_for_task.clone(),
-                            created_at_for_task.clone(),
-                            None,
-                        );
-                        let _ = app_for_task.emit(
-                            "docmind:qa:answer-progress",
-                            build_progress_view(
-                                job_id_for_task.clone(),
-                                "answered".to_string(),
-                                question_for_task.clone(),
-                                answer_text,
-                                sources,
-                                retrieval,
-                                model_for_task.clone(),
-                                None,
-                            ),
-                        );
-                        let _ = database_for_task
-                            .record_qa_answer(&answer, session_id_for_task.as_deref())
-                            .await;
-                    }
-                    Err(error) => {
-                        let is_cancelled = error == "task has been cancelled" || error == "aborted";
-                        let state = if is_cancelled { "cancelled" } else { "failed" };
-                        let error_message = if is_cancelled {
-                            "用户已取消问答".to_string()
-                        } else {
-                            error.clone()
-                        };
-                        let answer = build_answer_view(
-                            answer_id_for_task,
-                            question_for_task.clone(),
-                            String::new(),
-                            state.to_string(),
-                            sources.clone(),
-                            retrieval.clone(),
-                            model_for_task.clone(),
-                            created_at_for_task.clone(),
-                            Some(error_message.clone()),
-                        );
-                        let _ = app_for_task.emit(
-                            "docmind:qa:answer-progress",
-                            build_progress_view(
-                                job_id_for_task.clone(),
-                                state.to_string(),
-                                question_for_task,
-                                String::new(),
-                                sources,
-                                retrieval,
-                                model_for_task.clone(),
-                                Some(error_message),
-                            ),
-                        );
-                        let _ = database_for_task
-                            .record_qa_answer(&answer, session_id_for_task.as_deref())
-                            .await;
-                    }
-                }
+                let _ = database_for_task
+                    .record_qa_answer(&answer, session_id_for_task.as_deref())
+                    .await;
 
                 Ok::<(), String>(())
             },
@@ -1114,6 +1032,7 @@ pub async fn ask_question(
                     cancel_model.clone(),
                     cancel_created_at.clone(),
                     Some(error.clone()),
+                    None,
                 );
                 let _ = cancel_app.emit(
                     "docmind:qa:answer-progress",
@@ -1122,10 +1041,12 @@ pub async fn ask_question(
                         "cancelled".to_string(),
                         cancel_question,
                         String::new(),
+                        String::new(),
                         sources,
                         retrieval,
                         cancel_model.clone(),
                         Some(error),
+                        None,
                     ),
                 );
                 let _ = cancel_database

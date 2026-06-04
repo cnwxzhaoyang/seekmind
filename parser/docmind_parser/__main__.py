@@ -1,3 +1,9 @@
+"""
+@author MorningSun
+@CreatedDate 2026/06/03
+@Description Python sidecar 入口，分发解析、embedding 与 RAG 流式任务。
+"""
+
 from __future__ import annotations
 
 import json
@@ -10,6 +16,8 @@ if __package__ in (None, ""):
     if str(package_root) not in sys.path:
         sys.path.insert(0, str(package_root))
     from docmind_parser.models import ParserError, request_from_dict
+    from docmind_parser.rag.models import rag_request_from_dict
+    from docmind_parser.rag.pipeline import run_rag_answer_stream
     from docmind_parser.parser import (
         ParserException,
         embed_texts,
@@ -18,6 +26,8 @@ if __package__ in (None, ""):
     )
 else:
     from .models import ParserError, request_from_dict
+    from .rag.models import rag_request_from_dict
+    from .rag.pipeline import run_rag_answer_stream
     from .parser import ParserException, embed_texts, embedding_status, parse_document
 
 
@@ -38,6 +48,21 @@ def main() -> int:
             )
 
         payload = json.loads(raw)
+        command = str(payload.get("command", ""))
+
+        if command == "rag_answer_stream":
+            request = rag_request_from_dict(payload)
+
+            def emit_progress(event: dict) -> None:
+                sys.stdout.write(json.dumps(event, ensure_ascii=False))
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+
+            response = run_rag_answer_stream(request, emit=emit_progress)
+            sys.stdout.write(json.dumps(response.to_dict(), ensure_ascii=False))
+            sys.stdout.flush()
+            return 0 if response.ok else 1
+
         request = request_from_dict(payload)
 
         if request.command in {"parse_document", "parse_document_stream"}:

@@ -96,7 +96,6 @@ const chatShouldFollowLatest = ref(true);
 const selectedSourceHydratedPreviewBlocks = ref<PreviewBlockView[]>([]);
 let selectedSourcePreviewRequestId = 0;
 let unlistenQaProgress: null | (() => void) = null;
-const inFlightMessageStates = new Set(["searching", "generating", "streaming"]);
 
 const emptyMarkdownBlock: PreviewBlockView = {
   block_index: 0,
@@ -409,6 +408,9 @@ const selectedSourceCitation = computed(() => {
   });
 });
 
+const messageCitationSourceIds = (message: QaMessageView) =>
+  message.sources.map((source) => source.source_id).filter(Boolean);
+
 const qaCurrentModelLabel = computed(() => qaSettings.value?.model.trim() || t("common.none"));
 
 const qaSelectedProfile = computed(() => {
@@ -421,22 +423,38 @@ const qaSelectedProfile = computed(() => {
 
 const qaSelectedModel = computed(() => qaSelectedProfile.value?.model.trim() || qaSettings.value?.model.trim() || "");
 
-const qaModelOptions = computed(() => qaModelProfiles.value.filter((item) => item.enabled));
+// 修复：模型连接的启用态已经迁移到默认/保存逻辑，不再在问答页按 enabled 过滤，避免旧配置被隐藏。
+const qaModelOptions = computed(() => qaModelProfiles.value);
 
-const isInFlightMessage = (state: string) => inFlightMessageStates.has(state);
+// 失败态要区分“模型不可用”和“引用校验失败”，避免把校验问题误报成服务故障。
+const isCitationValidationFailure = (message: QaMessageView) =>
+  Boolean(
+    message.error?.includes("来源标注") ||
+      message.error?.includes("校验") ||
+      message.warning?.includes("来源标注") ||
+      message.warning?.includes("句子缺少"),
+  );
 
-const inFlightMessageLabel = (state: string) => {
-  if (state === "searching") {
-    return t("page.appQa.searching");
+const messageFailureTitle = (message: QaMessageView) =>
+  isCitationValidationFailure(message)
+    ? t("page.appQa.citationValidationFailed")
+    : t("page.appQa.modelUnavailable");
+
+const messageFailureHint = (message: QaMessageView) =>
+  isCitationValidationFailure(message)
+    ? message.error?.trim() || message.warning?.trim() || t("page.appQa.citationValidationHint")
+    : message.error?.trim() || t("page.appQa.modelUnavailableHint");
+
+const messageBodyMarkdown = (message: QaMessageView) => {
+  if (message.answer.trim()) {
+    return message.answer;
   }
-  if (state === "streaming") {
-    return t("page.appQa.streaming");
-  }
-  return t("page.appQa.generating");
+  // 修复：流式输出阶段不应显示额外占位文案，保持和最终答案同一张消息卡。
+  return isMessageStreaming(message) ? "" : t("page.appQa.noAnswer");
 };
 
-const messageFailureTitle = () => t("page.appQa.modelUnavailable");
-const messageFailureHint = (message: QaMessageView) => message.error?.trim() || t("page.appQa.modelUnavailableHint");
+const isMessageStreaming = (message: QaMessageView) =>
+  ["searching", "running", "generating", "streaming", "verifying"].includes(message.state);
 
 const panels = computed(() => {
   const items: { key: string; initialSize?: number; minSize: number; flex?: boolean }[] = [
@@ -452,8 +470,7 @@ const panels = computed(() => {
 const isQaConfigured = (settings: QaSettingsView | null) => {
   const activeBaseUrl = qaSelectedProfile.value?.base_url?.trim() || settings?.base_url.trim() || "";
   const activeModel = qaSelectedModel.value.trim();
-  const profileEnabled = qaSelectedProfile.value ? qaSelectedProfile.value.enabled : true;
-  return Boolean(settings?.enabled && profileEnabled && activeBaseUrl && activeModel);
+  return Boolean(activeBaseUrl && activeModel);
 };
 
 const sessionDraftTitle = () => t("page.appQa.defaultSessionTitle");
@@ -662,6 +679,7 @@ const installQaProgressListener = async () => {
       created_at: qaAnswer.value?.created_at ?? new Date().toISOString(),
       updated_at: payload.updated_at,
       error: payload.error ?? null,
+      warning: payload.warning ?? null,
     };
 
     const messageIndex = qaMessages.value.findIndex((item) => item.id === payload.job_id);
@@ -682,9 +700,10 @@ const installQaProgressListener = async () => {
       return;
     }
 
-    if (payload.state === "generating" || payload.state === "streaming") {
+    // 修复：Python RAG 会在最终回答前发出 verifying 进度；这里必须继续视为进行中，避免提前清空 job 导致 answered 事件被过滤。
+    if (["running", "generating", "streaming", "verifying"].includes(payload.state)) {
       qaLoading.value = true;
-      qaInfoMessage.value = payload.state === "generating" ? t("page.appQa.generating") : t("page.appQa.streaming");
+      qaInfoMessage.value = "";
       qaErrorMessage.value = "";
       return;
     }
@@ -1238,22 +1257,6 @@ watch(routeSessionId, async (next, previous) => {
             <div v-if="qaErrorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
               {{ qaErrorMessage }}
             </div>
-            <div v-if="qaInfoMessage" class="m-4 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-3 text-sm text-success">
-              <div class="flex items-start gap-2">
-                <span
-                  v-if="qaLoading"
-                  class="relative mt-1 inline-flex h-2.5 w-2.5 shrink-0"
-                  aria-hidden="true"
-                >
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/30" />
-                  <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
-                </span>
-                <span>{{ qaInfoMessage }}</span>
-              </div>
-            </div>
-            <div v-if="qaLoading && qaMessages.length === 0" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
-              {{ t("page.appQa.loading") }}
-            </div>
             <div v-else-if="qaMessages.length" class="space-y-3 p-4">
               <article
                 v-for="(message, index) in qaMessages"
@@ -1278,10 +1281,25 @@ watch(routeSessionId, async (next, previous) => {
                   </div>
 
                   <div class="mt-3 flex justify-start">
-                    <div class="max-w-[86%] rounded-2xl rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm">
+                    <div class="relative max-w-[86%] rounded-2xl rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm">
+                      <div
+                        v-if="isMessageStreaming(message)"
+                        class="pointer-events-none absolute right-3 top-3 inline-flex items-center rounded-full border border-accent/20 bg-accent-soft/70 px-2 py-1 text-[11px] font-medium text-accent shadow-sm"
+                        :title="t('page.appQa.generating')"
+                        aria-label="answer streaming"
+                      >
+                        <span class="docmind-typing-indicator" aria-hidden="true">
+                          <span class="docmind-typing-dot" />
+                          <span class="docmind-typing-dot" />
+                          <span class="docmind-typing-dot" />
+                        </span>
+                      </div>
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2">
-                          <DocMindBadge v-if="message.state !== 'answered'" tone="default">
+                          <DocMindBadge
+                            v-if="['cancelled', 'failed', 'insufficient_evidence', 'model_not_configured'].includes(message.state)"
+                            tone="default"
+                          >
                             {{ t(`page.appSearch.qa.state.${message.state}`) }}
                           </DocMindBadge>
                           <DocMindBadge v-if="message.state === 'cancelled'" tone="danger">
@@ -1289,37 +1307,20 @@ watch(routeSessionId, async (next, previous) => {
                           </DocMindBadge>
                         </div>
                       </div>
-                      <div v-if="isInFlightMessage(message.state)" class="mt-3 rounded-xl border border-accent/15 bg-accent-soft/35 px-4 py-4">
-                        <div class="flex items-center gap-3">
-                          <span class="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/25" />
-                            <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
-                          </span>
-                          <div class="min-w-0">
-                            <div class="text-sm font-medium text-primary">{{ inFlightMessageLabel(message.state) }}</div>
-                            <div class="mt-0.5 text-xs text-muted">{{ t("page.appQa.generatingHint") }}</div>
-                          </div>
-                        </div>
-                        <div class="mt-4 space-y-2">
-                          <div class="h-2 w-3/4 animate-pulse rounded-full bg-accent-soft/70" />
-                          <div class="h-2 w-5/6 animate-pulse rounded-full bg-accent-soft/50" />
-                          <div class="h-2 w-2/3 animate-pulse rounded-full bg-accent-soft/30" />
-                        </div>
-                        <div v-if="message.answer" class="mt-4">
-                          <DocMindMarkdownRenderer
-                            :block="emptyMarkdownBlock"
-                            :markdown="message.answer"
-                          />
-                        </div>
-                      </div>
-                      <div v-else class="mt-3">
+                      <div class="mt-3">
                         <DocMindMarkdownRenderer
                           :block="emptyMarkdownBlock"
-                          :markdown="message.answer || t('page.appQa.noAnswer')"
+                          :markdown="messageBodyMarkdown(message)"
+                          :citation-source-ids="messageCitationSourceIds(message)"
+                          @citation-click="selectSource"
                         />
                       </div>
+                      <div v-if="message.warning" class="mt-3 rounded-xl border border-amber-soft bg-amber-soft px-4 py-3 text-sm text-warning">
+                        <div class="font-medium">{{ t("page.appQa.citationWarning") }}</div>
+                        <div class="mt-1 text-xs leading-5 text-warning/90">{{ message.warning }}</div>
+                      </div>
                       <div v-if="message.state === 'failed' || message.error" class="mt-3 rounded-xl border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
-                        <div class="font-medium">{{ messageFailureTitle() }}</div>
+                        <div class="font-medium">{{ messageFailureTitle(message) }}</div>
                         <div class="mt-1 text-xs leading-5 text-danger/90">{{ messageFailureHint(message) }}</div>
                       </div>
                       <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-dim">
@@ -1545,3 +1546,43 @@ watch(routeSessionId, async (next, previous) => {
     />
   </section>
 </template>
+
+<style scoped>
+/* 修复：流式等待态使用绝对定位的三点提示，不占文档流，避免和最终回答的气泡布局不一致。 */
+@keyframes docmindTypingPulse {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+
+  40% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+.docmind-typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 10px;
+}
+
+.docmind-typing-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: docmindTypingPulse 1.2s infinite ease-in-out;
+}
+
+.docmind-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.docmind-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+</style>

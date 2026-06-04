@@ -901,6 +901,7 @@ onBeforeUnmount(() => {
             <div class="space-y-2 p-4 text-sm text-secondary">
               <p>{{ t("page.settings.privacy.localFirst") }}</p>
               <p>{{ t("page.settings.privacy.localFirstDesc") }}</p>
+              <p>{{ t("page.settings.privacy.remoteModel") }}</p>
               <p>{{ t("page.settings.privacy.localOnlyHint") }}</p>
             </div>
           </section>

@@ -428,6 +428,7 @@ export interface QaAnswerView {
   model: string;
   created_at: string;
   error?: string | null;
+  warning?: string | null;
 }
 
 export interface QaHistoryView extends QaAnswerView {}
@@ -460,10 +461,12 @@ export interface QaAnswerProgressView {
   state: string;
   question: string;
   answer: string;
+  answer_delta?: string;
   sources: QaSourceView[];
   retrieval: QaRetrievalView;
   model: string;
   error?: string | null;
+  warning?: string | null;
   updated_at: string;
 }
 

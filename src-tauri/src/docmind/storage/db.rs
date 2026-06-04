@@ -362,6 +362,7 @@ struct QaHistoryRow {
     retrieval_json: String,
     model: String,
     error: String,
+    warning: String,
     created_at: i64,
 }
 
@@ -385,6 +386,7 @@ struct QaMessageRow {
     retrieval_json: String,
     model: String,
     error: String,
+    warning: String,
     created_at: i64,
     updated_at: i64,
 }
@@ -498,6 +500,10 @@ impl Database {
             .map_err(|error| error.to_string())?;
         database
             .ensure_qa_settings_row()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
+            .ensure_qa_history_columns()
             .await
             .map_err(|error| error.to_string())?;
         database
@@ -1239,6 +1245,8 @@ impl Database {
                 .await?;
         }
 
+        // 修复：模型连接保存后即视为可用，统一写入 enabled=1，避免默认连接与可用状态分裂。
+        let enabled = true;
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO qa_model_profiles
@@ -1252,7 +1260,7 @@ impl Database {
         .bind(profile.base_url.trim())
         .bind(profile.api_key.as_str())
         .bind(profile.model.trim())
-        .bind(profile.enabled as i64)
+        .bind(enabled as i64)
         .bind(profile.is_default as i64)
         .bind(created_at)
         .bind(now)
@@ -1335,7 +1343,8 @@ impl Database {
             .bind(now)
             .execute(&self.pool)
             .await?;
-        sqlx::query("UPDATE qa_model_profiles SET is_default = 1, updated_at = ? WHERE id = ?")
+        // 修复：默认连接即当前启用连接，设默认时同步写入 enabled=1，避免列表默认项和实际可用项不一致。
+        sqlx::query("UPDATE qa_model_profiles SET is_default = 1, enabled = 1, updated_at = ? WHERE id = ?")
             .bind(now)
             .bind(profile_id)
             .execute(&self.pool)
@@ -1343,6 +1352,7 @@ impl Database {
 
         Ok(qa_model_profile_row_to_view(QaModelProfileRow {
             is_default: 1,
+            enabled: 1,
             updated_at: now,
             ..row
         }))
@@ -1351,7 +1361,7 @@ impl Database {
     pub async fn list_qa_history(&self, limit: i64) -> Result<Vec<QaHistoryView>, sqlx::Error> {
         let rows = sqlx::query_as::<_, QaHistoryRow>(
             r#"
-            SELECT id, question, answer, state, sources_json, retrieval_json, model, error, created_at
+            SELECT id, question, answer, state, sources_json, retrieval_json, model, error, warning, created_at
             FROM qa_history
             ORDER BY created_at DESC
             LIMIT ?
@@ -1388,8 +1398,8 @@ impl Database {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO qa_history
-                (id, question, answer, state, sources_json, retrieval_json, model, error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, question, answer, state, sources_json, retrieval_json, model, error, warning, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&answer.id)
@@ -1400,6 +1410,7 @@ impl Database {
         .bind(retrieval_json)
         .bind(&answer.model)
         .bind(answer.error.as_deref().unwrap_or(""))
+        .bind(answer.warning.as_deref().unwrap_or(""))
         .bind(now)
         .execute(&self.pool)
         .await?;
@@ -1845,7 +1856,7 @@ impl Database {
 
         let rows = sqlx::query_as::<_, QaMessageRow>(
             r#"
-            SELECT id, session_id, question, answer, state, sources_json, retrieval_json, model, error, created_at, updated_at
+            SELECT id, session_id, question, answer, state, sources_json, retrieval_json, model, error, warning, created_at, updated_at
             FROM qa_messages
             WHERE session_id = ?
             ORDER BY created_at ASC
@@ -1871,7 +1882,7 @@ impl Database {
 
         let rows = sqlx::query_as::<_, QaMessageRow>(
             r#"
-            SELECT id, session_id, question, answer, state, sources_json, retrieval_json, model, error, created_at, updated_at
+            SELECT id, session_id, question, answer, state, sources_json, retrieval_json, model, error, warning, created_at, updated_at
             FROM qa_messages
             WHERE session_id = ?
             ORDER BY created_at DESC
@@ -1963,8 +1974,9 @@ impl Database {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO qa_messages
-                (id, session_id, question, answer, state, sources_json, retrieval_json, model, error, created_at, updated_at)
+                (id, session_id, question, answer, state, sources_json, retrieval_json, model, error, warning, created_at, updated_at)
             VALUES (
+                ?,
                 ?,
                 ?,
                 ?,
@@ -1988,6 +2000,7 @@ impl Database {
         .bind(retrieval_json)
         .bind(&answer.model)
         .bind(answer.error.as_deref().unwrap_or(""))
+        .bind(answer.warning.as_deref().unwrap_or(""))
         .bind(&answer.id)
         .bind(now)
         .bind(now)
@@ -4291,6 +4304,7 @@ impl Database {
                 retrieval_json TEXT NOT NULL DEFAULT '{}',
                 model TEXT NOT NULL DEFAULT '',
                 error TEXT NOT NULL DEFAULT '',
+                warning TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL DEFAULT 0
             )
             "#,
@@ -4313,6 +4327,7 @@ impl Database {
                 retrieval_json TEXT NOT NULL DEFAULT '{}',
                 model TEXT NOT NULL DEFAULT '',
                 error TEXT NOT NULL DEFAULT '',
+                warning TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(session_id) REFERENCES qa_sessions(id) ON DELETE CASCADE
@@ -4354,6 +4369,42 @@ impl Database {
         if count == 0 {
             self.save_qa_settings(&default_qa_settings()).await?;
         }
+        Ok(())
+    }
+
+    async fn ensure_qa_history_columns(&self) -> Result<(), sqlx::Error> {
+        let mut history_columns = std::collections::HashSet::new();
+        for row in sqlx::query("PRAGMA table_info(qa_history)")
+            .fetch_all(&self.pool)
+            .await?
+        {
+            let name: String = row.try_get("name")?;
+            history_columns.insert(name);
+        }
+
+        if !history_columns.contains("warning") {
+            eprintln!("[DocMind] migrate qa_history.warning column");
+            sqlx::query("ALTER TABLE qa_history ADD COLUMN warning TEXT NOT NULL DEFAULT ''")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        let mut message_columns = std::collections::HashSet::new();
+        for row in sqlx::query("PRAGMA table_info(qa_messages)")
+            .fetch_all(&self.pool)
+            .await?
+        {
+            let name: String = row.try_get("name")?;
+            message_columns.insert(name);
+        }
+
+        if !message_columns.contains("warning") {
+            eprintln!("[DocMind] migrate qa_messages.warning column");
+            sqlx::query("ALTER TABLE qa_messages ADD COLUMN warning TEXT NOT NULL DEFAULT ''")
+                .execute(&self.pool)
+                .await?;
+        }
+
         Ok(())
     }
 
@@ -5084,6 +5135,14 @@ fn qa_history_row_to_view(row: QaHistoryRow) -> QaHistoryView {
                 Some(trimmed)
             }
         },
+        warning: {
+            let trimmed = row.warning.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        },
     }
 }
 
@@ -5122,6 +5181,14 @@ fn qa_message_row_to_view(row: QaMessageRow) -> QaMessageView {
         updated_at: format_unix_ts(row.updated_at),
         error: {
             let trimmed = row.error.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        },
+        warning: {
+            let trimmed = row.warning.trim().to_string();
             if trimmed.is_empty() {
                 None
             } else {
