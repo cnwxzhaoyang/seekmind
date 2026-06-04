@@ -842,9 +842,13 @@ pub async fn ask_question(
                     }
                     let stage = match event.stage.as_str() {
                         "bootstrap" | "retrieve" => "searching",
+                        // 修复：Python RAG Graph 新增了更细的阶段节点，这里需要把它们映射到前端已有的状态语义。
+                        "rank" | "pack_evidence" => "searching",
                         "prompt" | "generate" => "generating",
                         "answer_delta" => "streaming",
                         "verify" => "verifying",
+                        "judge" => "verifying",
+                        "repair" | "finalize" => "verifying",
                         // 修复：Python 的 finish 只是最终 response 前的阶段事件，不携带正文；终态 answered 只能由最终 response 发出。
                         "finish" => "verifying",
                         "failed" => "failed",

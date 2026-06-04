@@ -217,6 +217,144 @@ def qa_candidate_score(candidate: RagRecallCandidate) -> float:
     return candidate.best_score + query_hit_bonus + term_overlap_bonus
 
 
+def collect_recall_candidates(
+    store: RagStore,
+    question: str,
+    scope_paths: Sequence[str],
+    settings,
+    limit: int,
+    session_terms: Sequence[str],
+) -> Tuple[Dict[str, RagRecallCandidate], int, List[str]]:
+    recall_limit = max(limit, 1) * 3
+    recall_limit = max(recall_limit, 20)
+    recall_queries = build_recall_queries(question, session_terms)
+    print(
+        f"[docmind:rag] qa recall start queries={len(recall_queries)} "
+        f"limit={recall_limit} scope_paths={len(scope_paths)}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    candidates: Dict[str, RagRecallCandidate] = {}
+    for query in recall_queries:
+        terms = rewrite_query_terms(query)
+        rows = store.search_candidate_chunks(terms, scope_paths, recall_limit)
+        for row in rows:
+            merge_recall_hit(candidates, row, session_terms)
+
+    return candidates, recall_limit, recall_queries
+
+
+def select_recall_hits(
+    candidates: Dict[str, RagRecallCandidate],
+    scope_paths: Sequence[str],
+    settings,
+    limit: int,
+) -> List[RagChunkRecord]:
+    hits = list(candidates.values())
+    hits.sort(key=lambda candidate: qa_candidate_score(candidate), reverse=True)
+
+    selected_hits: List[RagChunkRecord] = []
+    seen_chunk_ids: Set[str] = set()
+    for candidate in hits:
+        if candidate.best_score < getattr(settings, "min_retrieval_score", 0.0):
+            continue
+        hit = candidate.hit
+        if not matches_scope(hit.path, scope_paths):
+            continue
+        if hit.chunk_id in seen_chunk_ids:
+            continue
+        seen_chunk_ids.add(hit.chunk_id)
+        selected_hits.append(hit)
+        if len(selected_hits) >= max(getattr(settings, "context_chunk_limit", limit), 1) * 2:
+            break
+    return selected_hits
+
+
+def pack_context_from_hits(
+    store: RagStore,
+    selected_hits: Sequence[RagChunkRecord],
+    settings,
+    limit: int,
+) -> RagContext:
+    sources: List[RagSourceBlock] = []
+    selected_source_records: List[RagChunkRecord] = []
+    selected_ids_by_path = selected_chunk_ids_by_path(selected_hits)
+    consumed_chunk_ids: Set[str] = set()
+
+    for hit in selected_hits:
+        if hit.chunk_id in consumed_chunk_ids or len(sources) >= max(getattr(settings, "context_chunk_limit", limit), 1):
+            continue
+
+        chunks = store.list_document_chunks(hit.path)
+        matched_index = next((index for index, chunk in enumerate(chunks) if chunk.chunk_id == hit.chunk_id), None)
+        if matched_index is None:
+            consumed_chunk_ids.add(hit.chunk_id)
+            previous = None
+            current = hit.snippet
+            next_text = None
+        else:
+            selected_ids = selected_ids_by_path.get(hit.path)
+            window_start, window_end, merged_current = build_merged_chunk_window(
+                chunks,
+                matched_index,
+                selected_ids,
+            )
+            for chunk in chunks[window_start : window_end + 1]:
+                consumed_chunk_ids.add(chunk.chunk_id)
+            previous = chunks[window_start - 1].snippet if window_start > 0 else None
+            next_text = chunks[window_end + 1].snippet if window_end + 1 < len(chunks) else None
+            current = merged_current
+
+        source_id = f"S{len(sources) + 1}"
+        location_label = build_location_label(hit)
+        block = build_prompt_block(
+            source_id,
+            hit.file_name,
+            hit.path,
+            location_label,
+            previous,
+            current,
+            next_text,
+        )
+        sources.append(
+            RagSourceBlock(
+                source=RagSource(
+                    source_id=source_id,
+                    chunk_id=hit.chunk_id,
+                    file_name=hit.file_name,
+                    path=hit.path,
+                    ext=hit.ext,
+                    title_path=hit.heading,
+                    heading=hit.heading,
+                    paragraph=hit.paragraph,
+                    page=hit.page,
+                    snippet=hit.snippet,
+                    score=hit.score,
+                    rank_reason="Python RAG recall",
+                    preview_blocks=[],
+                ),
+                block=block,
+            )
+        )
+        selected_source_records.append(hit)
+
+    # 修复：RAG 证据装配阶段需要回填切片的结构化块，调用的是现有的 for_chunks 查询方法。
+    preview_blocks_by_chunk_id = store.fetch_preview_blocks_for_chunks(selected_source_records)
+    for source_block in sources:
+        source_block.source.preview_blocks = preview_blocks_by_chunk_id.get(source_block.source.chunk_id, [])
+
+    retrieval = RagRetrieval(
+        search_mode="python_rag_sqlite",
+        candidate_count=len(selected_hits),
+        selected_count=len(sources),
+        semantic_enabled=False,
+        semantic_fallback=False,
+        semantic_fallback_reason="",
+    )
+    return RagContext(sources=sources, retrieval=retrieval)
+
+
 def merge_recall_hit(
     candidates: Dict[str, RagRecallCandidate],
     hit: RagChunkRecord,
@@ -328,120 +466,31 @@ def build_qa_context(
     session_terms: Sequence[str],
     emit_progress=None,
 ) -> RagContext:
-    recall_limit = max(limit, 1) * 3
-    recall_limit = max(recall_limit, 20)
-    recall_queries = build_recall_queries(question, session_terms)
-    print(
-        f"[docmind:rag] qa recall start queries={len(recall_queries)} "
-        f"limit={recall_limit} scope_paths={len(scope_paths)}",
-        file=sys.stderr,
-        flush=True,
+    candidates, _, _ = collect_recall_candidates(
+        store=store,
+        question=question,
+        scope_paths=scope_paths,
+        settings=settings,
+        limit=limit,
+        session_terms=session_terms,
     )
-
-    candidates: Dict[str, RagRecallCandidate] = {}
-    for query in recall_queries:
-        terms = rewrite_query_terms(query)
-        rows = store.search_candidate_chunks(terms, scope_paths, recall_limit)
-        for row in rows:
-            merge_recall_hit(candidates, row, session_terms)
-
+    selected_hits = select_recall_hits(
+        candidates=candidates,
+        scope_paths=scope_paths,
+        settings=settings,
+        limit=limit,
+    )
     candidate_count = len(candidates)
-    hits = list(candidates.values())
-    hits.sort(key=lambda candidate: qa_candidate_score(candidate), reverse=True)
-
-    selected_hits: List[RagChunkRecord] = []
-    seen_chunk_ids: Set[str] = set()
-    for candidate in hits:
-        if candidate.best_score < getattr(settings, "min_retrieval_score", 0.0):
-            continue
-        hit = candidate.hit
-        if not matches_scope(hit.path, scope_paths):
-            continue
-        if hit.chunk_id in seen_chunk_ids:
-            continue
-        seen_chunk_ids.add(hit.chunk_id)
-        selected_hits.append(hit)
-        if len(selected_hits) >= max(getattr(settings, "context_chunk_limit", limit), 1) * 2:
-            break
-
-    sources: List[RagSourceBlock] = []
-    selected_source_records: List[RagChunkRecord] = []
-    selected_ids_by_path = selected_chunk_ids_by_path(selected_hits)
-    consumed_chunk_ids: Set[str] = set()
-
-    for hit in selected_hits:
-        if hit.chunk_id in consumed_chunk_ids or len(sources) >= max(getattr(settings, "context_chunk_limit", limit), 1):
-            continue
-
-        chunks = store.list_document_chunks(hit.path)
-        matched_index = next((index for index, chunk in enumerate(chunks) if chunk.chunk_id == hit.chunk_id), None)
-        if matched_index is None:
-            consumed_chunk_ids.add(hit.chunk_id)
-            previous = None
-            current = hit.snippet
-            next_text = None
-        else:
-            selected_ids = selected_ids_by_path.get(hit.path)
-            window_start, window_end, merged_current = build_merged_chunk_window(
-                chunks,
-                matched_index,
-                selected_ids,
-            )
-            for chunk in chunks[window_start : window_end + 1]:
-                consumed_chunk_ids.add(chunk.chunk_id)
-            previous = chunks[window_start - 1].snippet if window_start > 0 else None
-            next_text = chunks[window_end + 1].snippet if window_end + 1 < len(chunks) else None
-            current = merged_current
-
-        source_id = f"S{len(sources) + 1}"
-        location_label = build_location_label(hit)
-        block = build_prompt_block(
-            source_id,
-            hit.file_name,
-            hit.path,
-            location_label,
-            previous,
-            current,
-            next_text,
-        )
-        sources.append(
-            RagSourceBlock(
-                source=RagSource(
-                    source_id=source_id,
-                    chunk_id=hit.chunk_id,
-                    file_name=hit.file_name,
-                    path=hit.path,
-                    ext=hit.ext,
-                    title_path=hit.heading,
-                    heading=hit.heading,
-                    paragraph=hit.paragraph,
-                    page=hit.page,
-                    snippet=hit.snippet,
-                    score=hit.score,
-                    rank_reason="Python RAG recall",
-                    preview_blocks=[],
-                ),
-                block=block,
-            )
-        )
-        selected_source_records.append(hit)
-
-    preview_blocks_by_chunk_id = store.fetch_preview_blocks_for_chunks(selected_source_records)
-    for source_block in sources:
-        source_block.source.preview_blocks = preview_blocks_by_chunk_id.get(source_block.source.chunk_id, [])
-
+    context = pack_context_from_hits(
+        store=store,
+        selected_hits=selected_hits,
+        settings=settings,
+        limit=limit,
+    )
     print(
-        f"[docmind:rag] qa recall done candidates={candidate_count} selected_sources={len(sources)}",
+        f"[docmind:rag] qa recall done candidates={candidate_count} selected_sources={len(context.sources)}",
         file=sys.stderr,
         flush=True,
     )
-
-    retrieval = RagRetrieval(
-        search_mode="python_rag_sqlite",
-        candidate_count=candidate_count,
-        selected_count=len(sources),
-        semantic_enabled=False,
-        semantic_fallback=False,
-        semantic_fallback_reason="",
-    )
-    return RagContext(sources=sources, retrieval=retrieval)
+    context.retrieval.candidate_count = candidate_count
+    return context

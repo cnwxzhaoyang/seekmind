@@ -15,6 +15,7 @@ def build_system_prompt(
     context: RagContext,
     session_context: Optional[str] = None,
     relation_hint: Optional[str] = None,
+    repair_hint: Optional[str] = None,
 ) -> str:
     prompt = (
         "你是 DocMind 的本地文档问答引擎。只能基于给定来源回答，不能使用外部知识补全事实。"
@@ -36,6 +37,12 @@ def build_system_prompt(
         prompt += relation_hint.strip()
         prompt += "\n\n"
 
+    if repair_hint and repair_hint.strip():
+        # 修复：修复阶段需要更明确地约束模型只重写可证事实，避免把上一版无引用句子原样带回。
+        prompt += "\n答案修复提示（仅用于重写，不可当作事实来源）：\n"
+        prompt += repair_hint.strip()
+        prompt += "\n\n"
+
     for source in context.sources:
         prompt += "\n"
         prompt += source.block
@@ -49,4 +56,45 @@ def build_system_prompt(
         "4. 如果无法回答，直接说明证据不足，并说明建议补充哪些文档类型或关键词。\n"
     )
 
+    return prompt
+
+
+def build_judge_prompt(
+    context: RagContext,
+    answer: str,
+    warning: Optional[str] = None,
+) -> str:
+    prompt = (
+        "你是 DocMind 的问答证据校验器。你的任务不是回答问题，而是判断当前答案是否足够被给定来源支撑。"
+        "如果答案里存在大量没有来源支撑的事实句，或者结论明显超出了来源范围，就应当要求重写。"
+        "如果只是少量辅助句、过渡句没有标注，但核心事实是可证的，可以不要求重写。"
+        "请只输出 JSON，不要输出多余文本。\n\n"
+        "JSON 结构必须是：\n"
+        "{"
+        "\"should_repair\": true/false, "
+        "\"reason\": \"简短原因\", "
+        "\"confidence\": 0.0-1.0"
+        "}\n\n"
+    )
+
+    if warning and warning.strip():
+        prompt += "规则校验提示：\n"
+        prompt += warning.strip()
+        prompt += "\n\n"
+
+    prompt += "待校验答案：\n"
+    prompt += answer.strip()
+    prompt += "\n\n"
+    prompt += "可用来源：\n"
+    for source in context.sources:
+        prompt += "\n"
+        prompt += source.block
+        prompt += "\n\n"
+
+    prompt += (
+        "判定规则：\n"
+        "1. should_repair=true 仅在核心事实缺少证据、结论与来源冲突、或答案明显依赖外部知识时使用。\n"
+        "2. should_repair=false 可以接受少量无引用辅助语句，但不能接受核心事实失支撑。\n"
+        "3. reason 只写一句话，直接说明原因。\n"
+    )
     return prompt
