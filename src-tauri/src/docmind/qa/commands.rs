@@ -826,18 +826,11 @@ pub async fn ask_question(
                     request.session_context.len()
                 );
 
-                // 修复：Python 侧会逐步吐出 answer_delta，这里必须累计成当前正文后再转发给前端。
-                // 只裁掉最前面的空白，避免模型流式首包带来的空行把 Markdown 预览撑出大段空白。
-                let mut streamed_answer = String::new();
+                let mut streamed_final_answer = String::new();
                 let response = match python_client_for_task.ask_question_stream(&request, |event| {
-                    if let Some(delta) = event.answer_delta.as_deref() {
-                        if streamed_answer.is_empty() {
-                            let trimmed = delta.trim_start();
-                            if !trimmed.is_empty() {
-                                streamed_answer.push_str(trimmed);
-                            }
-                        } else {
-                            streamed_answer.push_str(delta);
+                    if event.stage == "final_answer_delta" {
+                        if let Some(delta) = event.answer_delta.as_deref() {
+                            streamed_final_answer.push_str(delta);
                         }
                     }
                     let stage = match event.stage.as_str() {
@@ -845,14 +838,22 @@ pub async fn ask_question(
                         // 修复：Python RAG Graph 新增了更细的阶段节点，这里需要把它们映射到前端已有的状态语义。
                         "rank" | "pack_evidence" => "searching",
                         "prompt" | "generate" => "generating",
-                        "answer_delta" => "streaming",
+                        "answer_delta" | "final_answer_delta" => "streaming",
                         "verify" => "verifying",
                         "judge" => "verifying",
-                        "repair" | "finalize" => "verifying",
+                        "repair" => "verifying",
+                        "final_stream" => "generating",
+                        "finalize" => "verifying",
                         // 修复：Python 的 finish 只是最终 response 前的阶段事件，不携带正文；终态 answered 只能由最终 response 发出。
                         "finish" => "verifying",
                         "failed" => "failed",
                         _ => "running",
+                    };
+                    // 修复：引用校验 warning 只在失败进度或最终 answered 事件里展示，避免成稿流式期间先出现提示块。
+                    let visible_warning = if event.stage == "failed" {
+                        event.warning.clone()
+                    } else {
+                        None
                     };
                     let _ = app_for_task.emit(
                         "docmind:qa:answer-progress",
@@ -860,7 +861,7 @@ pub async fn ask_question(
                             job_id_for_task.clone(),
                             stage.to_string(),
                             question_for_task.clone(),
-                            streamed_answer.clone(),
+                            streamed_final_answer.clone(),
                             event.answer_delta.clone().unwrap_or_default(),
                             Vec::new(),
                             QaRetrievalView {
@@ -873,7 +874,7 @@ pub async fn ask_question(
                             },
                             model_for_task.clone(),
                             None,
-                            event.warning.clone(),
+                            visible_warning,
                         ),
                     );
                 }) {

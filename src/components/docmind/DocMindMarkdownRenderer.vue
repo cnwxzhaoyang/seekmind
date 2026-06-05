@@ -69,7 +69,7 @@ const renderedHtml = computed(() => {
   });
 });
 
-const citationPattern = /\[(S\d+)\]/g;
+const citationPattern = /\[(\d+)\]/g;
 
 const decorateCitationTokens = async () => {
   await nextTick();

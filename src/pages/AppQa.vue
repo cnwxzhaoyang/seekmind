@@ -53,7 +53,7 @@ import type {
   QaSourceView,
 } from "../types/docmind";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -449,12 +449,49 @@ const messageBodyMarkdown = (message: QaMessageView) => {
   if (message.answer.trim()) {
     return message.answer;
   }
-  // 修复：流式输出阶段不应显示额外占位文案，保持和最终答案同一张消息卡。
+  return t("page.appQa.noAnswer");
+};
+
+const messageBodyPlainText = (message: QaMessageView) => {
+  if (message.answer.trim()) {
+    return message.answer;
+  }
   return isMessageStreaming(message) ? "" : t("page.appQa.noAnswer");
 };
 
 const isMessageStreaming = (message: QaMessageView) =>
   ["searching", "running", "generating", "streaming", "verifying"].includes(message.state);
+
+const hasMessageAnswer = (message: QaMessageView) => message.answer.trim().length > 0;
+
+const isMessagePending = (message: QaMessageView) =>
+  isMessageStreaming(message) && !hasMessageAnswer(message);
+
+const shouldShowMessageBody = (message: QaMessageView) =>
+  hasMessageAnswer(message) || !isMessageStreaming(message);
+
+const shouldShowMessageMeta = (message: QaMessageView) =>
+  hasMessageAnswer(message) || !isMessageStreaming(message);
+
+const formatLocalDateTime = (value: string) => {
+  if (!value.trim()) {
+    return t("common.none");
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(locale.value, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
+};
 
 const panels = computed(() => {
   const items: { key: string; initialSize?: number; minSize: number; flex?: boolean }[] = [
@@ -1281,19 +1318,33 @@ watch(routeSessionId, async (next, previous) => {
                   </div>
 
                   <div class="mt-3 flex justify-start">
-                    <div class="relative max-w-[86%] rounded-2xl rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm">
-                      <div
-                        v-if="isMessageStreaming(message)"
-                        class="pointer-events-none absolute right-3 top-3 inline-flex items-center rounded-full border border-accent/20 bg-accent-soft/70 px-2 py-1 text-[11px] font-medium text-accent shadow-sm"
-                        :title="t('page.appQa.generating')"
-                        aria-label="answer streaming"
-                      >
+                    <div
+                      :class="[
+                        isMessagePending(message)
+                          ? 'inline-flex rounded-full border border-default bg-surface px-3 py-2 shadow-sm'
+                          : 'relative max-w-[86%] rounded-2xl rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm',
+                      ]"
+                    >
+                      <template v-if="isMessagePending(message)">
                         <span class="docmind-typing-indicator" aria-hidden="true">
                           <span class="docmind-typing-dot" />
                           <span class="docmind-typing-dot" />
                           <span class="docmind-typing-dot" />
                         </span>
-                      </div>
+                      </template>
+                      <template v-else>
+                        <div
+                          v-if="isMessageStreaming(message)"
+                          class="pointer-events-none absolute right-3 top-3 inline-flex items-center rounded-full border border-accent/20 bg-accent-soft/70 px-2 py-1 text-[11px] font-medium text-accent shadow-sm"
+                          :title="t('page.appQa.generating')"
+                          aria-label="answer streaming"
+                        >
+                          <span class="docmind-typing-indicator" aria-hidden="true">
+                            <span class="docmind-typing-dot" />
+                            <span class="docmind-typing-dot" />
+                            <span class="docmind-typing-dot" />
+                          </span>
+                        </div>
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2">
                           <DocMindBadge
@@ -1307,13 +1358,20 @@ watch(routeSessionId, async (next, previous) => {
                           </DocMindBadge>
                         </div>
                       </div>
-                      <div class="mt-3">
+                      <div v-if="shouldShowMessageBody(message)" class="mt-3">
                         <DocMindMarkdownRenderer
+                          v-if="hasMessageAnswer(message)"
                           :block="emptyMarkdownBlock"
                           :markdown="messageBodyMarkdown(message)"
                           :citation-source-ids="messageCitationSourceIds(message)"
                           @citation-click="selectSource"
                         />
+                        <div
+                          v-else
+                          class="whitespace-pre-wrap text-sm leading-7 text-secondary"
+                        >
+                          {{ messageBodyPlainText(message) }}
+                        </div>
                       </div>
                       <div v-if="message.warning" class="mt-3 rounded-xl border border-amber-soft bg-amber-soft px-4 py-3 text-sm text-warning">
                         <div class="font-medium">{{ t("page.appQa.citationWarning") }}</div>
@@ -1323,9 +1381,9 @@ watch(routeSessionId, async (next, previous) => {
                         <div class="font-medium">{{ messageFailureTitle(message) }}</div>
                         <div class="mt-1 text-xs leading-5 text-danger/90">{{ messageFailureHint(message) }}</div>
                       </div>
-                      <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-dim">
+                      <div v-if="shouldShowMessageMeta(message)" class="mt-3 flex flex-wrap items-center gap-2 text-xs text-dim">
                         <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
-                        <DocMindBadge tone="default">{{ message.created_at }}</DocMindBadge>
+                        <DocMindBadge tone="default" :title="message.created_at">{{ formatLocalDateTime(message.created_at) }}</DocMindBadge>
                         <DocMindBadge tone="default">{{ t("page.appQa.sourceCount", { count: message.sources.length }) }}</DocMindBadge>
                         <button
                           class="inline-flex items-center gap-1 rounded-full border border-default bg-badge px-2 py-0.5 text-[12px] text-secondary hover:bg-surface-hover"
@@ -1337,6 +1395,7 @@ watch(routeSessionId, async (next, previous) => {
                           {{ expandedMessages[message.id] ? t("page.appQa.hideSources") : t("page.appQa.showSources") }}
                         </button>
                       </div>
+                      </template>
 
                       <div
                         v-if="expandedMessages[message.id]"

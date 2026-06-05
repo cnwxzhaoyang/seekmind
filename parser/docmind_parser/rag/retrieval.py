@@ -306,7 +306,8 @@ def pack_context_from_hits(
             next_text = chunks[window_end + 1].snippet if window_end + 1 < len(chunks) else None
             current = merged_current
 
-        source_id = f"S{len(sources) + 1}"
+        # 修复：引用编号改为纯数字，前端和校验层统一显示 [1]、[2]...，保留更轻的标注样式。
+        source_id = f"{len(sources) + 1}"
         location_label = build_location_label(hit)
         block = build_prompt_block(
             source_id,

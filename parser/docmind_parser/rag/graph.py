@@ -7,8 +7,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import json
-import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 import sys
 
@@ -17,7 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from .client import ask_model_stream, ask_model_text
 from .db import RagChunkRecord, RagStore
 from .models import ProgressEmitter, RagEvent, RagRequest, RagResponse, RagRetrieval, RagSource
-from .prompt import build_judge_prompt, build_system_prompt
+from .prompt import build_system_prompt
 from .retrieval import (
     RagRecallCandidate,
     RagContext,
@@ -74,6 +72,11 @@ class RagGraphStateData(TypedDict, total=False):
 def _log(message: str) -> None:
     sys.stderr.write(f"[docmind:rag] {message}\n")
     sys.stderr.flush()
+
+
+def _effective_answer_tokens(state: RagGraphState) -> int:
+    # 修复：答题侧默认 token 偏低时容易把完整答案截断，最终成稿统一抬到一个更稳妥的下限。
+    return max(int(state.request.settings.max_output_tokens), 1200)
 
 
 def _emit(emit: Optional[ProgressEmitter], event: RagEvent) -> None:
@@ -296,57 +299,17 @@ def draft_answer(
             percent=60,
         ),
     )
-    answer_parts: List[str] = []
-    try:
-        for delta in ask_model_stream(
-            base_url=state.request.settings.base_url,
-            api_key=state.request.settings.api_key,
-            model=state.request.settings.model,
-            question=state.rewrite.retrieval_question,
-            prompt=system_prompt,
-            temperature=state.request.settings.temperature,
-            max_output_tokens=state.request.settings.max_output_tokens,
-        ):
-            answer_parts.append(delta)
-            _emit(
-                emit,
-                RagEvent(
-                    request_id=state.request.request_id,
-                    kind="event",
-                    event="progress",
-                    stage="answer_delta",
-                    message="正在生成答案",
-                    answer_delta=delta,
-                    percent=72,
-                ),
-            )
-    except Exception as error:  # noqa: BLE001
-        _log(
-            f"rag request {state.request.request_id} streaming failed, fallback to non-stream: {error}"
-        )
-        answer_parts = []
-        answer = ask_model_text(
-            base_url=state.request.settings.base_url,
-            api_key=state.request.settings.api_key,
-            model=state.request.settings.model,
-            question=state.rewrite.retrieval_question,
-            prompt=system_prompt,
-            temperature=state.request.settings.temperature,
-            max_output_tokens=state.request.settings.max_output_tokens,
-        )
-        answer_parts.append(answer)
-
-    state.answer = "".join(answer_parts).strip()
-    if not state.answer:
-        state.answer = ask_model_text(
-            base_url=state.request.settings.base_url,
-            api_key=state.request.settings.api_key,
-            model=state.request.settings.model,
-            question=state.rewrite.retrieval_question,
-            prompt=system_prompt,
-            temperature=state.request.settings.temperature,
-            max_output_tokens=state.request.settings.max_output_tokens,
-        ).strip()
+    # 修复：第二阶段采用“内部生成 -> 校验 -> 修复”的成稿模式，避免把草稿流式暴露给前端后再被修复覆盖。
+    # 只有 final_stream 节点会把模型原生 delta 直接转发给前端，避免先拼完整答案再重放造成延迟。
+    state.answer = ask_model_text(
+        base_url=state.request.settings.base_url,
+        api_key=state.request.settings.api_key,
+        model=state.request.settings.model,
+        question=state.rewrite.retrieval_question,
+        prompt=system_prompt,
+        temperature=state.request.settings.temperature,
+        max_output_tokens=_effective_answer_tokens(state),
+    ).strip()
     return state
 
 
@@ -355,7 +318,8 @@ def verify_answer(
     emit: Optional[ProgressEmitter] = None,
 ) -> RagGraphState:
     source_ids = [source.source.source_id for source in state.context.sources] if state.context else []
-    state.warning = build_citation_warning(state.answer, source_ids)
+    source_texts = [source.block for source in state.context.sources] if state.context else []
+    state.warning = build_citation_warning(state.answer, source_ids, source_texts)
     _emit(
         emit,
         RagEvent(
@@ -372,31 +336,6 @@ def verify_answer(
     if state.warning:
         _log(f"rag request {state.request.request_id} citation warning: {state.warning}")
     return state
-
-
-def _parse_judge_payload(raw_text: str) -> Tuple[bool, str, float]:
-    cleaned = (raw_text or "").strip()
-    if not cleaned:
-        return True, "模型未返回有效判定结果", 0.0
-    try:
-        payload = json.loads(cleaned)
-    except Exception:  # noqa: BLE001
-        match = re.search(r"\{.*\}", cleaned, re.S)
-        if not match:
-            return True, "模型判定结果无法解析", 0.0
-        try:
-            payload = json.loads(match.group(0))
-        except Exception:  # noqa: BLE001
-            return True, "模型判定结果无法解析", 0.0
-
-    should_repair = bool(payload.get("should_repair", True))
-    reason = str(payload.get("reason") or "").strip() or "模型判定需要修复"
-    try:
-        confidence = float(payload.get("confidence", 0.0))
-    except Exception:  # noqa: BLE001
-        confidence = 0.0
-    confidence = max(0.0, min(confidence, 1.0))
-    return should_repair, reason, confidence
 
 
 def judge_answer(
@@ -418,39 +357,17 @@ def judge_answer(
             warning=state.warning,
         ),
     )
-    judge_prompt = build_judge_prompt(
-        state.context,
-        state.answer,
-        warning=state.warning,
-    )
-    try:
-        judge_raw = ask_model_text(
-            base_url=state.request.settings.base_url,
-            api_key=state.request.settings.api_key,
-            model=state.request.settings.model,
-            question=state.rewrite.retrieval_question,
-            prompt=judge_prompt,
-            temperature=0.0,
-            max_output_tokens=256,
-        )
-        should_repair, reason, confidence = _parse_judge_payload(judge_raw)
-    except Exception as error:  # noqa: BLE001
-        # 修复：judge 是质量判定节点，失败时不能吞掉已生成答案；保留规则 warning，由前端提示用户。
-        _log(f"rag request {state.request.request_id} judge failed: {error}")
-        should_repair, reason, confidence = False, f"judge_failed: {error}", 0.0
-
-    if state.warning and not should_repair:
-        # 修复：规则层已经发现引用缺失时，LLM judge 不能直接推翻规则警告，只能决定是否继续修复或保守放行。
-        _log(
-            f"rag request {state.request.request_id} judge overruled warning with reason={reason}"
-        )
-
+    # 修复：judge 先降级为规则驱动，避免把整条问答链路绑死在不稳定的 LLM JSON 输出上。
+    # 只要规则层已经给出引用缺失警告，就保守要求修复；否则直接放行给 finalize。
+    should_repair = bool(state.warning)
+    reason = state.warning or "规则校验通过"
+    confidence = 0.5 if should_repair else 1.0
     state.judge_should_repair = should_repair
     state.judge_reason = reason
     state.judge_confidence = confidence
     if should_repair:
         state.repair_hint = (
-            f"judge 认为答案需要修复：{reason}。"
+            f"规则校验提示：{reason}。"
             "请只保留被来源直接支撑的句子，删掉未被来源支撑的内容。"
         )
     _log(
@@ -500,7 +417,7 @@ def repair_answer(
             question=state.rewrite.retrieval_question,
             prompt=repair_prompt,
             temperature=state.request.settings.temperature,
-            max_output_tokens=state.request.settings.max_output_tokens,
+            max_output_tokens=_effective_answer_tokens(state),
         ).strip()
     except Exception as error:  # noqa: BLE001
         # 修复：repair 是增强节点，二次生成失败时保留第一轮答案，避免可用回答被降级成空失败。
@@ -512,6 +429,81 @@ def repair_answer(
         state.answer = repaired_answer
     state.retry_count += 1
     state.judge_should_repair = False
+    return state
+
+
+def final_stream_answer(
+    state: RagGraphState,
+    emit: Optional[ProgressEmitter] = None,
+) -> RagGraphState:
+    if state.context is None:
+        return state
+
+    _emit(
+        emit,
+        RagEvent(
+            request_id=state.request.request_id,
+            kind="event",
+            event="progress",
+            stage="final_stream",
+            message="正在输出最终答案",
+            percent=96,
+        ),
+    )
+
+    draft_answer_text = state.answer.strip()
+    final_hint = (
+        "请基于来源证据输出最终答案。内部草稿仅用于组织结构，不得引入来源中没有的事实。"
+        "如果草稿中有无证据支撑的内容，请删除。"
+    )
+    if draft_answer_text:
+        final_hint += f"\n\n内部草稿：\n{draft_answer_text}"
+
+    final_prompt = build_system_prompt(
+        state.context,
+        state.request.session_context,
+        relation_hint=state.rewrite.relation_hint,
+        repair_hint=final_hint,
+    )
+
+    final_parts: List[str] = []
+    try:
+        for delta in ask_model_stream(
+            base_url=state.request.settings.base_url,
+            api_key=state.request.settings.api_key,
+            model=state.request.settings.model,
+            question=state.rewrite.retrieval_question,
+            prompt=final_prompt,
+            temperature=state.request.settings.temperature,
+            max_output_tokens=_effective_answer_tokens(state),
+        ):
+            final_parts.append(delta)
+            _emit(
+                emit,
+                RagEvent(
+                    request_id=state.request.request_id,
+                    kind="event",
+                    event="progress",
+                    stage="final_answer_delta",
+                    message="正在输出最终答案",
+                    answer_delta=delta,
+                    percent=98,
+                ),
+            )
+    except Exception as error:  # noqa: BLE001
+        # 修复：最终流式模型调用失败时，保留内部成稿，避免用户得到空回答。
+        _log(f"rag request {state.request.request_id} final stream failed: {error}")
+        return state
+
+    final_answer = "".join(final_parts).strip()
+    if final_answer:
+        state.answer = final_answer
+
+    source_ids = [source.source.source_id for source in state.context.sources]
+    source_texts = [source.block for source in state.context.sources]
+    state.warning = build_citation_warning(state.answer, source_ids, source_texts)
+    if state.warning:
+        _log(f"rag request {state.request.request_id} final citation warning: {state.warning}")
     return state
 
 
@@ -606,6 +598,12 @@ def _node_repair(state: RagGraphStateData, emit: Optional[ProgressEmitter]) -> R
     return _state_updates(obj)
 
 
+def _node_final_stream(state: RagGraphStateData, emit: Optional[ProgressEmitter]) -> RagGraphStateData:
+    obj = _state_to_obj(state)
+    final_stream_answer(obj, emit)
+    return _state_updates(obj)
+
+
 def _node_finalize(state: RagGraphStateData, emit: Optional[ProgressEmitter]) -> RagGraphStateData:
     obj = _state_to_obj(state)
     obj.response = finalize(obj, emit)
@@ -626,7 +624,7 @@ def _route_after_verify(state: RagGraphStateData) -> str:
 def _route_after_judge(state: RagGraphStateData) -> str:
     if state.get("judge_should_repair") and state.get("retry_count", 0) < 1:
         return "repair"
-    return "finalize"
+    return "final_stream"
 
 
 def build_rag_langgraph(store: RagStore, emit: Optional[ProgressEmitter] = None):
@@ -638,6 +636,7 @@ def build_rag_langgraph(store: RagStore, emit: Optional[ProgressEmitter] = None)
     graph.add_node("draft", lambda state: _node_draft(state, emit))
     graph.add_node("verify", lambda state: _node_verify(state, emit))
     graph.add_node("repair", lambda state: _node_repair(state, emit))
+    graph.add_node("final_stream", lambda state: _node_final_stream(state, emit))
     graph.add_node("finalize", lambda state: _node_finalize(state, emit))
 
     graph.add_edge(START, "retrieve")
@@ -665,9 +664,10 @@ def build_rag_langgraph(store: RagStore, emit: Optional[ProgressEmitter] = None)
         _route_after_judge,
         {
             "repair": "repair",
-            "finalize": "finalize",
+            "final_stream": "final_stream",
         },
     )
     graph.add_edge("repair", "verify")
+    graph.add_edge("final_stream", "finalize")
     graph.add_edge("finalize", END)
     return graph.compile()
