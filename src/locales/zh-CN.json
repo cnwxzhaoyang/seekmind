@@ -447,6 +447,9 @@
         "quickLookFailed": "Quick Look 打开失败",
         "copyPath": "复制路径",
         "copyCitation": "复制引用",
+        "retryOcr": "重跑 OCR",
+        "ocrRetried": "已重跑 OCR：{name}",
+        "ocrRetryFailed": "重跑 OCR 失败",
         "removeDir": "移除目录",
         "copiedPath": "已复制路径",
         "copiedCitation": "已复制引用",
@@ -584,7 +587,9 @@
         "errorCount": "错误数",
         "errorCountDesc": "索引过程中错误总数",
         "pendingFiles": "待处理文件数",
-        "pendingFilesDesc": "待处理的文件数量"
+        "pendingFilesDesc": "待处理的文件数量",
+        "ocrTasks": "OCR 任务数",
+        "ocrTasksDesc": "扫描版 PDF 识别任务累计数"
       },
       "incremental": {
         "updated": "更新",
@@ -605,6 +610,14 @@
         "ocrAvailability": "中文 OCR 可用性：{status}",
         "ocrInstalled": "已检测到：{languages}",
         "script": "Script: {path}"
+      },
+      "ocr": {
+        "title": "扫描版 PDF OCR",
+        "availableHint": "当前可用语言包：{languages}",
+        "availableDesc": "扫描版 PDF 会自动尝试 OCR，并将识别结果保存进索引。",
+        "unavailableTitle": "扫描版 PDF OCR 不可用",
+        "unavailableHint": "请安装 Tesseract 并确保语言包可用后再索引扫描件。",
+        "retry": "重跑 OCR"
       },
       "failed": {
         "noFailed": "当前没有失败项",

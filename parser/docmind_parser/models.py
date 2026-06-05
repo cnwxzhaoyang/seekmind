@@ -1,3 +1,9 @@
+"""
+@author MorningSun
+@CreatedDate 2026/06/05
+@Description DocMind 解析器请求、结果、OCR 队列与流式消息模型。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
@@ -45,6 +51,20 @@ class ParsedBlock:
 
 
 @dataclass
+class PdfOcrTask:
+    page_index: int
+    reason: str
+    message: str
+    warning: Optional[str] = None
+    status: str = "queued"
+    ocr_text: Optional[str] = None
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class ParsedChunk:
     heading: Optional[str]
     page_no: Optional[int]
@@ -64,6 +84,7 @@ class ParsedDocument:
     content: str
     chunks: List[ParsedChunk]
     blocks: Optional[List[ParsedBlock]] = None
+    ocr_tasks: Optional[List[PdfOcrTask]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -72,6 +93,7 @@ class ParsedDocument:
             "content": self.content,
             "chunks": [chunk.to_dict() for chunk in self.chunks],
             "blocks": [block.to_dict() for block in self.blocks] if self.blocks else None,
+            "ocr_tasks": [task.to_dict() for task in self.ocr_tasks] if self.ocr_tasks else None,
         }
 
 

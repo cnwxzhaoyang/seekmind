@@ -1,3 +1,9 @@
+"""
+@author MorningSun
+@CreatedDate 2026/06/05
+@Description DocMind 文档解析、OCR 队列与格式抽取实现。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -27,6 +33,7 @@ from .models import (
     ParserError,
     ParserOptions,
 )
+from .pdf_ocr import PdfOcrTask, build_pdf_ocr_task
 
 SUPPORTED_EXTENSIONS = {"txt", "md", "markdown", "html", "htm", "doc", "docx", "ppt", "pptx", "pdf"}
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
@@ -1049,6 +1056,7 @@ def parse_document(
         raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
 
     progress("start", f"开始解析 {path.name}", 1, path.name)
+    ocr_tasks: List[PdfOcrTask] = []
 
     if ext in {"txt", "md", "markdown"}:
         title, blocks = parse_text_like(path, ext)
@@ -1063,7 +1071,7 @@ def parse_document(
     elif ext == "ppt":
         title, blocks = parse_ppt(path, emit=emit, request_id=request_id)
     elif ext == "pdf":
-        title, blocks = parse_pdf(path, emit=emit, request_id=request_id)
+        title, blocks, ocr_tasks = parse_pdf(path, emit=emit, request_id=request_id)
     else:
         raise parser_error("unsupported_file_type", f"unsupported file type: {ext}")
 
@@ -1105,6 +1113,7 @@ def parse_document(
         content=content,
         chunks=chunks if options.include_chunks else [],
         blocks=parsed_blocks,
+        ocr_tasks=ocr_tasks or None,
     )
 
 
@@ -1617,7 +1626,8 @@ def parse_ppt(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
         )
 
     try:
-        return parse_pdf(converted_pdf, emit=emit, request_id=request_id)
+        title, blocks, _ocr_tasks = parse_pdf(converted_pdf, emit=emit, request_id=request_id)
+        return title, blocks
     except Exception as exc:  # noqa: BLE001
         raise parser_error(
             "parse_failed",
@@ -1966,7 +1976,7 @@ def render_pdf_page_preview_block(path: Path, heading: Optional[str], page_index
         asset_path=str(preview_path),
         alt_text=label,
         caption=caption,
-        ocr_text=caption,
+        ocr_text=None,
     )
 
 
@@ -2022,7 +2032,7 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
                             asset_path=str(image_path),
                             alt_text=label,
                             caption=caption,
-                            ocr_text=caption,
+                            ocr_text=None,
                         )
                     )
             if image_blocks:
@@ -2126,7 +2136,7 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
                     asset_path=str(image_path),
                     alt_text=label,
                     caption=caption,
-                    ocr_text=caption,
+                    ocr_text=None,
                 )
             )
 
@@ -2134,7 +2144,11 @@ def extract_pdf_image_blocks(path: Path, heading: Optional[str], page_index: Opt
 
 
 
-def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: str = "") -> Tuple[Optional[str], List[Block]]:
+def parse_pdf(
+    path: Path,
+    emit: Optional[ProgressEmitter] = None,
+    request_id: str = "",
+) -> Tuple[Optional[str], List[Block], List[PdfOcrTask]]:
     def progress(
         stage: str,
         message: str,
@@ -2164,6 +2178,7 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
 
     title: Optional[str] = None
     blocks: List[Block] = []
+    ocr_tasks: List[PdfOcrTask] = []
     pdf_debug_log(f"parse start path={path.name}")
 
     try:
@@ -2174,6 +2189,7 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
         pdf_debug_log(f"pdf reader opened path={path.name} pages={total_pages}")
         progress("extract", f"正在解析 PDF，共 {total_pages} 页", 10, path.name, total_pages, 0)
         ocr_pages = 0
+        scanned_candidates = 0
         text_pages = 0
         skipped_pages = 0
         for page_index, page in enumerate(reader.pages, start=1):
@@ -2200,58 +2216,18 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                         )
                     )
             else:
-                if not page_text:
-                    progress("extract", f"第 {page_index} 页无文本层（扫描件），尝试 OCR", 15, path.name, total_pages, page_index)
-                elif noisy_text_layer:
+                task = build_pdf_ocr_task(page_index, page_text, meaningful, noisy_text_layer)
+                if task is not None:
+                    scanned_candidates += 1
+                    ocr_tasks.append(task)
                     progress(
                         "extract",
-                        f"第 {page_index} 页文本层疑似乱码，改用 OCR",
+                        task.message,
                         15,
                         path.name,
                         total_pages,
                         page_index,
-                        warning="PDF 文本层疑似噪声",
-                    )
-                elif not meaningful:
-                    progress("extract", f"第 {page_index} 页文本为乱码（{len(page_text)} 字符），尝试 OCR", 15, path.name, total_pages, page_index, warning="pypdf 提取文本不可用")
-                if pdf_ocr_enabled():
-                    progress(
-                        "ocr",
-                        f"正在识别第 {page_index} 页 PDF 图片文字",
-                        min(80, 20 + int(page_index / max(total_pages, 1) * 50)),
-                        path.name,
-                        total_pages,
-                        page_index,
-                    )
-                    ocr_text = ocr_pdf_page_text(path, page_index)
-                    if ocr_text:
-                        ocr_pages += 1
-                        progress("ocr", f"第 {page_index} 页 OCR 识别成功", 25, path.name, total_pages, page_index)
-                        if title is None:
-                            title = detect_title_like_line(ocr_text) or path.stem
-                        blocks.append(
-                            Block(
-                                kind="paragraph",
-                                text=ocr_text,
-                                heading=title or path.stem,
-                                page_no=page_index,
-                                ocr_text="PDF OCR 识别结果",
-                            )
-                        )
-                    else:
-                        skipped_pages += 1
-                        progress("ocr", f"第 {page_index} 页 OCR 识别无结果", 20, path.name, total_pages, page_index, warning="OCR 返回空")
-                else:
-                    skipped_pages += 1
-                    ocr_reason = "tesseract 未安装" if shutil.which("tesseract") is None else "DOCMIND_DISABLE_PDF_OCR=1"
-                    progress(
-                        "ocr",
-                        f"第 {page_index} 页无文本，OCR 跳过（{ocr_reason}）",
-                        min(60, 20 + int(page_index / max(total_pages, 1) * 30)),
-                        path.name,
-                        total_pages,
-                        page_index,
-                        warning=f"PDF OCR 未启用（{ocr_reason}）",
+                        warning=task.warning,
                     )
 
             page_image_blocks = extract_pdf_image_blocks(path, title or path.stem, page_index)
@@ -2266,21 +2242,93 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                 else:
                     pdf_debug_log(f"page={page_index} no image block and no page preview")
 
+        if ocr_tasks:
+            pdf_debug_log(f"pdf ocr queue collected path={path.name} tasks={len(ocr_tasks)}")
+            progress(
+                "ocr_queue",
+                f"已排队 {len(ocr_tasks)} 个 OCR 任务",
+                20,
+                path.name,
+                total_pages,
+                len(ocr_tasks),
+            )
+        for queue_index, task in enumerate(ocr_tasks, start=1):
+            page_index = task.page_index
+            if not pdf_ocr_enabled():
+                skipped_pages += 1
+                ocr_reason = "tesseract 未安装" if shutil.which("tesseract") is None else "DOCMIND_DISABLE_PDF_OCR=1"
+                task.status = "skipped"
+                task.error = ocr_reason
+                progress(
+                    "ocr",
+                    f"第 {page_index} 页 OCR 跳过（{ocr_reason}）",
+                    min(60, 20 + int(page_index / max(total_pages, 1) * 30)),
+                    path.name,
+                    total_pages,
+                    page_index,
+                    warning=f"PDF OCR 未启用（{ocr_reason}）",
+                )
+                continue
+
+            # 修复：OCR 先收集为队列，再统一执行，后续可以无缝把这一步挪到后台任务。
+            progress(
+                "ocr_queue",
+                f"正在处理 OCR 队列第 {queue_index}/{len(ocr_tasks)} 项",
+                min(70, 30 + int(queue_index / max(len(ocr_tasks), 1) * 35)),
+                path.name,
+                len(ocr_tasks),
+                queue_index,
+                warning=task.warning,
+            )
+            progress(
+                "ocr",
+                f"正在识别第 {page_index} 页 PDF 图片文字",
+                min(80, 20 + int(page_index / max(total_pages, 1) * 50)),
+                path.name,
+                total_pages,
+                page_index,
+            )
+            ocr_text = ocr_pdf_page_text(path, page_index)
+            if ocr_text:
+                ocr_pages += 1
+                task.status = "completed"
+                task.ocr_text = ocr_text
+                progress("ocr", f"第 {page_index} 页 OCR 识别成功", 25, path.name, total_pages, page_index)
+                if title is None:
+                    title = detect_title_like_line(ocr_text) or path.stem
+                blocks.append(
+                    Block(
+                        kind="paragraph",
+                        text=ocr_text,
+                        heading=title or path.stem,
+                        page_no=page_index,
+                        ocr_text=ocr_text,
+                    )
+                )
+            else:
+                skipped_pages += 1
+                task.status = "failed"
+                task.error = "OCR 返回空"
+                progress("ocr", f"第 {page_index} 页 OCR 识别无结果", 20, path.name, total_pages, page_index, warning="OCR 返回空")
+
         if blocks:
             image_count = sum(1 for block in blocks if block.kind == "image")
             ocr_block_count = sum(1 for block in blocks if block.ocr_text)
             pdf_debug_log(f"parse done path={path.name} blocks={len(blocks)} images={image_count} ocr_blocks={ocr_block_count}")
-            summary = f"共 {total_pages} 页：pypdf 文本 {text_pages} 页"
+            summary = f"共 {total_pages} 页：pypdf 文本 {text_pages} 页，扫描候选 {scanned_candidates} 页"
             if ocr_pages:
                 summary += f"，OCR {ocr_pages} 页"
             if skipped_pages:
                 summary += f"，跳过 {skipped_pages} 页"
             if image_count:
                 summary += f"，图片 {image_count} 个"
+            if scanned_candidates > 0 and ocr_pages == 0:
+                # 修复：把“扫描候选但 OCR 未产出”明确反馈到进度摘要，方便上层判断是缺语言包还是 OCR 没触发。
+                progress("ocr", f"扫描候选 {scanned_candidates} 页，但 OCR 未产出结果", 30, path.name, total_pages, scanned_candidates, warning="OCR 未产出结果")
             progress("done", summary, 100, path.name, total_pages, total_pages)
             if image_count:
                 progress("image", f"已提取 {image_count} 个 PDF 图片", 85, path.name, image_count, image_count)
-            return title or path.stem, blocks
+            return title or path.stem, blocks, ocr_tasks
     except Exception as exc:  # noqa: BLE001
         parse_error = exc
     else:
@@ -2304,13 +2352,13 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
                 pass
         blocks.extend(image_blocks)
         progress("done", f"PDF 解析完成：{path.name}", 100, path.name, len(blocks), len(blocks))
-        return title or path.stem, blocks
+        return title or path.stem, blocks, []
 
     image_blocks = extract_pdf_image_blocks(path, path.stem)
     if image_blocks:
         progress("image", f"已提取 {len(image_blocks)} 个 PDF 图片", 85, path.name, len(image_blocks), len(image_blocks))
         progress("done", f"PDF 解析完成：{path.name}", 100, path.name, len(image_blocks), len(image_blocks))
-        return path.stem, image_blocks
+        return path.stem, image_blocks, []
 
     page_preview_blocks: List[Block] = []
     try:
@@ -2326,7 +2374,7 @@ def parse_pdf(path: Path, emit: Optional[ProgressEmitter] = None, request_id: st
     if page_preview_blocks:
         progress("image", f"已生成 {len(page_preview_blocks)} 个 PDF 页面预览", 85, path.name, len(page_preview_blocks), len(page_preview_blocks))
         progress("done", f"PDF 解析完成：{path.name}", 100, path.name, len(page_preview_blocks), len(page_preview_blocks))
-        return path.stem, page_preview_blocks
+        return path.stem, page_preview_blocks, []
 
     if parse_error is not None:
         raise parser_error("parse_failed", "pdf extraction failed", details=str(parse_error))

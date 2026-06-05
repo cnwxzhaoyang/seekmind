@@ -1,9 +1,14 @@
+/*
+ * @author MorningSun
+ * @CreatedDate 2026/06/05
+ * @Description DocMind 索引流程编排与任务执行。
+ */
 #![allow(dead_code)]
 
 use crate::docmind::models::{IndexRefreshProgressView, IndexStatusView};
 use crate::docmind::parser::types::ParserStreamEvent;
 use crate::docmind::storage::scanner;
-use crate::docmind::storage::types::DocumentState;
+use crate::docmind::storage::types::{DocumentState, IndexSettings};
 use crate::docmind::storage::Database;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -101,6 +106,203 @@ pub async fn resume(database: &Database) -> Result<IndexStatusView, String> {
 }
 
 pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexStatusView, String> {
+    let settings = database
+        .get_index_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    match reparse_document_once(database, path, &settings).await {
+        Ok((_, warning)) => {
+            if let Some(warning) = warning {
+                eprintln!("[DocMind] retry_failed_file warning path={path}: {warning}");
+            }
+        }
+        Err(reason) => return Err(reason),
+    }
+    database
+        .get_index_status()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+pub async fn rebuild_pdf_ocr_queue(
+    database: &Database,
+    job_id: &str,
+    on_progress: IndexProgressEmitter,
+) -> Result<IndexStatusView, String> {
+    let pending_paths = database
+        .pending_pdf_ocr_document_paths()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if pending_paths.is_empty() {
+        return database
+            .get_index_status()
+            .await
+            .map_err(|error| error.to_string());
+    }
+
+    let settings = database
+        .get_index_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    let dir_paths = database
+        .enabled_index_dir_paths()
+        .await
+        .map_err(|error| error.to_string())?;
+    let total = pending_paths.len();
+    let mut processed = 0usize;
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+    let mut updated = 0usize;
+
+    database
+        .set_current_task(
+            "正在重跑 PDF OCR",
+            "重新处理扫描版 PDF 识别任务",
+            "running",
+            "",
+            "",
+            0,
+            0,
+            total,
+            0,
+            0,
+            0,
+            0,
+            0,
+            None,
+            false,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    emit_index_progress(database, job_id, "pdf-ocr", "", "running", "正在重跑 PDF OCR", &on_progress)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    for path in pending_paths {
+        processed += 1;
+        let progress = progress_of(processed, total);
+        let dir_path = resolve_dir_for_path(&dir_paths, &path);
+        let current_message = format!("正在重跑 PDF OCR · {processed}/{total}");
+        database
+            .set_current_task(
+                "正在重跑 PDF OCR",
+                &current_message,
+                "running",
+                &dir_path,
+                &path,
+                progress,
+                processed,
+                total,
+                succeeded,
+                failed,
+                updated,
+                0,
+                0,
+                None,
+                false,
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+
+        match reparse_document_once(database, &path, &settings).await {
+            Ok((parsed_dir, warning)) => {
+                let warning_text = warning.clone();
+                if let Some(warning) = warning_text {
+                    eprintln!("[DocMind] pdf ocr warning path={path}: {warning}");
+                }
+                succeeded += 1;
+                updated += 1;
+                let status = database
+                    .get_index_status()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let message = if let Some(warning) = warning {
+                    format!("PDF OCR 重跑完成，存在提示：{warning}")
+                } else {
+                    "PDF OCR 重跑完成".to_string()
+                };
+                on_progress(IndexRefreshProgressView {
+                    job_id: job_id.to_string(),
+                    state: "running".to_string(),
+                    message,
+                    scope: "pdf-ocr".to_string(),
+                    path: path.clone(),
+                    status,
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                });
+                if !parsed_dir.trim().is_empty() {
+                    let _ = database.refresh_index_dir_stats(&parsed_dir).await;
+                }
+            }
+            Err(error) => {
+                failed += 1;
+                let status = database
+                    .get_index_status()
+                    .await
+                    .map_err(|db_error| db_error.to_string())?;
+                let (category, code) = classify_failure(&error, &path);
+                let _ = database
+                    .record_failed_file(&path, &error, &category, &code)
+                    .await;
+                on_progress(IndexRefreshProgressView {
+                    job_id: job_id.to_string(),
+                    state: "running".to_string(),
+                    message: format!("PDF OCR 重跑失败：{error}"),
+                    scope: "pdf-ocr".to_string(),
+                    path: path.clone(),
+                    status,
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                });
+            }
+        }
+    }
+
+    database
+        .set_current_task(
+            "PDF OCR 重跑完成",
+            "扫描版 PDF 识别任务已处理完成",
+            "completed",
+            "",
+            "",
+            100,
+            processed,
+            total,
+            succeeded,
+            failed,
+            updated,
+            0,
+            0,
+            None,
+            false,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    let status = database
+        .get_index_status()
+        .await
+        .map_err(|error| error.to_string())?;
+    on_progress(IndexRefreshProgressView {
+        job_id: job_id.to_string(),
+        state: "completed".to_string(),
+        message: "PDF OCR 队列重跑完成".to_string(),
+        scope: "pdf-ocr".to_string(),
+        path: String::new(),
+        status: status.clone(),
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    });
+    database
+        .clear_current_task()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(status)
+}
+
+async fn reparse_document_once(
+    database: &Database,
+    path: &str,
+    settings: &IndexSettings,
+) -> Result<(String, Option<String>), String> {
     let normalized = path.trim();
     if normalized.is_empty() {
         return Err("文件路径不能为空".to_string());
@@ -122,28 +324,29 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
         .cloned()
         .ok_or_else(|| "找不到该文件所属的索引目录".to_string())?;
 
-    let settings = database
-        .get_index_settings()
-        .await
-        .map_err(|error| error.to_string())?;
-    let file = scanner::snapshot_supported_file(&dir_path, path_buf, &settings)?;
+    let file = scanner::snapshot_supported_file(&dir_path, path_buf, settings)?;
     match scanner::parse_document(&file) {
-        Ok((document, chunks, blocks, outcome)) => {
-            if let Some(warning) = outcome.warning {
-                eprintln!("[DocMind] retry_failed_file warning: {warning}");
+        Ok((document, chunks, blocks, ocr_tasks, outcome)) => {
+            if let Some(ref warning) = outcome.warning {
+                eprintln!("[DocMind] reparse_document_once warning path={normalized}: {warning}");
             }
             database
                 .clear_document_by_path(normalized)
                 .await
                 .map_err(|error| error.to_string())?;
             database
-                .store_document(&document, &chunks, &blocks)
+                .store_document(&document, &chunks, &blocks, &ocr_tasks)
                 .await
                 .map_err(|error| error.to_string())?;
             database
                 .clear_failed_file(normalized)
                 .await
                 .map_err(|error| error.to_string())?;
+            database
+                .refresh_index_dir_stats(&dir_path)
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok((dir_path, outcome.warning))
         }
         Err(reason) => {
             let (category, code) = classify_failure(&reason, normalized);
@@ -151,18 +354,9 @@ pub async fn retry_failed_file(database: &Database, path: &str) -> Result<IndexS
                 .record_failed_file(normalized, &reason, &category, &code)
                 .await
                 .map_err(|error| error.to_string())?;
-            return Err(reason);
+            Err(reason)
         }
     }
-    database
-        .refresh_index_dir_stats(&dir_path)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    database
-        .get_index_status()
-        .await
-        .map_err(|error| error.to_string())
 }
 
 async fn rebuild_paths(
@@ -513,11 +707,14 @@ async fn process_index_plan(
         let _ = parser_thread.join();
 
         match parse_result {
-            Ok((document, chunks, blocks, outcome)) => {
+            Ok((document, chunks, blocks, ocr_tasks, outcome)) => {
                 if let Some(warning) = outcome.warning {
                     eprintln!("[DocMind] indexing warning for {}: {warning}", path);
                 }
-                match database.store_document(&document, &chunks, &blocks).await {
+                match database
+                    .store_document(&document, &chunks, &blocks, &ocr_tasks)
+                    .await
+                {
                     Ok(()) => {
                         plan.succeeded += 1;
                         plan.updated += 1;
@@ -820,6 +1017,13 @@ fn parser_event_message(event: &ParserStreamEvent, fallback: &str) -> String {
         "start" => "正在开始解析".to_string(),
         "extract" => "正在提取内容块".to_string(),
         "normalize" => "正在整理内容块".to_string(),
+        "ocr_queue" => {
+            if !event.current.trim().is_empty() && event.total > 0 {
+                format!("正在排队 OCR · {}/{}", event.processed, event.total)
+            } else {
+                "正在排队 OCR".to_string()
+            }
+        }
         "chunk" => {
             if !event.current.trim().is_empty() {
                 format!("正在生成切片 · {}", event.current.trim())

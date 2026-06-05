@@ -174,6 +174,7 @@ pub struct IndexRunSummaryView {
 pub struct IndexStatusView {
     pub indexed_docs: usize,
     pub indexed_chunks: usize,
+    pub pdf_ocr_tasks: usize,
     pub scanned_docs: usize,
     pub failed_files: usize,
     pub current_task: Option<CurrentTaskView>,
@@ -228,6 +229,8 @@ pub struct ParserRuntimeView {
     pub chinese_ocr_available: bool,
     #[serde(default)]
     pub chinese_ocr_warning: Option<String>,
+    pub pdf_ocr_available: bool,
+    pub pdf_ocr_message: String,
     pub python_bin: String,
     pub script_path: String,
     pub timeout_ms: u64,

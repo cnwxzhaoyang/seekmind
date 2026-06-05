@@ -446,6 +446,9 @@
         "quickLookFailed": "Quick Look failed to open",
         "copyPath": "Copy Path",
         "copyCitation": "Copy Citation",
+        "retryOcr": "Retry OCR",
+        "ocrRetried": "OCR retried: {name}",
+        "ocrRetryFailed": "Failed to retry OCR",
         "removeDir": "Remove Directory",
         "copiedPath": "Path copied",
         "copiedCitation": "Citation copied",
@@ -587,7 +590,9 @@
         "errorCount": "Errors",
         "errorCountDesc": "Total errors during indexing",
         "pendingFiles": "Pending Files",
-        "pendingFilesDesc": "Files waiting to be processed"
+        "pendingFilesDesc": "Files waiting to be processed",
+        "ocrTasks": "OCR Tasks",
+        "ocrTasksDesc": "Accumulated scanned PDF OCR jobs"
       },
       "incremental": {
         "updated": "Updated",
@@ -608,6 +613,14 @@
         "ocrAvailability": "Chinese OCR availability: {status}",
         "ocrInstalled": "Detected: {languages}",
         "script": "Script: {path}"
+      },
+      "ocr": {
+        "title": "Scanned PDF OCR",
+        "availableHint": "Available languages: {languages}",
+        "availableDesc": "Scanned PDFs will be OCRed automatically and the results will be saved into the index.",
+        "unavailableTitle": "Scanned PDF OCR unavailable",
+        "unavailableHint": "Install Tesseract and make sure OCR languages are available before indexing scans.",
+        "retry": "Retry OCR"
       },
       "failed": {
         "noFailed": "No failed items",

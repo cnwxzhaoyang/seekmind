@@ -25,6 +25,7 @@ use crate::docmind::models::{
     QaSessionView, QaSourceView, RecentDocumentView, RecentViewEntry, SearchHistoryView,
     SearchResultView, TagView,
 };
+use crate::docmind::parser::types::PdfOcrTask;
 use crate::docmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::docmind::semantic::store as semantic_store;
 use crate::docmind::storage::fulltext::SearchIndex;
@@ -2844,6 +2845,7 @@ impl Database {
     pub async fn get_index_status(&self) -> Result<IndexStatusView, sqlx::Error> {
         let indexed_docs = self.count_documents().await?;
         let indexed_chunks = self.count_chunks().await?;
+        let pdf_ocr_tasks = self.count_pdf_ocr_tasks().await?;
         let failed_items = self.failed_items().await?;
         let current_task = self.current_task().await?;
         let last_run = self.last_index_run_summary().await?;
@@ -2855,6 +2857,7 @@ impl Database {
         Ok(IndexStatusView {
             indexed_docs: indexed_docs as usize,
             indexed_chunks: indexed_chunks as usize,
+            pdf_ocr_tasks: pdf_ocr_tasks as usize,
             scanned_docs,
             failed_files: failed_items.len(),
             current_task,
@@ -3348,6 +3351,20 @@ impl Database {
             .delete_directory(dir_path)
             .map_err(sqlx::Error::Protocol)?;
         if is_virtual_directory(dir_path) {
+            // 修复：虚拟目录删除时要同步清掉挂在文档上的 OCR 任务，避免任务表残留旧记录。
+            sqlx::query(
+                r#"
+                DELETE FROM pdf_ocr_tasks
+                WHERE document_id IN (
+                    SELECT id
+                    FROM documents
+                    WHERE dir_path = ?
+                )
+                "#,
+            )
+            .bind(dir_path)
+            .execute(&self.pool)
+            .await?;
             sqlx::query(
                 r#"
                 DELETE FROM chunk_embeddings
@@ -3372,6 +3389,17 @@ impl Database {
             .await?;
         } else {
             let prefix = format!("{dir_path}/%");
+            // 修复：按目录批量删除时，OCR 任务表也必须按文件路径前缀一并清理。
+            sqlx::query(
+                r#"
+                DELETE FROM pdf_ocr_tasks
+                WHERE document_path = ? OR document_path LIKE ?
+                "#,
+            )
+            .bind(dir_path)
+            .bind(prefix.clone())
+            .execute(&self.pool)
+            .await?;
             sqlx::query(
                 r#"
                 DELETE FROM chunk_embeddings
@@ -3405,6 +3433,20 @@ impl Database {
         self.search_index
             .delete_document(path)
             .map_err(sqlx::Error::Protocol)?;
+        // 修复：单文件重跑时必须清掉旧 OCR 任务，否则新一轮解析会把同一路径的任务重复累计。
+        sqlx::query(
+            r#"
+            DELETE FROM pdf_ocr_tasks
+            WHERE document_id IN (
+                SELECT id
+                FROM documents
+                WHERE path = ?
+            )
+            "#,
+        )
+        .bind(path)
+        .execute(&self.pool)
+        .await?;
         sqlx::query(
             r#"
             DELETE FROM chunk_embeddings
@@ -3453,9 +3495,17 @@ impl Database {
         document: &ExtractedDocument,
         chunks: &[ChunkRecord],
         blocks: &[crate::docmind::parser::types::ParsedBlock],
+        ocr_tasks: &[PdfOcrTask],
     ) -> Result<(), sqlx::Error> {
         self.clear_document_by_path(&document.path).await?;
         let document_id = Uuid::new_v4().to_string();
+        eprintln!(
+            "[DocMind] store_document path={} chunks={} blocks={} ocr_tasks={}",
+            document.path,
+            chunks.len(),
+            blocks.len(),
+            ocr_tasks.len()
+        );
 
         sqlx::query(
             r#"
@@ -3527,6 +3577,9 @@ impl Database {
             .await?;
         }
 
+        self.store_pdf_ocr_tasks(&document_id, &document.path, ocr_tasks)
+            .await?;
+
         if let Err(error) = self
             .search_index
             .index_document(&document_id, document, chunks)
@@ -3594,6 +3647,48 @@ impl Database {
             .bind(path)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    async fn store_pdf_ocr_tasks(
+        &self,
+        document_id: &str,
+        document_path: &str,
+        ocr_tasks: &[PdfOcrTask],
+    ) -> Result<(), sqlx::Error> {
+        if ocr_tasks.is_empty() {
+            return Ok(());
+        }
+
+        for task in ocr_tasks {
+            let task_id = format!("{document_id}:ocr:{}", task.page_index);
+            sqlx::query(
+                r#"
+                INSERT INTO pdf_ocr_tasks
+                    (id, document_id, document_path, page_index, reason, message, warning, status, ocr_text, error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(task_id)
+            .bind(document_id)
+            .bind(document_path)
+            .bind(task.page_index as i64)
+            .bind(task.reason.trim())
+            .bind(task.message.trim())
+            .bind(task.warning.as_deref().unwrap_or(""))
+            .bind(if task.status.trim().is_empty() {
+                "queued"
+            } else {
+                task.status.trim()
+            })
+            .bind(task.ocr_text.as_deref().unwrap_or(""))
+            .bind(task.error.as_deref().unwrap_or(""))
+            .bind(current_unix_ts())
+            .bind(current_unix_ts())
+            .execute(&self.pool)
+            .await?;
+        }
+
         Ok(())
     }
 
@@ -4043,6 +4138,23 @@ impl Database {
                 alt_text TEXT NOT NULL DEFAULT '',
                 caption TEXT NOT NULL DEFAULT '',
                 ocr_text TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+            )
+            "#,
+            r#"
+            CREATE TABLE IF NOT EXISTS pdf_ocr_tasks (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                document_path TEXT NOT NULL DEFAULT '',
+                page_index INTEGER NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                message TEXT NOT NULL DEFAULT '',
+                warning TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'queued',
+                ocr_text TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
             "#,
@@ -5070,6 +5182,30 @@ impl Database {
 
     async fn count_chunks(&self) -> Result<i64, sqlx::Error> {
         scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM chunks").await
+    }
+
+    async fn count_pdf_ocr_tasks(&self) -> Result<i64, sqlx::Error> {
+        scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM pdf_ocr_tasks").await
+    }
+
+    pub(crate) async fn pending_pdf_ocr_document_paths(&self) -> Result<Vec<String>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT document_path
+            FROM pdf_ocr_tasks
+            WHERE TRIM(document_path) <> ''
+              AND status IN ('queued', 'failed', 'skipped')
+            GROUP BY document_path
+            ORDER BY MAX(updated_at) ASC, document_path ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get::<String, _>(0))
+            .collect())
     }
 }
 

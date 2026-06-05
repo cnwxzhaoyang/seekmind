@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/05
+ * @Description DocMind Python 解析结果与流式消息类型。
+ */
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +29,21 @@ pub struct ParsedBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfOcrTask {
+    pub page_index: usize,
+    pub reason: String,
+    pub message: String,
+    #[serde(default)]
+    pub warning: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub ocr_text: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedDocument {
     pub title: Option<String>,
     pub file_type: String,
@@ -31,6 +51,8 @@ pub struct ParsedDocument {
     pub chunks: Vec<ParsedChunk>,
     #[serde(default)]
     pub blocks: Option<Vec<ParsedBlock>>,
+    #[serde(default)]
+    pub ocr_tasks: Option<Vec<PdfOcrTask>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -176,6 +176,7 @@ export const docmindApi = {
   refreshIndex: () => invoke<IndexRefreshStartView>("refresh_index"),
   refreshIndexDir: (path: string) =>
     invoke<IndexRefreshStartView>("refresh_index_dir", { path }),
+  refreshPdfOcrTasks: () => invoke<IndexRefreshStartView>("refresh_pdf_ocr_tasks"),
   importPaths: (paths: string[]) =>
     invoke<ImportPathsView>("import_paths", { paths }),
   addIndexDir: (path: string) => invoke<void>("add_index_dir", { path }),
@@ -184,6 +185,8 @@ export const docmindApi = {
     invoke<void>("set_index_dir_enabled", { path, enabled }),
   retryFailedFile: (path: string) =>
     invoke<IndexStatusView>("retry_failed_file", { path }),
+  refreshPdfOcrDocument: (path: string) =>
+    invoke<IndexStatusView>("refresh_pdf_ocr_document", { path }),
   toggleResultFavorite: (
     path: string,
     heading: string,

@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/05
+ * @Description DocMind 文档发现、解析与 OCR 队列转换逻辑。
+ */
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -7,7 +12,7 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
-use crate::docmind::parser::types::ParsedBlock;
+use crate::docmind::parser::types::{ParsedBlock, PdfOcrTask};
 use crate::docmind::parser::types::ParserStreamEvent;
 use crate::docmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
 
@@ -100,6 +105,7 @@ pub fn parse_document(
         ExtractedDocument,
         Vec<ChunkRecord>,
         Vec<ParsedBlock>,
+        Vec<PdfOcrTask>,
         ParseOutcome,
     ),
     String,
@@ -115,6 +121,7 @@ pub fn parse_document_with_progress<F>(
         ExtractedDocument,
         Vec<ChunkRecord>,
         Vec<ParsedBlock>,
+        Vec<PdfOcrTask>,
         ParseOutcome,
     ),
     String,
@@ -129,11 +136,13 @@ where
                 on_event(event);
             }) {
                 Ok(parsed) => {
-                    let (document, chunks, blocks) = convert_python_document(file, parsed);
+                    let (document, chunks, blocks, ocr_tasks) =
+                        convert_python_document(file, parsed);
                     return Ok((
                         document,
                         chunks,
                         blocks,
+                        ocr_tasks,
                         ParseOutcome {
                             source: ParserSource::Python,
                             warning: None,
@@ -160,6 +169,7 @@ where
                         document,
                         chunks,
                         Vec::new(),
+                        Vec::new(),
                         ParseOutcome {
                             source: ParserSource::Rust,
                             warning: Some(fallback_warning),
@@ -175,6 +185,7 @@ where
     Ok((
         document,
         chunks,
+        Vec::new(),
         Vec::new(),
         ParseOutcome {
             source: ParserSource::Rust,
@@ -707,8 +718,16 @@ fn truncate_snippet(input: &str, limit: usize) -> String {
 pub(crate) fn convert_python_document(
     file: &DiscoveredFile,
     parsed: ParsedDocument,
-) -> (ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>) {
-    let content = normalize_whitespace(&parsed.content);
+) -> (ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>, Vec<PdfOcrTask>) {
+    let ParsedDocument {
+        title: _,
+        file_type: _,
+        content,
+        chunks: parsed_chunks,
+        blocks: parsed_blocks,
+        ocr_tasks,
+    } = parsed;
+    let content = normalize_whitespace(&content);
     let file_name = file
         .path
         .file_name()
@@ -735,8 +754,9 @@ pub(crate) fn convert_python_document(
         content,
     };
 
-    let chunks = parsed
-        .chunks
+    let ocr_tasks = ocr_tasks.unwrap_or_default();
+
+    let chunks = parsed_chunks
         .into_iter()
         .map(|chunk| ChunkRecord {
             heading: chunk.heading.unwrap_or_else(|| file_name.clone()),
@@ -761,12 +781,17 @@ pub(crate) fn convert_python_document(
         chunks
     };
 
-    let blocks = match parsed.blocks {
-        Some(blocks) => blocks,
-        None => Vec::new(),
-    };
+    let blocks = parsed_blocks.unwrap_or_default();
 
-    (document, chunks, blocks)
+    eprintln!(
+        "[DocMind] convert_python_document path={} chunks={} blocks={} ocr_tasks={}",
+        file.path.to_string_lossy(),
+        chunks.len(),
+        blocks.len(),
+        ocr_tasks.len()
+    );
+
+    (document, chunks, blocks, ocr_tasks)
 }
 
 #[cfg(test)]

@@ -152,6 +152,7 @@ export interface IndexRunSummaryView {
 export interface IndexStatusView {
   indexed_docs: number;
   indexed_chunks: number;
+  pdf_ocr_tasks: number;
   scanned_docs: number;
   failed_files: number;
   current_task: CurrentTaskView | null;
@@ -200,6 +201,8 @@ export interface ParserRuntimeView {
   tesseract_languages: string[];
   chinese_ocr_available: boolean;
   chinese_ocr_warning?: string | null;
+  pdf_ocr_available: boolean;
+  pdf_ocr_message: string;
   python_bin: string;
   script_path: string;
   timeout_ms: number;

@@ -1,3 +1,8 @@
+/*
+ * @author MorningSun
+ * @CreatedDate 2026/06/05
+ * @Description DocMind 应用命令入口与前端调用桥接。
+ */
 #![allow(dead_code)]
 
 use super::models::{
@@ -445,12 +450,13 @@ pub async fn refresh_document(
                 );
             }) {
                 Ok(parsed) => {
-                    let (document, chunks, blocks) =
+                    let (document, chunks, blocks, ocr_tasks) =
                         scanner::convert_python_document(&file, parsed);
                     Ok((
                         document,
                         chunks,
                         blocks,
+                        ocr_tasks,
                         super::storage::types::ParserSource::Python,
                     ))
                 }
@@ -482,6 +488,7 @@ pub async fn refresh_document(
                                     document,
                                     chunks,
                                     Vec::new(),
+                                    Vec::new(),
                                     super::storage::types::ParserSource::Rust,
                                 ))
                             }
@@ -498,6 +505,7 @@ pub async fn refresh_document(
                         document,
                         chunks,
                         Vec::new(),
+                        Vec::new(),
                         super::storage::types::ParserSource::Rust,
                     ))
                 }
@@ -506,8 +514,11 @@ pub async fn refresh_document(
         };
 
         match parsed_result {
-            Ok((document, chunks, blocks, source)) => {
-                if let Err(error) = database.store_document(&document, &chunks, &blocks).await {
+            Ok((document, chunks, blocks, ocr_tasks, source)) => {
+                if let Err(error) = database
+                    .store_document(&document, &chunks, &blocks, &ocr_tasks)
+                    .await
+                {
                     let reason = error.to_string();
                     let (category, code) = classify_failure(&reason, &path_string);
                     let _ = database
@@ -850,6 +861,22 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
     } else {
         None
     };
+    // 修复：OCR 状态需要同时向前端暴露“是否可用”和“为什么不可用”，否则状态页只能展示语言包而无法说明扫描件是否能识别。
+    let pdf_ocr_disabled = std::env::var("DOCMIND_DISABLE_PDF_OCR")
+        .ok()
+        .map(|value| value.trim() == "1")
+        .unwrap_or(false);
+    let pdf_ocr_available = !pdf_ocr_disabled && !tesseract_languages.is_empty();
+    let pdf_ocr_message = if pdf_ocr_available {
+        format!(
+            "扫描版 PDF OCR 已启用，可用语言：{}",
+            tesseract_languages.join(", ")
+        )
+    } else if pdf_ocr_disabled {
+        "扫描版 PDF OCR 已通过 DOCMIND_DISABLE_PDF_OCR 关闭。".to_string()
+    } else {
+        "未检测到可用的 Tesseract OCR 语言包，扫描版 PDF 将无法自动识别。".to_string()
+    };
     let enabled = config
         .get("enabled")
         .and_then(|value| value.as_bool())
@@ -874,6 +901,8 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
         tesseract_languages,
         chinese_ocr_available,
         chinese_ocr_warning,
+        pdf_ocr_available,
+        pdf_ocr_message,
         python_bin: config
             .get("bin")
             .and_then(|value| value.as_str())
@@ -1476,6 +1505,104 @@ pub async fn retry_failed_file(
     state: tauri::State<'_, Database>,
 ) -> Result<IndexStatusView, String> {
     indexer::retry_failed_file(&state, &path).await
+}
+
+#[tauri::command]
+pub async fn refresh_pdf_ocr_document(
+    path: String,
+    state: tauri::State<'_, Database>,
+) -> Result<IndexStatusView, String> {
+    // 修复：OCR 重跑和单文件重切片本质上复用同一条文档重解析链路，这里只暴露更语义化的入口。
+    eprintln!("[DocMind] refresh_pdf_ocr_document path={path}");
+    indexer::retry_failed_file(&state, &path).await
+}
+
+#[tauri::command]
+pub async fn refresh_pdf_ocr_tasks(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Database>,
+) -> Result<super::models::IndexRefreshStartView, String> {
+    eprintln!("[DocMind] refresh_pdf_ocr_tasks start");
+    if !state.try_begin_index_job() {
+        return Err("已有索引任务正在执行".to_string());
+    }
+
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let start_status = match state.get_index_status().await {
+        Ok(status) => status,
+        Err(error) => {
+            state.end_index_job();
+            return Err(error.to_string());
+        }
+    };
+    let database = state.inner().clone();
+    let emit_app = app.clone();
+    let progress_app = emit_app.clone();
+    let task_job_id = job_id.clone();
+    let task_start_status = start_status.clone();
+    let progress_emitter: Arc<dyn Fn(super::models::IndexRefreshProgressView) + Send + Sync> =
+        Arc::new(move |payload: super::models::IndexRefreshProgressView| {
+            let _ = progress_app.emit("docmind:index-refresh-progress", payload);
+        });
+    let initial_payload = super::models::IndexRefreshProgressView {
+        job_id: job_id.clone(),
+        state: "running".to_string(),
+        message: "正在重跑 PDF OCR".to_string(),
+        scope: "pdf-ocr".to_string(),
+        path: String::new(),
+        status: start_status.clone(),
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    };
+    let _ = app.emit("docmind:index-refresh-progress", initial_payload);
+
+    tauri::async_runtime::spawn(async move {
+        let _guard = IndexJobGuard::new(database.clone());
+        let result = indexer::rebuild_pdf_ocr_queue(&database, &task_job_id, progress_emitter).await;
+        match result {
+            Ok(status) => {
+                eprintln!(
+                    "[DocMind] refresh_pdf_ocr_tasks ok tasks={} docs={} chunks={}",
+                    status.pdf_ocr_tasks, status.indexed_docs, status.indexed_chunks
+                );
+                let _ = emit_app.emit(
+                    "docmind:index-refresh-progress",
+                    super::models::IndexRefreshProgressView {
+                        job_id: task_job_id,
+                        state: "completed".to_string(),
+                        message: "PDF OCR 队列重跑完成".to_string(),
+                        scope: "pdf-ocr".to_string(),
+                        path: String::new(),
+                        status,
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                );
+            }
+            Err(error) => {
+                eprintln!("[DocMind] refresh_pdf_ocr_tasks error: {error}");
+                let status = database
+                    .get_index_status()
+                    .await
+                    .unwrap_or(task_start_status.clone());
+                let _ = emit_app.emit(
+                    "docmind:index-refresh-progress",
+                    super::models::IndexRefreshProgressView {
+                        job_id: task_job_id,
+                        state: "failed".to_string(),
+                        message: format!("PDF OCR 队列重跑失败：{error}"),
+                        scope: "pdf-ocr".to_string(),
+                        path: String::new(),
+                        status,
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                );
+            }
+        }
+    });
+
+    Ok(super::models::IndexRefreshStartView {
+        job_id,
+        status: start_status,
+    })
 }
 
 #[tauri::command]

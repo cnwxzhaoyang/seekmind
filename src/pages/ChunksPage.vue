@@ -7,7 +7,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -586,6 +586,32 @@ const refreshDocument = async (doc: DocumentView) => {
   void processRefreshQueue();
 };
 
+const refreshPdfOcrDocument = async (doc: DocumentView) => {
+  if (refreshingDocPath.value === doc.path || queuedDocPaths.value.has(doc.path)) {
+    return;
+  }
+
+  refreshingDocPath.value = doc.path;
+  errorMessage.value = "";
+  actionMessage.value = "";
+
+  try {
+    await docmindApi.refreshPdfOcrDocument(doc.path);
+    if (doc.dir_path === selectedDirPath.value) {
+      await loadDocuments();
+      if (selectedDocPath.value === doc.path) {
+        await loadChunks();
+      }
+    }
+    setActionMessage(t("page.chunks.action.ocrRetried", { name: doc.file_name }));
+  } catch (error) {
+    setActionError(formatDocmindError(error, t("page.chunks.action.ocrRetryFailed")));
+    console.error("[DocMind] refreshPdfOcrDocument failed", error);
+  } finally {
+    refreshingDocPath.value = "";
+  }
+};
+
 const selectDoc = async (path: string) => {
   void router.replace({ query: { ...route.query, path } });
 };
@@ -661,6 +687,13 @@ const chunkContextMenuItems = computed<ContextMenuItem[]>(() => {
       icon: RefreshCw,
       disabled: isDocRefreshBusy(doc.path),
       handler: () => refreshDocument(doc),
+    },
+    {
+      key: "retry-ocr",
+      label: t("page.chunks.action.retryOcr"),
+      icon: ScanText,
+      disabled: isDocRefreshBusy(doc.path) || doc.ext.toLowerCase() !== "pdf",
+      handler: () => refreshPdfOcrDocument(doc),
     },
     { key: "divider-actions", label: "", divider: true },
     {

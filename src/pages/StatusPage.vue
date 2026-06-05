@@ -25,6 +25,7 @@ import {
   FolderPlus,
   UploadCloud,
   TriangleAlert,
+  ScanText,
 } from "lucide-vue-next";
 import SvgIcon from "../components/SvgIcon.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -187,6 +188,30 @@ const officeNotice = computed(() => {
   };
 });
 
+const pdfOcrNotice = computed(() => {
+  if (!parserRuntime.value) {
+    return null;
+  }
+
+  if (parserRuntime.value.pdf_ocr_available) {
+    return {
+      title: t("page.status.ocr.title"),
+      desc: parserRuntime.value.pdf_ocr_message,
+      hint: t("page.status.ocr.availableHint", {
+        languages: ocrLanguagesPreview.value,
+      }),
+      kind: "success",
+    };
+  }
+
+  return {
+    title: t("page.status.ocr.unavailableTitle"),
+    desc: parserRuntime.value.pdf_ocr_message,
+    hint: t("page.status.ocr.unavailableHint"),
+    kind: "warning",
+  };
+});
+
 const ocrLanguagesPreview = computed(() => {
   if (!parserRuntime.value?.tesseract_languages.length) {
     return t("common.none");
@@ -329,6 +354,29 @@ const refreshIndex = async () => {
       t("page.status.error.reindex"),
     );
     console.error("[DocMind] refreshIndex failed", error);
+  } finally {
+    refreshing.value = false;
+    await syncDashboardState();
+  }
+};
+
+const refreshPdfOcrTasks = async () => {
+  refreshing.value = true;
+  errorMessage.value = "";
+
+  try {
+    const started = await docmindApi.refreshPdfOcrTasks();
+    const finished = await waitForIndexRefreshJob(started.job_id);
+    status.value = finished.status;
+    if (finished.state === "failed") {
+      errorMessage.value = finished.message;
+    }
+  } catch (error) {
+    errorMessage.value = formatDocmindError(
+      error,
+      t("page.status.error.reindex"),
+    );
+    console.error("[DocMind] refreshPdfOcrTasks failed", error);
   } finally {
     refreshing.value = false;
     await syncDashboardState();
@@ -993,6 +1041,30 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- 修复：OCR 状态需要在状态页显式可见，避免用户只能从日志判断扫描件是否可识别。 -->
+      <div
+        v-if="pdfOcrNotice"
+        class="ocr-notice-banner"
+        :class="pdfOcrNotice.kind === 'warning' ? 'ocr-notice-warning' : 'ocr-notice-success'"
+      >
+        <ScanText :size="16" class="shrink-0 ocr-notice-icon" />
+        <div class="min-w-0">
+          <div class="ocr-notice-title">{{ pdfOcrNotice.title }}</div>
+          <div class="ocr-notice-desc">{{ pdfOcrNotice.desc }}</div>
+          <div class="ocr-notice-hint">{{ pdfOcrNotice.hint }}</div>
+        </div>
+      </div>
+
+      <div v-if="chineseOcrNotice" class="ocr-notice-banner ocr-notice-warning">
+        <AlertCircle :size="16" class="shrink-0 ocr-notice-icon" />
+        <div class="min-w-0">
+          <div class="ocr-notice-title">{{ chineseOcrNotice.title }}</div>
+          <div class="ocr-notice-desc">{{ chineseOcrNotice.desc }}</div>
+          <div class="ocr-notice-hint">{{ chineseOcrNotice.hint }}</div>
+          <div class="ocr-notice-langs">{{ chineseOcrNotice.languages }}</div>
+        </div>
+      </div>
+
       <!-- 主容器 -->
       <div class="panel-content">
         <!-- 左侧面板 -->
@@ -1091,6 +1163,22 @@ onBeforeUnmount(() => {
                 <div class="stat-label">{{ t("page.status.stats.pendingFiles") }}</div>
                 <div class="stat-value">{{ pendingCount }}</div>
                 <div class="stat-desc">{{ t("page.status.stats.pendingFilesDesc") }}</div>
+              </div>
+            </div>
+            <div class="stat-item">
+              <span class="stat-icon scanned" aria-hidden="true"><ScanText :size="18" /></span>
+              <div class="stat-content">
+                <div class="stat-label">{{ t("page.status.stats.ocrTasks") }}</div>
+                <div class="stat-value">{{ status?.pdf_ocr_tasks ?? 0 }}</div>
+                <div class="stat-desc">{{ t("page.status.stats.ocrTasksDesc") }}</div>
+                <button
+                  type="button"
+                  class="stat-action-button"
+                  :disabled="refreshing || loading"
+                  @click="refreshPdfOcrTasks"
+                >
+                  {{ t("page.status.ocr.retry") }}
+                </button>
               </div>
             </div>
           </div>
@@ -1378,6 +1466,55 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 4px;
+}
+
+.ocr-notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background-color: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 6px;
+}
+
+.ocr-notice-warning {
+  background-color: rgba(187, 128, 9, 0.15);
+  border-color: rgba(187, 128, 9, 0.4);
+}
+
+.ocr-notice-icon {
+  color: var(--color-accent);
+  margin-top: 2px;
+}
+
+.ocr-notice-warning .ocr-notice-icon {
+  color: var(--color-warning);
+}
+
+.ocr-notice-success .ocr-notice-icon {
+  color: var(--color-success);
+}
+
+.ocr-notice-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ocr-notice-warning .ocr-notice-title {
+  color: var(--color-warning);
+}
+
+.ocr-notice-desc,
+.ocr-notice-hint,
+.ocr-notice-langs {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 /* 头部 */
@@ -1721,6 +1858,33 @@ onBeforeUnmount(() => {
 .stat-desc {
   font-size: 11px;
   color: var(--color-text-dim);
+}
+
+.stat-action-button {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.stat-action-button:hover:not(:disabled) {
+  color: var(--color-accent);
+  border-color: rgba(47, 129, 255, 0.28);
+  background: var(--color-accent-soft);
+}
+
+.stat-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* 进度条 */
