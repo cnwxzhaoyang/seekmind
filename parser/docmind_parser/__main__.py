@@ -16,6 +16,7 @@ if __package__ in (None, ""):
     if str(package_root) not in sys.path:
         sys.path.insert(0, str(package_root))
     from docmind_parser.models import ParserError, request_from_dict
+    from docmind_parser.rag.eval import rag_eval_request_from_dict, run_rag_regression
     from docmind_parser.rag.models import rag_request_from_dict
     from docmind_parser.rag.pipeline import run_rag_answer_stream
     from docmind_parser.parser import (
@@ -26,6 +27,7 @@ if __package__ in (None, ""):
     )
 else:
     from .models import ParserError, request_from_dict
+    from .rag.eval import rag_eval_request_from_dict, run_rag_regression
     from .rag.models import rag_request_from_dict
     from .rag.pipeline import run_rag_answer_stream
     from .parser import ParserException, embed_texts, embedding_status, parse_document
@@ -62,6 +64,19 @@ def main() -> int:
             sys.stdout.write(json.dumps(response.to_dict(), ensure_ascii=False))
             sys.stdout.flush()
             return 0 if response.ok else 1
+
+        if command == "rag_eval":
+            request, cases = rag_eval_request_from_dict(payload)
+
+            def emit_progress(event: dict) -> None:
+                sys.stdout.write(json.dumps(event, ensure_ascii=False))
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+
+            report = run_rag_regression(request, cases=cases, emit=emit_progress)
+            sys.stdout.write(json.dumps(report.to_dict(), ensure_ascii=False))
+            sys.stdout.flush()
+            return 0 if report.ok else 1
 
         request = request_from_dict(payload)
 

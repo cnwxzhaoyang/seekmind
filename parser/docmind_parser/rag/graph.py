@@ -46,6 +46,7 @@ class RagGraphState:
     warning: Optional[str] = None
     retry_count: int = 0
     repair_hint: Optional[str] = None
+    final_state: str = "answered"
     judge_should_repair: bool = False
     judge_reason: str = ""
     judge_confidence: float = 0.0
@@ -63,6 +64,7 @@ class RagGraphStateData(TypedDict, total=False):
     warning: Optional[str]
     retry_count: int
     repair_hint: Optional[str]
+    final_state: str
     judge_should_repair: bool
     judge_reason: str
     judge_confidence: float
@@ -98,6 +100,7 @@ def _state_to_obj(state: RagGraphStateData) -> RagGraphState:
         warning=state.get("warning"),
         retry_count=state.get("retry_count", 0),
         repair_hint=state.get("repair_hint"),
+        final_state=state.get("final_state", "answered"),
         judge_should_repair=state.get("judge_should_repair", False),
         judge_reason=state.get("judge_reason", ""),
         judge_confidence=state.get("judge_confidence", 0.0),
@@ -117,6 +120,7 @@ def _state_updates(state_obj: RagGraphState) -> RagGraphStateData:
         "warning": state_obj.warning,
         "retry_count": state_obj.retry_count,
         "repair_hint": state_obj.repair_hint,
+        "final_state": state_obj.final_state,
         "judge_should_repair": state_obj.judge_should_repair,
         "judge_reason": state_obj.judge_reason,
         "judge_confidence": state_obj.judge_confidence,
@@ -261,6 +265,9 @@ def pack_evidence(
     _log(
         f"rag request {state.request.request_id} packed sources={len(state.context.sources)}"
     )
+    if not state.context.sources:
+        # 修复：召回为空时不再继续生成“看起来完整”的答案，直接标记为证据不足终态。
+        state.final_state = "insufficient_evidence"
     return state
 
 
@@ -310,6 +317,34 @@ def draft_answer(
         temperature=state.request.settings.temperature,
         max_output_tokens=_effective_answer_tokens(state),
     ).strip()
+    return state
+
+
+def refuse_answer(
+    state: RagGraphState,
+    emit: Optional[ProgressEmitter] = None,
+) -> RagGraphState:
+    _emit(
+        emit,
+        RagEvent(
+            request_id=state.request.request_id,
+            kind="event",
+            event="progress",
+            stage="refuse",
+            message="证据不足，进入拒答",
+            percent=94,
+            warning=state.warning,
+        ),
+    )
+    # 修复：拒答不能继续复用上一版答案，否则前端会误以为已经给出可信结论。
+    state.final_state = "insufficient_evidence"
+    state.answer = (
+        "根据当前可用来源，证据不足，无法给出有把握的回答。"
+        "请缩小问题范围、补充文档，或切换到更相关的目录后重试。"
+    )
+    if not state.warning:
+        state.warning = "证据不足，已进入拒答。"
+    _log(f"rag request {state.request.request_id} refuse result reason={state.warning}")
     return state
 
 
@@ -525,12 +560,16 @@ def finalize(
         )
 
     has_answer = bool(state.answer.strip())
+    response_state = state.final_state if state.final_state else ("answered" if has_answer else "failed")
+    if response_state == "insufficient_evidence" and has_answer and not state.warning:
+        # 修复：拒答终态也需要带可解释原因，避免前端只看到一段空泛提示。
+        state.warning = "证据不足，已返回拒答结果。"
     response = RagResponse(
         kind="response",
         request_id=state.request.request_id,
-        ok=has_answer,
+        ok=response_state == "answered",
         answer=state.answer,
-        state="answered" if has_answer else "failed",
+        state=response_state if has_answer or response_state != "answered" else "failed",
         warning=state.warning,
         error=None if has_answer else ParserError(code="rag_pipeline_failed", message="empty answer"),
         retrieval=state.context.retrieval,
@@ -598,6 +637,12 @@ def _node_repair(state: RagGraphStateData, emit: Optional[ProgressEmitter]) -> R
     return _state_updates(obj)
 
 
+def _node_refuse(state: RagGraphStateData, emit: Optional[ProgressEmitter]) -> RagGraphStateData:
+    obj = _state_to_obj(state)
+    refuse_answer(obj, emit)
+    return _state_updates(obj)
+
+
 def _node_final_stream(state: RagGraphStateData, emit: Optional[ProgressEmitter]) -> RagGraphStateData:
     obj = _state_to_obj(state)
     final_stream_answer(obj, emit)
@@ -613,7 +658,7 @@ def _node_finalize(state: RagGraphStateData, emit: Optional[ProgressEmitter]) ->
 def _route_after_pack(state: RagGraphStateData) -> str:
     context = state.get("context")
     if context is None or not context.sources:
-        return "finalize"
+        return "refuse"
     return "draft"
 
 
@@ -622,8 +667,10 @@ def _route_after_verify(state: RagGraphStateData) -> str:
 
 
 def _route_after_judge(state: RagGraphStateData) -> str:
-    if state.get("judge_should_repair") and state.get("retry_count", 0) < 1:
-        return "repair"
+    if state.get("judge_should_repair"):
+        if state.get("retry_count", 0) < 1:
+            return "repair"
+        return "refuse"
     return "final_stream"
 
 
@@ -636,6 +683,7 @@ def build_rag_langgraph(store: RagStore, emit: Optional[ProgressEmitter] = None)
     graph.add_node("draft", lambda state: _node_draft(state, emit))
     graph.add_node("verify", lambda state: _node_verify(state, emit))
     graph.add_node("repair", lambda state: _node_repair(state, emit))
+    graph.add_node("refuse", lambda state: _node_refuse(state, emit))
     graph.add_node("final_stream", lambda state: _node_final_stream(state, emit))
     graph.add_node("finalize", lambda state: _node_finalize(state, emit))
 
@@ -647,7 +695,7 @@ def build_rag_langgraph(store: RagStore, emit: Optional[ProgressEmitter] = None)
         _route_after_pack,
         {
             "draft": "draft",
-            "finalize": "finalize",
+            "refuse": "refuse",
         },
     )
     graph.add_edge("draft", "verify")
@@ -664,10 +712,12 @@ def build_rag_langgraph(store: RagStore, emit: Optional[ProgressEmitter] = None)
         _route_after_judge,
         {
             "repair": "repair",
+            "refuse": "refuse",
             "final_stream": "final_stream",
         },
     )
     graph.add_edge("repair", "verify")
+    graph.add_edge("refuse", "finalize")
     graph.add_edge("final_stream", "finalize")
     graph.add_edge("finalize", END)
     return graph.compile()

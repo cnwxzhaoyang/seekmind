@@ -842,6 +842,7 @@ pub async fn ask_question(
                         "verify" => "verifying",
                         "judge" => "verifying",
                         "repair" => "verifying",
+                        "refuse" => "verifying",
                         "final_stream" => "generating",
                         "finalize" => "verifying",
                         // 修复：Python 的 finish 只是最终 response 前的阶段事件，不携带正文；终态 answered 只能由最终 response 发出。

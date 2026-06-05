@@ -81,6 +81,35 @@ Python 侧任务调用约定和流式进度模式见：
 
 - [`docs/20-Python侧任务调用经验规范(2026-05-24).md`](/Users/zhaoyang/Desktop/enjoy/docmind/docs/20-Python侧任务调用经验规范(2026-05-24).md)
 
+RAG 问答现在也支持 Python sidecar 侧的回归评测命令 `rag_eval`，用于在本地直接跑一组固定样本，检查 `answered` 和 `insufficient_evidence` 这两类终态是否符合预期。你可以直接给 Python sidecar 发送一段 JSON 请求，命令示例如下：
+
+```json
+{
+  "request_id": "rag-eval-001",
+  "command": "rag_eval",
+  "db_path": "/path/to/docmind.sqlite",
+  "scope_paths": [],
+  "session_context": "",
+  "recent_questions": [],
+  "settings": {
+    "provider": "openai_compatible",
+    "base_url": "http://127.0.0.1:11434/v1",
+    "api_key": "",
+    "model": "deepseek-r1:latest",
+    "temperature": 0.2,
+    "max_output_tokens": 6000,
+    "context_chunk_limit": 8,
+    "context_token_budget": 6000,
+    "min_evidence_count": 1,
+    "min_retrieval_score": 0.0
+  }
+}
+```
+
+默认评测样本清单见：
+
+- [`docs/35-RAG回归评测集(2026-06-05).md`](/Users/zhaoyang/Desktop/enjoy/docmind/docs/35-RAG%E5%9B%9E%E5%BD%92%E8%AF%84%E6%B5%8B%E9%9B%86(2026-06-05).md)
+
 语义搜索的 embedding 也走 Python sidecar，依赖 `parser/requirements.txt` 里的 `fastembed`。首次启用前建议执行：
 
 ```bash
