@@ -75,6 +75,8 @@ const actionErrorMessage = ref("");
 const loading = ref(false);
 const errorMessage = ref("");
 const expandedGroups = ref<Record<string, boolean>>({});
+const showResultFilterPanel = ref(false);
+const resultFilterMode = ref<"all" | "favorites">("all");
 const routeSyncReady = ref(false);
 let selectedContextRequestId = 0;
 let unlistenSearchDebugReport: null | (() => void) = null;
@@ -239,10 +241,17 @@ const selectedContextChunks = computed(() => {
   ].filter((item) => item.chunk !== null);
 });
 
+const filteredResults = computed(() => {
+  if (resultFilterMode.value === "favorites") {
+    return results.value.filter((item) => isResultFavorited(item.path, item.heading, item.paragraph, item.page));
+  }
+  return results.value;
+});
+
 const groupedResults = computed<SearchResultGroup[]>(() => {
   const groups = new Map<string, SearchResultView[]>();
 
-  for (const item of results.value) {
+  for (const item of filteredResults.value) {
     const items = groups.get(item.path) ?? [];
     items.push(item);
     groups.set(item.path, items);
@@ -357,6 +366,15 @@ const toggleGroup = (path: string) => {
     ...expandedGroups.value,
     [path]: !expandedGroups.value[path],
   };
+};
+
+const toggleResultFilterPanel = () => {
+  showResultFilterPanel.value = !showResultFilterPanel.value;
+};
+
+const setResultFilterMode = (mode: "all" | "favorites") => {
+  resultFilterMode.value = mode;
+  showResultFilterPanel.value = false;
 };
 
 const loadParserRuntime = async () => {
@@ -1147,6 +1165,25 @@ watch(
   { immediate: true },
 );
 
+watch(
+  filteredResults,
+  (items) => {
+    if (!items.length) {
+      if (selectedId.value) {
+        selectedId.value = "";
+      }
+      return;
+    }
+
+    if (selected.value && items.some((item) => item.id === selected.value?.id)) {
+      return;
+    }
+
+    selectedId.value = items[0].id;
+  },
+  { immediate: true },
+);
+
 watch(showDebugPanel, async (visible) => {
   if (!visible) {
     clearSearchDebugReport();
@@ -1264,10 +1301,38 @@ watch(showDebugPanel, async (visible) => {
               <div class="text-xs font-medium text-dim">
                 {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
               </div>
-              <button class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent-text hover:bg-accent-soft">
+              <button
+                class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent-text hover:bg-accent-soft"
+                :class="showResultFilterPanel ? 'bg-accent-soft' : ''"
+                @click="toggleResultFilterPanel"
+              >
                 <Filter :size="14" />
                 {{ t("page.appSearch.filter") }}
+                <DocMindBadge v-if="resultFilterMode !== 'all'" tone="success">
+                  {{ t(`page.appSearch.filterMode.${resultFilterMode}`) }}
+                </DocMindBadge>
               </button>
+            </div>
+            <div v-if="!qaMode && showResultFilterPanel" class="border-b border-default bg-panel px-4 py-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  class="rounded-md border px-2.5 py-1.5 text-xs transition"
+                  :class="resultFilterMode === 'all' ? 'border-accent bg-accent-soft text-primary' : 'border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary'"
+                  @click="setResultFilterMode('all')"
+                >
+                  {{ t("page.appSearch.filterMode.all") }}
+                </button>
+                <button
+                  class="rounded-md border px-2.5 py-1.5 text-xs transition"
+                  :class="resultFilterMode === 'favorites' ? 'border-accent bg-accent-soft text-primary' : 'border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary'"
+                  @click="setResultFilterMode('favorites')"
+                >
+                  {{ t("page.appSearch.filterMode.favorites") }}
+                </button>
+                <div class="ml-auto text-[11px] text-dim">
+                  {{ t("page.appSearch.filterHint") }}
+                </div>
+              </div>
             </div>
             <div v-else class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
               <div class="text-xs font-medium text-dim">

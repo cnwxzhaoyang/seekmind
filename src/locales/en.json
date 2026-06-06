@@ -333,6 +333,11 @@
       "searching": "Searching...",
       "searchFailed": "Search failed",
       "filter": "Filter",
+      "filterHint": "Only favorite-result filtering is supported for now.",
+      "filterMode": {
+        "all": "All",
+        "favorites": "Favorites only"
+      },
       "noResults": "No matching results found",
       "enterQuery": "Enter a keyword to start searching.",
       "indexedDocs": "{count} documents indexed",

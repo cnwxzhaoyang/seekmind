@@ -334,6 +334,11 @@
       "searching": "搜索中...",
       "searchFailed": "搜索失败",
       "filter": "筛选",
+      "filterHint": "当前仅支持按收藏结果筛选。",
+      "filterMode": {
+        "all": "全部",
+        "favorites": "仅收藏"
+      },
       "noResults": "没有找到相关段落",
       "enterQuery": "请输入关键词开始搜索。",
       "indexedDocs": "已索引 {count} 个文档",
