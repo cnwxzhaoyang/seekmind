@@ -89,7 +89,7 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-2">
           <div class="truncate text-[13px] font-semibold" :class="props.nested ? 'text-primary' : 'text-accent-text'">
-            <DocMindHighlightedText :text="item.fileName" :query="props.query" />
+            <DocMindHighlightedText :text="item.file_name" :query="props.query" />
           </div>
           <div class="flex items-center gap-2">
             <button

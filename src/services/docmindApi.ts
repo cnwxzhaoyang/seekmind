@@ -193,7 +193,9 @@ export const docmindApi = {
     paragraph: number | null | undefined,
     page: number | null | undefined,
     fileName: string,
-  ) => invoke<boolean>("toggle_result_favorite", { path, heading, paragraph, page, file_name: fileName }),
+  ) =>
+    // 修复：Tauri 命令参数名需要与前端 invoke 传参一致，这里必须使用 fileName，避免命令侧收不到必填字段。
+    invoke<boolean>("toggle_result_favorite", { path, heading, paragraph, page, fileName }),
   clearAllIndexes: () => invoke<IndexStatusView>("clear_all_indexes"),
   pauseIndexing: () => invoke<IndexStatusView>("pause_indexing"),
   resumeIndexing: () => invoke<IndexStatusView>("resume_indexing"),

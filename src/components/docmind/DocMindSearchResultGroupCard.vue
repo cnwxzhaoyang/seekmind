@@ -17,7 +17,7 @@ const { t } = useI18n();
 
 interface SearchResultGroup {
   path: string;
-  fileName: string;
+  file_name: string;
   ext: string;
   topResult: SearchResultView;
   results: SearchResultView[];
@@ -93,7 +93,7 @@ const emitContextMenu = (event: MouseEvent) => {
           <div class="flex items-start justify-between gap-2.5">
             <div class="min-w-0">
               <div class="truncate text-[13px] font-semibold text-accent-text">
-                <DocMindHighlightedText :text="group.fileName" :query="props.query" />
+                <DocMindHighlightedText :text="group.file_name" :query="props.query" />
               </div>
               <div class="mt-1 break-all text-[11px] text-muted">{{ group.path }}</div>
               <div v-if="group.topResult.title_path || group.topResult.heading" class="mt-1 text-[11px] text-dim">

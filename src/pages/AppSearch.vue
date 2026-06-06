@@ -88,7 +88,7 @@ const collectionPickerLoading = ref(false);
 
 interface SearchResultGroup {
   path: string;
-  fileName: string;
+  file_name: string;
   ext: string;
   topResult: SearchResultView;
   results: SearchResultView[];
@@ -137,7 +137,7 @@ const qaSelectedSource = computed(
 
 const selectedTitlePath = computed(() =>
   resolveDocumentTitlePath({
-    fileName: selected.value?.fileName,
+    fileName: selected.value?.file_name,
     titlePath: selected.value?.title_path,
     heading: selected.value?.heading,
   }),
@@ -157,7 +157,7 @@ const selectedCitation = computed(() => {
   }
 
   return formatDocumentCitation({
-    fileName: selected.value.fileName,
+    fileName: selected.value.file_name,
     titlePath: selected.value.title_path,
     heading: selected.value.heading,
     locationParts: buildDocumentLocationParts({
@@ -253,7 +253,7 @@ const groupedResults = computed<SearchResultGroup[]>(() => {
       const sorted = [...items].sort((a, b) => b.score - a.score);
       return {
         path,
-        fileName: sorted[0]?.fileName ?? path,
+        file_name: sorted[0]?.file_name ?? path,
         ext: sorted[0]?.ext ?? "",
         topResult: sorted[0],
         results: sorted,
@@ -896,7 +896,7 @@ const toggleFavoriteResult = async (item: SearchResultView) => {
     item.heading,
     item.paragraph ?? null,
     item.page ?? null,
-    item.fileName,
+    item.file_name,
   );
   await loadQuickAccessData();
 };
@@ -930,8 +930,7 @@ const addSelectedResultToCollection = async (collectionId: string) => {
 
   const item = collectionPickerTarget.value;
   const isDocumentCollection = collectionPickerMode.value === "document";
-  const itemTitle = (item as SearchResultView & { fileName?: string }).fileName
-    || item.file_name
+  const itemTitle = item.file_name
     || item.path
     || item.heading
     || t("common.none");
@@ -943,12 +942,12 @@ const addSelectedResultToCollection = async (collectionId: string) => {
     chunk_id: isDocumentCollection ? null : item.id,
     title: itemTitle,
     path: item.path,
-    title_path: isDocumentCollection ? item.fileName : (item.title_path || item.heading),
+    title_path: isDocumentCollection ? item.file_name : (item.title_path || item.heading),
     snippet: item.snippet,
     note: "",
     source_meta_json: JSON.stringify({
       mode: collectionPickerMode.value,
-      file_name: item.fileName,
+      file_name: item.file_name,
       ext: item.ext,
       paragraph: item.paragraph ?? null,
       page: item.page ?? null,
@@ -1441,8 +1440,8 @@ watch(showDebugPanel, async (visible) => {
               <div class="docmind-detail-block py-0">
                 <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="truncate text-base font-semibold leading-6 text-primary" :title="selected.fileName">
-                      {{ selected.fileName }}
+                    <div class="truncate text-base font-semibold leading-6 text-primary" :title="selected.file_name">
+                      {{ selected.file_name }}
                     </div>
                     <div class="mt-0.5 truncate text-xs leading-5 text-muted" :title="selected.path">
                       {{ selected.path }}
@@ -1654,7 +1653,7 @@ watch(showDebugPanel, async (visible) => {
         :visible="collectionPickerVisible"
         :collections="collections"
         :loading="collectionPickerLoading"
-        :title="collectionPickerTarget ? ((collectionPickerTarget as SearchResultView & { fileName?: string }).fileName || collectionPickerTarget.file_name || collectionPickerTarget.path || t('page.collections.pickerTitle')) : t('page.collections.pickerTitle')"
+        :title="collectionPickerTarget ? (collectionPickerTarget.file_name || collectionPickerTarget.path || t('page.collections.pickerTitle')) : t('page.collections.pickerTitle')"
         :subtitle="collectionPickerTarget ? collectionPickerTarget.path : t('page.collections.pickerSubtitle')"
         @close="collectionPickerVisible = false"
         @select="handleCollectionPickerSelect"
