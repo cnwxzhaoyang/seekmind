@@ -2,7 +2,7 @@ import { createI18n } from "vue-i18n";
 import zhCN from "../locales/zh-CN.json";
 import en from "../locales/en.json";
 
-const STORAGE_KEY = "docmind-locale";
+const STORAGE_KEY = "seekmind-locale";
 
 const loadLocale = (): string => {
   const stored = localStorage.getItem(STORAGE_KEY);

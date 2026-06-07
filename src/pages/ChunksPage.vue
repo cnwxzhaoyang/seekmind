@@ -9,14 +9,14 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
-import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
-import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
-import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
-import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
-import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
+import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
+import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreviewBlockRenderer.vue";
+import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
-import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   ChunkView,
@@ -24,7 +24,7 @@ import type {
   DocumentView,
   IndexDirView,
   ParserRuntimeView,
-} from "../types/docmind";
+} from "../types/SeekMind";
 
 const { t } = useI18n();
 
@@ -238,11 +238,11 @@ const resolveDirFromPath = (path?: string | string[]) => {
 };
 
 const loadDirs = async () => {
-  dirs.value = await docmindApi.listIndexDirs();
+  dirs.value = await seekMindApi.listIndexDirs();
 };
 
 const loadParserRuntime = async () => {
-  parserRuntime.value = await docmindApi.getParserRuntime();
+  parserRuntime.value = await seekMindApi.getParserRuntime();
 };
 
 const officeNotice = computed(() => {
@@ -265,10 +265,10 @@ const loadDocuments = async () => {
 
   loadingDocs.value = true;
   try {
-    documents.value = await docmindApi.listDocumentsInDir(selectedDirPath.value);
+    documents.value = await seekMindApi.listDocumentsInDir(selectedDirPath.value);
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.chunks.section.docList"));
-    console.error("[DocMind] listDocumentsInDir failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.chunks.section.docList"));
+    console.error("[SeekMind] listDocumentsInDir failed", error);
     documents.value = [];
   } finally {
     loadingDocs.value = false;
@@ -283,10 +283,10 @@ const loadChunks = async () => {
 
   loadingChunks.value = true;
   try {
-    chunks.value = await docmindApi.listDocumentChunks(selectedDocPath.value);
+    chunks.value = await seekMindApi.listDocumentChunks(selectedDocPath.value);
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.chunks.section.chunkDetail"));
-    console.error("[DocMind] listDocumentChunks failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.chunks.section.chunkDetail"));
+    console.error("[SeekMind] listDocumentChunks failed", error);
     chunks.value = [];
   } finally {
     loadingChunks.value = false;
@@ -331,8 +331,8 @@ const syncSelection = async (forceReload = false) => {
     lastRoutePath.value = targetPath;
     hasInitializedSelection.value = true;
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.chunks.title"));
-    console.error("[DocMind] chunks syncSelection failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.chunks.title"));
+    console.error("[SeekMind] chunks syncSelection failed", error);
   }
 };
 
@@ -389,7 +389,7 @@ const copyText = async (text: string, successMessage: string) => {
     }
     setActionMessage(successMessage);
   } catch (error) {
-    console.error("[DocMind] copyText failed", error);
+    console.error("[SeekMind] copyText failed", error);
     setActionError(t("page.chunks.action.copyFailed"));
   }
 };
@@ -399,7 +399,7 @@ const openCurrentDocument = async () => {
     return;
   }
 
-  await docmindApi.openFile(currentDocument.value.path);
+  await seekMindApi.openFile(currentDocument.value.path);
 };
 
 const quickLookCurrentDocument = async () => {
@@ -408,7 +408,7 @@ const quickLookCurrentDocument = async () => {
   }
 
   try {
-    await docmindApi.quickLookFile(currentDocument.value.path);
+    await seekMindApi.quickLookFile(currentDocument.value.path);
     setActionMessage(t("page.chunks.action.quickLookOpened"));
   } catch (error) {
     setActionError(error instanceof Error ? error.message : t("page.chunks.action.quickLookFailed"));
@@ -424,7 +424,7 @@ const copyCurrentDocumentPath = async () => {
 };
 
 const closeCurrentDocument = () => {
-  console.debug("[DocMind] chunks detail panel closed", {
+  console.debug("[SeekMind] chunks detail panel closed", {
     docPath: selectedDocPath.value,
   });
   selectedDocPath.value = "";
@@ -471,7 +471,7 @@ const installRefreshProgressListener = async () => {
   }
 
   unlistenRefreshProgress = await listen<DocumentRefreshProgressView>(
-    "docmind:document-refresh-progress",
+    "seekmind:document-refresh-progress",
     (event) => {
       const payload = event.payload;
       const path = refreshJobPaths.get(payload.job_id) ?? payload.path;
@@ -532,7 +532,7 @@ const processRefreshQueue = async () => {
       errorMessage.value = "";
 
       try {
-        const refreshStart = await docmindApi.refreshDocument(doc.path, doc.dir_path);
+        const refreshStart = await seekMindApi.refreshDocument(doc.path, doc.dir_path);
         refreshJobPaths.set(refreshStart.job_id, doc.path);
         const refreshResult = await waitForRefreshJob(refreshStart.job_id);
         refreshJobPaths.delete(refreshStart.job_id);
@@ -553,7 +553,7 @@ const processRefreshQueue = async () => {
             ...refreshStates.value,
             [doc.path]: "failed",
           };
-          const errorMsg = formatDocmindError(
+          const errorMsg = formatSeekMindError(
             refreshResult.message,
             `${t("page.chunks.btn.reslice")}：${doc.file_name}`,
           );
@@ -572,10 +572,10 @@ const processRefreshQueue = async () => {
         clearActiveRefreshSource(doc.path);
         const { [doc.path]: _removed, ...rest } = refreshWarnings.value;
         refreshWarnings.value = rest;
-        const errorMsg = formatDocmindError(error, `${t("page.chunks.btn.reslice")}：${doc.file_name}`);
+        const errorMsg = formatSeekMindError(error, `${t("page.chunks.btn.reslice")}：${doc.file_name}`);
         errorMessage.value = errorMsg;
         refreshErrors.value = { ...refreshErrors.value, [doc.path]: errorMsg };
-        console.error("[DocMind] refreshDocument failed", error);
+        console.error("[SeekMind] refreshDocument failed", error);
       }
     }
   } finally {
@@ -609,7 +609,7 @@ const refreshPdfOcrDocument = async (doc: DocumentView) => {
   actionMessage.value = "";
 
   try {
-    await docmindApi.refreshPdfOcrDocument(doc.path);
+    await seekMindApi.refreshPdfOcrDocument(doc.path);
     if (doc.dir_path === selectedDirPath.value) {
       await loadDocuments();
       if (selectedDocPath.value === doc.path) {
@@ -618,8 +618,8 @@ const refreshPdfOcrDocument = async (doc: DocumentView) => {
     }
     setActionMessage(t("page.chunks.action.ocrRetried", { name: doc.file_name }));
   } catch (error) {
-    setActionError(formatDocmindError(error, t("page.chunks.action.ocrRetryFailed")));
-    console.error("[DocMind] refreshPdfOcrDocument failed", error);
+    setActionError(formatSeekMindError(error, t("page.chunks.action.ocrRetryFailed")));
+    console.error("[SeekMind] refreshPdfOcrDocument failed", error);
   } finally {
     refreshingDocPath.value = "";
   }
@@ -751,7 +751,7 @@ const deleteCurrentDocument = async () => {
   if (!doc) return;
 
   try {
-    await docmindApi.deleteDocument(doc.path);
+    await seekMindApi.deleteDocument(doc.path);
     refreshErrors.value = { ...refreshErrors.value, [doc.path]: "" };
     if (selectedDocPath.value === doc.path) {
       selectedDocPath.value = "";
@@ -761,7 +761,7 @@ const deleteCurrentDocument = async () => {
     await loadDocuments();
     setActionMessage(t("page.chunks.action.deleted"));
   } catch (error) {
-    setActionError(formatDocmindError(error, t("page.chunks.action.deleteFailed")));
+    setActionError(formatSeekMindError(error, t("page.chunks.action.deleteFailed")));
   }
 };
 
@@ -803,28 +803,28 @@ watch(
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-page text-primary">
-    <header class="docmind-page-topbar">
-      <div class="docmind-page-title-area">
-        <div class="docmind-page-title-row">
-          <span class="docmind-page-header-icon" aria-hidden="true">
+    <header class="seekmind-page-topbar">
+      <div class="seekmind-page-title-area">
+        <div class="seekmind-page-title-row">
+          <span class="seekmind-page-header-icon" aria-hidden="true">
             <Layers3 :size="17" />
           </span>
-          <h1 class="docmind-page-title">{{ t("page.chunks.title") }}</h1>
+          <h1 class="seekmind-page-title">{{ t("page.chunks.title") }}</h1>
         </div>
-        <p class="docmind-page-subtitle">
+        <p class="seekmind-page-subtitle">
           {{ t("page.chunks.subtitle") }}
         </p>
       </div>
-      <div class="docmind-page-actions text-sm text-dim">
+      <div class="seekmind-page-actions text-sm text-dim">
         <div class="hidden sm:block">
           {{ t("page.chunks.parserInfo") }}
           <span class="font-medium text-secondary">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
           {{ t("page.chunks.parserInfo2") }}
         </div>
-        <DocMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
+        <SeekMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
           <Cpu class="mr-1" :size="13" />
           {{ parserRuntime?.active === 'python' ? t("page.chunks.badgePython") : t("page.chunks.badgeRust") }}
-        </DocMindBadge>
+        </SeekMindBadge>
       </div>
     </header>
 
@@ -838,10 +838,10 @@ watch(
           <div class="text-sm font-medium text-warning">
             {{ officeNotice.title }}
           </div>
-          <div class="docmind-item-meta mt-1 leading-5 text-secondary">
+          <div class="seekmind-item-meta mt-1 leading-5 text-secondary">
             {{ officeNotice.desc }}
           </div>
-          <div class="docmind-item-meta mt-1 leading-5">
+          <div class="seekmind-item-meta mt-1 leading-5">
             {{ officeNotice.hint }}
           </div>
         </div>
@@ -896,20 +896,20 @@ watch(
 
             <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
               <div>
-                <div class="docmind-section-label">{{ t("page.chunks.section.docList") }}</div>
-                <div class="docmind-section-subtitle mt-1">
+                <div class="seekmind-section-label">{{ t("page.chunks.section.docList") }}</div>
+                <div class="seekmind-section-subtitle mt-1">
                   {{ currentDocument ? currentDocument.file_name : selectedDir ? formatDirectoryLabel(selectedDir.path) : t("page.chunks.selectDir") }}
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <DocMindBadge tone="default">
+                <SeekMindBadge tone="default">
                   <FileText class="mr-1" :size="13" />
                   {{ filteredDocuments.length }}
-                </DocMindBadge>
-                <DocMindBadge v-if="refreshTaskCount > 0" tone="warning">
+                </SeekMindBadge>
+                <SeekMindBadge v-if="refreshTaskCount > 0" tone="warning">
                   <RefreshCw class="mr-1" :size="13" />
                   {{ t("page.chunks.btn.queue", { count: refreshTaskCount }) }}
-                </DocMindBadge>
+                </SeekMindBadge>
               </div>
             </div>
 
@@ -938,7 +938,7 @@ watch(
                   @contextmenu.prevent="handleDocContextMenu(doc, $event)"
                 >
                   <div class="flex items-start gap-3">
-                    <DocMindFileIcon :ext="doc.ext" />
+                    <SeekMindFileIcon :ext="doc.ext" />
                     <div class="min-w-0 flex-1">
                       <div class="truncate text-sm font-medium text-primary">{{ doc.file_name }}</div>
                       <div class="mt-1 truncate text-[11px] text-dim">{{ doc.path }}</div>
@@ -983,8 +983,8 @@ watch(
           <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
             <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
               <div>
-                <div class="docmind-section-label">{{ t("page.chunks.section.chunkDetail") }}</div>
-                <div class="docmind-section-subtitle mt-1">
+                <div class="seekmind-section-label">{{ t("page.chunks.section.chunkDetail") }}</div>
+                <div class="seekmind-section-subtitle mt-1">
                   {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
                 </div>
                 <div
@@ -1036,8 +1036,8 @@ watch(
                   {{ currentDocument?.path || t("page.chunks.selectDoc") }}
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2">
-                  <DocMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</DocMindBadge>
-                  <DocMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</DocMindBadge>
+                  <SeekMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</SeekMindBadge>
+                  <SeekMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</SeekMindBadge>
                 </div>
 <!-- action buttons moved to context menu -->
                 <div
@@ -1087,9 +1087,9 @@ watch(
                       </div>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
-                      <DocMindBadge tone="default">
+                      <SeekMindBadge tone="default">
                         {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
-                      </DocMindBadge>
+                      </SeekMindBadge>
                       <button
                         class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
                         @click="copyChunkCitation(chunk)"
@@ -1099,13 +1099,13 @@ watch(
                     </div>
                   </div>
                   <div v-if="chunk.preview_blocks && chunk.preview_blocks.length > 0" class="space-y-1">
-                    <DocMindPreviewBlockRenderer
+                    <SeekMindPreviewBlockRenderer
                       v-for="block in chunk.preview_blocks"
                       :key="block.block_index"
                       :block="block"
                     />
                   </div>
-                  <DocMindMarkdownRenderer
+                  <SeekMindMarkdownRenderer
                     v-else
                     :block="{
                       block_index: 0,
@@ -1127,7 +1127,7 @@ watch(
       </SplitPane>
     </main>
 
-    <DocMindContextMenu
+    <SeekMindContextMenu
       v-if="contextMenuVisible"
       :items="chunkContextMenuItems"
       :x="contextMenuPosition.x"

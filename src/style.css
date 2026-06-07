@@ -1,7 +1,7 @@
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/02
- * @Description DocMind 全局主题与共享样式定义。
+ * @Description SeekMind 全局主题与共享样式定义。
  */
 @import "tailwindcss";
 
@@ -186,24 +186,24 @@ button {
   border-radius: 3px;
 }
 
-.docmind-badge {
+.SeekMind-badge {
   white-space: nowrap;
 }
 
-.docmind-detail {
+.SeekMind-detail {
   animation: fade-in 180ms ease-out both;
 }
 
 /* 搜索和知识库详情采用轻量内容块，减少右侧面板里重复卡片边框。 */
-.docmind-detail-block {
+.SeekMind-detail-block {
   padding: 12px 0;
 }
 
-.docmind-detail-block + .docmind-detail-block {
+.SeekMind-detail-block + .SeekMind-detail-block {
   border-top: 1px solid var(--color-border);
 }
 
-.docmind-detail-title {
+.SeekMind-detail-title {
   margin: 0 0 8px;
   font-size: 13px;
   line-height: 1.35;
@@ -211,21 +211,21 @@ button {
   color: var(--color-text-secondary);
 }
 
-.docmind-detail-kv {
+.SeekMind-detail-kv {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
 
-.docmind-detail-kv-label {
+.SeekMind-detail-kv-label {
   flex-shrink: 0;
   font-size: 11px;
   line-height: 1.4;
   color: var(--color-text-muted);
 }
 
-.docmind-detail-kv-value {
+.SeekMind-detail-kv-value {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -235,15 +235,15 @@ button {
   color: var(--color-text-primary);
 }
 
-.docmind-context-row {
+.SeekMind-context-row {
   padding: 10px 0;
 }
 
-.docmind-context-row + .docmind-context-row {
+.SeekMind-context-row + .SeekMind-context-row {
   border-top: 1px solid var(--color-border-subtle, var(--color-border));
 }
 
-.docmind-context-row--active {
+.SeekMind-context-row--active {
   margin-inline: -8px;
   padding-inline: 8px;
   border-radius: 8px;
@@ -261,11 +261,11 @@ button {
   }
 }
 
-.docmind-file-icon {
+.SeekMind-file-icon {
   letter-spacing: 0.08em;
 }
 
-.docmind-section-label {
+.SeekMind-section-label {
   margin: 0;
   font-size: 15px;
   line-height: 1.25;
@@ -274,14 +274,14 @@ button {
   color: var(--color-text-primary);
 }
 
-.docmind-section-subtitle {
+.SeekMind-section-subtitle {
   margin: 0;
   font-size: 13px;
   line-height: 1.35;
   color: var(--color-text-secondary);
 }
 
-.docmind-item-title {
+.SeekMind-item-title {
   font-size: 13px;
   line-height: 1.45;
   font-weight: 500;
@@ -289,18 +289,18 @@ button {
 }
 
 /* 统一设置页和配置面板的主色图标壳，避免页面级与组件级重复维护同一套蓝色渐变。 */
-.docmind-primary-icon {
+.SeekMind-primary-icon {
   background: linear-gradient(135deg, rgba(47, 129, 255, 0.82), rgba(18, 103, 232, 0.66));
   box-shadow: 0 12px 26px rgba(47, 129, 255, 0.12);
 }
 
-html:not(.dark) .docmind-primary-icon {
+html:not(.dark) .SeekMind-primary-icon {
   background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(18, 103, 232, 0.78));
   box-shadow: 0 12px 26px rgba(47, 129, 255, 0.18);
 }
 
 /* 统一页面 header 图标的尺寸与底色，让各页面标题栏保持同一视觉语言。 */
-.docmind-page-header-icon {
+.SeekMind-page-header-icon {
   width: 34px;
   height: 34px;
   display: inline-flex;
@@ -313,14 +313,14 @@ html:not(.dark) .docmind-primary-icon {
   border: 1px solid rgba(47, 129, 255, 0.14);
 }
 
-html.dark .docmind-page-header-icon {
+html.dark .SeekMind-page-header-icon {
   background: rgba(15, 23, 42, 0.85);
   color: var(--color-accent);
   border-color: rgba(88, 166, 255, 0.18);
 }
 
 /* 统一页面顶栏的标题和副标题尺度，避免各页面用 Tailwind 拼接后出现行高和颜色偏差。 */
-.docmind-page-topbar {
+.SeekMind-page-topbar {
   min-height: 50px;
   display: flex;
   align-items: center;
@@ -332,18 +332,18 @@ html.dark .docmind-page-header-icon {
   background-color: var(--color-header-bg);
 }
 
-.docmind-page-title-area {
+.SeekMind-page-title-area {
   flex: 1;
   min-width: 0;
 }
 
-.docmind-page-title-row {
+.SeekMind-page-title-row {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.docmind-page-title {
+.SeekMind-page-title {
   margin: 0;
   font-size: 16px;
   line-height: 1.25;
@@ -352,14 +352,14 @@ html.dark .docmind-page-header-icon {
   color: var(--color-text-primary);
 }
 
-.docmind-page-subtitle {
+.SeekMind-page-subtitle {
   margin: 0;
   font-size: 13px;
   line-height: 1.35;
   color: var(--color-text-secondary);
 }
 
-.docmind-page-actions {
+.SeekMind-page-actions {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -367,7 +367,7 @@ html.dark .docmind-page-header-icon {
 }
 
 /* 统一面板 section header 的结构，让 Status、知识库等页面标题栏保持同一节奏。 */
-.docmind-section-header {
+.SeekMind-section-header {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -376,34 +376,34 @@ html.dark .docmind-page-header-icon {
   border-bottom: 1px solid var(--color-border);
 }
 
-.docmind-section-header--balanced {
+.SeekMind-section-header--balanced {
   padding-top: 14px;
 }
 
-.docmind-section-header--compact {
+.SeekMind-section-header--compact {
   margin-bottom: 0;
   padding-bottom: 0;
   border-bottom: 0;
 }
 
 /* 知识库页的内容块采用更轻的分隔方式，减少面板里重复的盒子感。 */
-.docmind-content-block {
+.SeekMind-content-block {
   padding: 14px 16px;
 }
 
-.docmind-content-block--tight-top {
+.SeekMind-content-block--tight-top {
   padding-top: 8px;
 }
 
-.docmind-content-block--super-tight-top {
+.SeekMind-content-block--super-tight-top {
   padding-top: 4px;
 }
 
-.docmind-content-block + .docmind-content-block {
+.SeekMind-content-block + .SeekMind-content-block {
   border-top: 1px solid var(--color-border);
 }
 
-.docmind-content-block-title {
+.SeekMind-content-block-title {
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
@@ -411,20 +411,20 @@ html.dark .docmind-page-header-icon {
   color: var(--color-text-primary);
 }
 
-.docmind-item-meta {
+.SeekMind-item-meta {
   font-size: 12px;
   line-height: 1.4;
   color: var(--color-text-muted);
 }
 
-.docmind-metric-value {
+.SeekMind-metric-value {
   font-size: 16px;
   line-height: 1.35;
   font-weight: 600;
 }
 
 @media (max-width: 900px) {
-  .docmind-page-shell {
+  .SeekMind-page-shell {
     overflow: auto;
   }
 }

@@ -4,16 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESOURCE_DIR="$ROOT_DIR/src-tauri/resources"
 APP_RESOURCE_DIR="$ROOT_DIR/src-tauri/app-resources"
-BUILD_DIR="$ROOT_DIR/.docmind-build/parser-sidecar"
+BUILD_DIR="$ROOT_DIR/.seekmind-build/parser-sidecar"
 DIST_DIR="$BUILD_DIR/dist"
 WORK_DIR="$BUILD_DIR/build"
 SPEC_DIR="$BUILD_DIR/spec"
-SIDE_CAR_BASE="docmind-parser"
+SIDE_CAR_BASE="seekmind-parser"
 OCR_BASE="ocr"
 TARGET_TRIPLE="$(rustc -vV | awk -F': ' '/host: / {print $2}')"
 OUTPUT_NAME="${SIDE_CAR_BASE}-${TARGET_TRIPLE}"
 OCR_DIR="$APP_RESOURCE_DIR/$OCR_BASE"
-VISION_OCR_BIN_NAME="docmind-vision-ocr"
+VISION_OCR_BIN_NAME="seekmind-vision-ocr"
 VISION_OCR_BIN_DEST="$OCR_DIR/vision-ocr"
 
 mkdir -p "$RESOURCE_DIR" "$APP_RESOURCE_DIR" "$DIST_DIR" "$WORK_DIR" "$SPEC_DIR"
@@ -57,19 +57,19 @@ python3 -m PyInstaller \
   --distpath "$DIST_DIR" \
   --workpath "$WORK_DIR" \
   --specpath "$SPEC_DIR" \
-  "$ROOT_DIR/parser/docmind_parser/__main__.py"
+  "$ROOT_DIR/parser/seekmind_parser/__main__.py"
 
 rm -rf "$APP_RESOURCE_DIR/$OUTPUT_NAME"
 cp -R "$DIST_DIR/$SIDE_CAR_BASE" "$APP_RESOURCE_DIR/$OUTPUT_NAME"
 chmod +x "$APP_RESOURCE_DIR/$OUTPUT_NAME/$SIDE_CAR_BASE"
 
-if [ -d "$ROOT_DIR/.docmind-cache/fastembed" ]; then
+if [ -d "$ROOT_DIR/.seekmind-cache/fastembed" ]; then
   rm -rf "$APP_RESOURCE_DIR/fastembed"
   rm -f "$APP_RESOURCE_DIR/fastembed-cache.tar.gz"
-  tar -czf "$APP_RESOURCE_DIR/fastembed-cache.tar.gz" -C "$ROOT_DIR/.docmind-cache/fastembed" .
+  tar -czf "$APP_RESOURCE_DIR/fastembed-cache.tar.gz" -C "$ROOT_DIR/.seekmind-cache/fastembed" .
   echo "Bundled FastEmbed cache archive: $APP_RESOURCE_DIR/fastembed-cache.tar.gz"
 else
-  echo "FastEmbed cache not found at $ROOT_DIR/.docmind-cache/fastembed; semantic model may need runtime download"
+  echo "FastEmbed cache not found at $ROOT_DIR/.seekmind-cache/fastembed; semantic model may need runtime download"
 fi
 
 echo "Built parser sidecar: $APP_RESOURCE_DIR/$OUTPUT_NAME"

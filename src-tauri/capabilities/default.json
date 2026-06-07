@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for DocMind main window",
+  "description": "Capability for SeekMind main window",
   "windows": [
     "main"
   ],

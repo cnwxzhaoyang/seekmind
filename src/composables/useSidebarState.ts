@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 
-const storageKey = "docmind.sidebar.collapsed";
+const storageKey = "seekmind.sidebar.collapsed";
 
 const sidebarCollapsed = ref(false);
 let initialized = false;

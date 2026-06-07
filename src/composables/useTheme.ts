@@ -2,7 +2,7 @@ import { ref, watch } from "vue";
 
 type ThemeMode = "light" | "dark" | "system";
 
-const STORAGE_KEY = "docmind.theme";
+const STORAGE_KEY = "seekmind.theme";
 
 const preferredDark = ref(false);
 let mediaQuery: MediaQueryList | null = null;

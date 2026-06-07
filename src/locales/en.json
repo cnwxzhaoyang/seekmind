@@ -32,7 +32,7 @@
     "office": {
       "warningTitle": "Office parsing is not ready",
       "warningDesc": "No soffice / libreoffice was detected. `.doc`, `.ppt`, and `.pptx` will fall back to plain-text extraction, so image and table previews may be missing.",
-      "warningHint": "Install LibreOffice or set `DOCMIND_OFFICE_BIN` to the executable path. The same detection logic applies on Windows and macOS.",
+      "warningHint": "Install LibreOffice or set `SEEKMIND_OFFICE_BIN` to the executable path. The same detection logic applies on Windows and macOS.",
       "runtimeLabel": "Office Converter",
       "runtimeAvailable": "Detected {bin}",
       "runtimeUnavailable": "No soffice / libreoffice detected",
@@ -84,7 +84,7 @@
     "appQa": {
       "title": "Model Management",
       "subtitle": "Multi-turn questions answered from local document snippets.",
-      "placeholder": "Ask a question and DocMind will retrieve local document evidence first.",
+      "placeholder": "Ask a question and SeekMind will retrieve local document evidence first.",
       "ready": "QA model configured",
       "notConfigured": "QA model is not configured or disabled",
       "createSession": "Create Session",
@@ -96,7 +96,7 @@
       "generating": "Generating answer...",
       "streaming": "Streaming",
       "verifying": "Verifying citations...",
-      "generatingHint": "DocMind is retrieving sources and assembling the answer. Please wait a moment.",
+      "generatingHint": "SeekMind is retrieving sources and assembling the answer. Please wait a moment.",
       "stop": "Cancel",
       "stopping": "Cancelling...",
       "sendHint": "Enter to send, Shift+Enter for a new line",
@@ -278,7 +278,7 @@
       "qa": {
         "title": "Source QA",
         "subtitle": "Answer questions directly from local document snippets.",
-        "placeholder": "Ask a question and DocMind will retrieve local document evidence first.",
+        "placeholder": "Ask a question and SeekMind will retrieve local document evidence first.",
         "ready": "QA model configured",
         "notConfigured": "QA model is not configured or disabled",
         "ask": "Ask",
@@ -288,7 +288,7 @@
         "searching": "Searching sources...",
         "generating": "Generating answer...",
         "streaming": "Streaming",
-        "generatingHint": "DocMind is retrieving sources and assembling the answer. Please wait a moment.",
+        "generatingHint": "SeekMind is retrieving sources and assembling the answer. Please wait a moment.",
         "stop": "Cancel",
         "stopping": "Cancelling...",
       "sendHint": "Enter to send, Shift+Enter for a new line",
@@ -417,7 +417,7 @@
 
     "chunks": {
       "title": "Document Chunks",
-      "subtitle": "Select a document by directory to see how docMind splits content into paragraph blocks.",
+      "subtitle": "Select a document by directory to see how SeekMind splits content into paragraph blocks.",
       "parserInfo": "Current parser: ",
       "parserInfo2": ". Click \"Reslice\" to use the active pipeline.",
       "parserPython": "Python",
@@ -491,7 +491,7 @@
 
     "library": {
       "title": "Index Directories",
-      "subtitle": "Add folders to index. docMind parses and indexes them locally.",
+      "subtitle": "Add folders to index. SeekMind parses and indexes them locally.",
       "btn": {
         "addDir": "Add Directory"
       },
@@ -506,7 +506,7 @@
         "copiedCitation": "Citation copied"
       },
       "virtualDir": "Virtual Directory",
-      "dropHint": "Drop directories or supported documents here. docMind will classify and import them automatically.",
+      "dropHint": "Drop directories or supported documents here. SeekMind will classify and import them automatically.",
       "dropActive": "Release to import directories or documents",
       "importing": "Importing",
       "dialogTitle": "Select a directory to index",
@@ -845,7 +845,7 @@
         "desc": "Explains how the app handles your documents and index data.",
         "localFirst": "Local First",
         "localFirstDesc": "Documents are parsed and indexed locally on your Mac. Nothing is uploaded to the cloud.",
-        "remoteModel": "When a remote model is enabled, DocMind will send the selected document snippets to the configured model service.",
+        "remoteModel": "When a remote model is enabled, SeekMind will send the selected document snippets to the configured model service.",
         "localOnlyHint": "In practice, search, chunking, and indexing all happen on this machine by default."
       },
       "placeholder": {

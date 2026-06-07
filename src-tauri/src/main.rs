@@ -6,9 +6,9 @@ use std::env;
 fn main() {
     let reset_storage = env::args().any(|arg| arg == "--reset-local-storage");
     if reset_storage {
-        docmind_lib::reset_local_storage().expect("failed to reset local DocMind storage");
-        env::set_var("DOCMIND_SKIP_BOOTSTRAP_INDEX", "1");
+        seekmind_lib::reset_local_storage().expect("failed to reset local SeekMind storage");
+        env::set_var("SEEKMIND_SKIP_BOOTSTRAP_INDEX", "1");
     }
 
-    docmind_lib::run()
+    seekmind_lib::run()
 }

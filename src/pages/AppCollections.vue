@@ -13,14 +13,14 @@ import { useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { BookMarked, ClipboardCopy, Eye, FileDown, FileText, Files, FolderPlus, Layers3, MessageSquareText, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
-import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
-import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
-import DocMindFileIcon from "../components/docmind/DocMindFileIcon.vue";
+import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
 import SplitPane from "../components/SplitPane.vue";
-import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
-import type { CollectionItemView, CollectionView, RecentViewEntry, TagView } from "../types/docmind";
+import type { CollectionItemView, CollectionView, RecentViewEntry, TagView } from "../types/SeekMind";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -224,9 +224,9 @@ const loadCollectionTags = async (collectionId: string) => {
   }
 
   try {
-    collectionTags.value = await docmindApi.listTargetTags("collection", collectionId);
+    collectionTags.value = await seekMindApi.listTargetTags("collection", collectionId);
   } catch (error) {
-    console.error("[DocMind] listTargetTags(collection) failed", error);
+    console.error("[SeekMind] listTargetTags(collection) failed", error);
   }
 };
 
@@ -238,9 +238,9 @@ const loadItemTags = async (itemId: string) => {
   }
 
   try {
-    itemTags.value = await docmindApi.listTargetTags("collection_item", itemId);
+    itemTags.value = await seekMindApi.listTargetTags("collection_item", itemId);
   } catch (error) {
-    console.error("[DocMind] listTargetTags(collection_item) failed", error);
+    console.error("[SeekMind] listTargetTags(collection_item) failed", error);
   }
 };
 
@@ -253,10 +253,10 @@ const loadCollectionItemTags = async (items: CollectionItemView[]) => {
 
   const pairs = await Promise.all(items.map(async (item) => {
     try {
-      const tags = await docmindApi.listTargetTags("collection_item", item.id);
+      const tags = await seekMindApi.listTargetTags("collection_item", item.id);
       return [item.id, tags] as const;
     } catch (error) {
-      console.error(`[DocMind] listTargetTags(collection_item) failed item=${item.id}`, error);
+      console.error(`[SeekMind] listTargetTags(collection_item) failed item=${item.id}`, error);
       return [item.id, [] as TagView[]] as const;
     }
   }));
@@ -271,7 +271,7 @@ const loadCollections = async (preferSelected = true) => {
   collectionsLoading.value = true;
   errorMessage.value = "";
   try {
-    const list = await docmindApi.listCollections();
+    const list = await seekMindApi.listCollections();
     collections.value = list;
     if (selectedCollectionId.value && !list.some((item) => item.id === selectedCollectionId.value)) {
       selectedCollectionId.value = "";
@@ -287,7 +287,7 @@ const loadCollections = async (preferSelected = true) => {
         syncEditorFromCollection(first);
         await loadItems(first.id, preferSelected);
         await loadCollectionTags(first.id);
-        await docmindApi.recordRecentView("collection", first.id, first.name, first.description || "");
+        await seekMindApi.recordRecentView("collection", first.id, first.name, first.description || "");
       } else {
         resetEditor();
         collectionItems.value = [];
@@ -300,7 +300,7 @@ const loadCollections = async (preferSelected = true) => {
     }
     await loadRecentViews();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.loadCollections"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.loadCollections"));
   } finally {
     collectionsLoading.value = false;
   }
@@ -308,9 +308,9 @@ const loadCollections = async (preferSelected = true) => {
 
 const loadRecentViews = async () => {
   try {
-    recentViews.value = await docmindApi.listRecentViews(8);
+    recentViews.value = await seekMindApi.listRecentViews(8);
   } catch (error) {
-    console.error("[DocMind] listRecentViews failed", error);
+    console.error("[SeekMind] listRecentViews failed", error);
   }
 };
 
@@ -325,7 +325,7 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
 
   itemsLoading.value = true;
   try {
-    const items = await docmindApi.listCollectionItems(collectionId);
+    const items = await seekMindApi.listCollectionItems(collectionId);
     collectionItems.value = items;
     await loadCollectionItemTags(items);
 
@@ -349,7 +349,7 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
     showDetailPanel.value = Boolean(next);
     await loadItemTags(next?.id ?? "");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.loadItems"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.loadItems"));
   } finally {
     itemsLoading.value = false;
   }
@@ -360,7 +360,7 @@ const selectCollection = async (collection: CollectionView) => {
   syncEditorFromCollection(collection);
   await loadItems(collection.id, false);
   await loadCollectionTags(collection.id);
-  await docmindApi.recordRecentView("collection", collection.id, collection.name, collection.description || "");
+  await seekMindApi.recordRecentView("collection", collection.id, collection.name, collection.description || "");
   await loadRecentViews();
 };
 
@@ -391,7 +391,7 @@ const saveCollection = async () => {
 
   try {
     if (selectedCollectionId.value) {
-      const updated = await docmindApi.updateCollection(selectedCollectionId.value, {
+      const updated = await seekMindApi.updateCollection(selectedCollectionId.value, {
         name,
         description: collectionDescription.value.trim(),
       });
@@ -399,13 +399,13 @@ const saveCollection = async () => {
       syncEditorFromCollection(updated);
       infoMessage.value = t("page.collections.updated", { name: updated.name });
     } else {
-      const created = await docmindApi.createCollection(name, collectionDescription.value.trim());
+      const created = await seekMindApi.createCollection(name, collectionDescription.value.trim());
       collections.value = [created, ...collections.value.filter((item) => item.id !== created.id)];
       await selectCollection(created);
       infoMessage.value = t("page.collections.created", { name: created.name });
     }
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.saveCollection"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.saveCollection"));
   } finally {
     collectionSaving.value = false;
   }
@@ -417,7 +417,7 @@ const deleteCollection = async (collection: CollectionView) => {
   }
 
   try {
-    await docmindApi.deleteCollection(collection.id);
+    await seekMindApi.deleteCollection(collection.id);
     collections.value = collections.value.filter((item) => item.id !== collection.id);
     if (selectedCollectionId.value === collection.id) {
       const next = collections.value[0] ?? null;
@@ -432,7 +432,7 @@ const deleteCollection = async (collection: CollectionView) => {
     }
     infoMessage.value = t("page.collections.deleted", { name: collection.name });
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.deleteCollection"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.deleteCollection"));
   }
 };
 
@@ -444,7 +444,7 @@ const selectItem = (item: CollectionItemView) => {
 };
 
 const closeSelectedItem = () => {
-  console.debug("[DocMind] collection detail panel closed", {
+  console.debug("[SeekMind] collection detail panel closed", {
     itemId: selectedItemId.value,
   });
   selectedItemId.value = "";
@@ -463,7 +463,7 @@ const saveItemNote = async () => {
   errorMessage.value = "";
   infoMessage.value = "";
   try {
-    const updated = await docmindApi.updateCollectionItemNote(selectedItem.value.id, {
+    const updated = await seekMindApi.updateCollectionItemNote(selectedItem.value.id, {
       note: itemNoteDraft.value,
     });
     collectionItems.value = collectionItems.value.map((item) => (item.id === updated.id ? updated : item));
@@ -471,7 +471,7 @@ const saveItemNote = async () => {
     itemNoteDraft.value = updated.note;
     infoMessage.value = t("page.collections.noteSaved");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.saveItem"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.saveItem"));
   } finally {
     itemSaving.value = false;
   }
@@ -483,12 +483,12 @@ const addCollectionTag = async () => {
   }
 
   try {
-    await docmindApi.addTagToTarget("collection", selectedCollectionId.value, collectionTagName.value);
+    await seekMindApi.addTagToTarget("collection", selectedCollectionId.value, collectionTagName.value);
     collectionTagName.value = "";
     await loadCollectionTags(selectedCollectionId.value);
     infoMessage.value = t("page.collections.tagAdded");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.tagSave"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.tagSave"));
   }
 };
 
@@ -498,12 +498,12 @@ const addItemTag = async () => {
   }
 
   try {
-    await docmindApi.addTagToTarget("collection_item", selectedItem.value.id, itemTagName.value);
+    await seekMindApi.addTagToTarget("collection_item", selectedItem.value.id, itemTagName.value);
     itemTagName.value = "";
     await loadItemTags(selectedItem.value.id);
     infoMessage.value = t("page.collections.tagAdded");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.tagSave"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.tagSave"));
   }
 };
 
@@ -513,11 +513,11 @@ const removeCollectionTag = async (tag: TagView) => {
   }
 
   try {
-    await docmindApi.removeTagFromTarget("collection", selectedCollectionId.value, tag.id);
+    await seekMindApi.removeTagFromTarget("collection", selectedCollectionId.value, tag.id);
     await loadCollectionTags(selectedCollectionId.value);
     infoMessage.value = t("page.collections.tagRemoved");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.tagRemove"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.tagRemove"));
   }
 };
 
@@ -527,11 +527,11 @@ const removeItemTag = async (tag: TagView) => {
   }
 
   try {
-    await docmindApi.removeTagFromTarget("collection_item", selectedItem.value.id, tag.id);
+    await seekMindApi.removeTagFromTarget("collection_item", selectedItem.value.id, tag.id);
     await loadItemTags(selectedItem.value.id);
     infoMessage.value = t("page.collections.tagRemoved");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.tagRemove"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.tagRemove"));
   }
 };
 
@@ -541,7 +541,7 @@ const removeItem = async (item: CollectionItemView) => {
   }
 
   try {
-    await docmindApi.removeCollectionItem(item.id);
+    await seekMindApi.removeCollectionItem(item.id);
     collectionItems.value = collectionItems.value.filter((entry) => entry.id !== item.id);
     if (selectedItemId.value === item.id) {
       const next = collectionItems.value[0] ?? null;
@@ -552,17 +552,17 @@ const removeItem = async (item: CollectionItemView) => {
     }
     infoMessage.value = t("page.collections.itemRemoved");
     if (selectedCollection.value) {
-      const updated = await docmindApi.listCollections();
+      const updated = await seekMindApi.listCollections();
       collections.value = updated;
     }
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.removeItem"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.removeItem"));
   }
 };
 
 const openItemFile = async (item: CollectionItemView) => {
   if (!item.path.trim()) return;
-  await docmindApi.openFile(item.path);
+  await seekMindApi.openFile(item.path);
 };
 
 const openRecentView = async (item: RecentViewEntry) => {
@@ -585,7 +585,7 @@ const openRecentView = async (item: RecentViewEntry) => {
       break;
     default:
       if (item.path.trim()) {
-        await docmindApi.openFile(item.path);
+        await seekMindApi.openFile(item.path);
       }
       break;
   }
@@ -593,7 +593,7 @@ const openRecentView = async (item: RecentViewEntry) => {
 
 const quickLookItem = async (item: CollectionItemView) => {
   if (!item.path.trim()) return;
-  await docmindApi.quickLookFile(item.path);
+  await seekMindApi.quickLookFile(item.path);
 };
 
 const copyItemPath = async (item: CollectionItemView) => {
@@ -625,10 +625,10 @@ const exportCollectionMarkdown = async (collection: CollectionView) => {
   }
 
   try {
-    const savedPath = await docmindApi.exportCollectionMarkdown(collection.id, path);
+    const savedPath = await seekMindApi.exportCollectionMarkdown(collection.id, path);
     infoMessage.value = t("page.collections.exportedMarkdown", { path: savedPath });
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.collections.error.exportFailed"));
+    errorMessage.value = formatSeekMindError(error, t("page.collections.error.exportFailed"));
   }
 };
 
@@ -739,17 +739,17 @@ onActivated(async () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col bg-panel text-primary">
-    <header class="docmind-page-topbar">
-      <div class="docmind-page-title-area">
-        <div class="docmind-page-title-row">
-          <span class="docmind-page-header-icon" aria-hidden="true">
+    <header class="seekmind-page-topbar">
+      <div class="seekmind-page-title-area">
+        <div class="seekmind-page-title-row">
+          <span class="seekmind-page-header-icon" aria-hidden="true">
             <BookMarked :size="17" />
           </span>
-          <h1 class="docmind-page-title">{{ t("page.collections.title") }}</h1>
+          <h1 class="seekmind-page-title">{{ t("page.collections.title") }}</h1>
         </div>
-        <p class="docmind-page-subtitle">{{ t("page.collections.subtitle") }}</p>
+        <p class="seekmind-page-subtitle">{{ t("page.collections.subtitle") }}</p>
       </div>
-      <div class="docmind-page-actions">
+      <div class="seekmind-page-actions">
         <button
           class="inline-flex items-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
           type="button"
@@ -867,7 +867,7 @@ onActivated(async () => {
                   </div>
                 </div>
                 <div class="shrink-0 text-right">
-                  <DocMindBadge tone="default">{{ recentViewTypeLabel(item) }}</DocMindBadge>
+                  <SeekMindBadge tone="default">{{ recentViewTypeLabel(item) }}</SeekMindBadge>
                   <div class="mt-1 text-[10px] text-dim">{{ item.viewed_at }}</div>
                 </div>
               </button>
@@ -897,7 +897,7 @@ onActivated(async () => {
                       {{ collection.description || t("page.collections.noDescription") }}
                     </div>
                   </div>
-                  <DocMindBadge tone="default">{{ collection.item_count }}</DocMindBadge>
+                  <SeekMindBadge tone="default">{{ collection.item_count }}</SeekMindBadge>
                 </div>
                 <div class="mt-1.5 text-[11px] text-dim">{{ collection.updated_at }}</div>
               </div>
@@ -908,8 +908,8 @@ onActivated(async () => {
 
       <template #middle>
         <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel">
-          <div class="docmind-section-header docmind-section-header--balanced">
-            <span class="card-icon docmind-page-header-icon"><Layers3 :size="17" /></span>
+          <div class="seekmind-section-header seekmind-section-header--balanced">
+            <span class="card-icon seekmind-page-header-icon"><Layers3 :size="17" /></span>
             <div class="min-w-0">
               <div class="text-sm font-semibold text-primary">
                 {{ selectedCollection?.name || t("page.collections.noCollectionSelected") }}
@@ -918,11 +918,11 @@ onActivated(async () => {
                 {{ selectedCollection?.description || t("page.collections.noDescription") }}
               </div>
             </div>
-            <DocMindBadge tone="default">{{ t("page.collections.itemCount", { count: collectionItems.length }) }}</DocMindBadge>
+            <SeekMindBadge tone="default">{{ t("page.collections.itemCount", { count: collectionItems.length }) }}</SeekMindBadge>
           </div>
-          <div v-if="selectedCollection" class="docmind-content-block docmind-content-block--tight-top">
+          <div v-if="selectedCollection" class="seekmind-content-block seekmind-content-block--tight-top">
             <div class="flex items-center justify-between gap-2">
-              <div class="docmind-content-block-title">{{ t("page.collections.tags") }}</div>
+              <div class="seekmind-content-block-title">{{ t("page.collections.tags") }}</div>
               <div class="text-[10px] text-muted">{{ collectionTags.length }}</div>
             </div>
             <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -995,7 +995,7 @@ onActivated(async () => {
                     @click="toggleItemTagFilter(tag.id)"
                   >
                     <span class="max-w-[8rem] truncate">{{ tag.name }}</span>
-                    <DocMindBadge tone="default">{{ tag.count }}</DocMindBadge>
+                    <SeekMindBadge tone="default">{{ tag.count }}</SeekMindBadge>
                   </button>
                 </div>
               </div>
@@ -1012,14 +1012,14 @@ onActivated(async () => {
                 @contextmenu.prevent="openItemMenu(item, $event)"
               >
                 <div class="flex items-start gap-3">
-                  <DocMindFileIcon :ext="(item.path.split('.').pop() || item.item_type).slice(0, 8)" />
+                  <SeekMindFileIcon :ext="(item.path.split('.').pop() || item.item_type).slice(0, 8)" />
                   <div class="min-w-0 flex-1">
                     <div class="flex items-start justify-between gap-2">
                       <div class="min-w-0">
                         <div class="truncate text-sm font-medium text-primary">{{ item.title }}</div>
                         <div class="mt-1 text-[11px] text-muted">{{ item.path || t("common.none") }}</div>
                       </div>
-                      <DocMindBadge :tone="itemTypeTone(item)">{{ itemTypeLabel(item) }}</DocMindBadge>
+                      <SeekMindBadge :tone="itemTypeTone(item)">{{ itemTypeLabel(item) }}</SeekMindBadge>
                     </div>
                     <div v-if="item.title_path" class="mt-2 text-[11px] text-dim">
                       {{ t("page.collections.location") }}：{{ item.title_path }}
@@ -1042,8 +1042,8 @@ onActivated(async () => {
 
       <template v-if="showDetailPanel" #right>
         <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-default bg-panel/80">
-          <div class="docmind-section-header docmind-section-header--balanced">
-            <span class="card-icon docmind-page-header-icon"><BookMarked :size="17" /></span>
+          <div class="seekmind-section-header seekmind-section-header--balanced">
+            <span class="card-icon seekmind-page-header-icon"><BookMarked :size="17" /></span>
             <div class="min-w-0 flex-1">
               <div class="text-sm font-semibold text-primary">{{ t("page.collections.detailTitle") }}</div>
               <div class="mt-1 text-xs text-muted">{{ t("page.collections.detailDesc") }}</div>
@@ -1063,16 +1063,16 @@ onActivated(async () => {
               {{ t("page.collections.noItemSelected") }}
             </div>
             <div v-else class="space-y-2">
-              <div class="docmind-content-block docmind-content-block--super-tight-top">
-                <div class="docmind-section-header docmind-section-header--compact">
-                  <span class="card-icon docmind-page-header-icon">
+              <div class="seekmind-content-block seekmind-content-block--super-tight-top">
+                <div class="seekmind-section-header seekmind-section-header--compact">
+                  <span class="card-icon seekmind-page-header-icon">
                     <component :is="itemTypeIcon(selectedItem)" :size="17" />
                   </span>
                   <div class="min-w-0">
                     <div class="text-base font-semibold text-primary">{{ selectedItem.title }}</div>
                     <div class="mt-1 break-all text-xs text-muted">{{ selectedItem.path || t("common.none") }}</div>
                   </div>
-                  <DocMindBadge :tone="itemTypeTone(selectedItem)">{{ itemTypeLabel(selectedItem) }}</DocMindBadge>
+                  <SeekMindBadge :tone="itemTypeTone(selectedItem)">{{ itemTypeLabel(selectedItem) }}</SeekMindBadge>
                 </div>
                 <div v-if="selectedItem.title_path" class="mt-2 text-sm leading-6 text-primary">
                   <span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
@@ -1082,9 +1082,9 @@ onActivated(async () => {
                 </div>
               </div>
 
-              <div class="docmind-content-block">
+              <div class="seekmind-content-block">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="docmind-content-block-title">{{ t("page.collections.tags") }}</div>
+                  <div class="seekmind-content-block-title">{{ t("page.collections.tags") }}</div>
                   <div class="text-[10px] text-muted">{{ itemTags.length }}</div>
                 </div>
                 <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -1125,15 +1125,15 @@ onActivated(async () => {
                 </div>
               </div>
 
-              <div class="docmind-content-block">
-                <div class="docmind-content-block-title">{{ t("page.collections.snippet") }}</div>
+              <div class="seekmind-content-block">
+                <div class="seekmind-content-block-title">{{ t("page.collections.snippet") }}</div>
                 <div class="whitespace-pre-wrap text-sm leading-7 text-primary">
                   {{ selectedItem.snippet || t("page.collections.noSnippet") }}
                 </div>
               </div>
 
-              <div class="docmind-content-block">
-                <div class="docmind-content-block-title">{{ t("page.collections.note") }}</div>
+              <div class="seekmind-content-block">
+                <div class="seekmind-content-block-title">{{ t("page.collections.note") }}</div>
                 <textarea
                   v-model="itemNoteDraft"
                   class="min-h-[160px] w-full resize-y rounded-lg border border-default bg-panel px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
@@ -1152,7 +1152,7 @@ onActivated(async () => {
                 </div>
               </div>
 
-              <div class="docmind-content-block">
+              <div class="seekmind-content-block">
                 <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs leading-5 text-muted">
                   <div>{{ t("page.collections.createdAt") }}：{{ selectedItem.created_at }}</div>
                   <div>{{ t("page.collections.updatedAt") }}：{{ selectedItem.updated_at }}</div>
@@ -1166,14 +1166,14 @@ onActivated(async () => {
       </template>
     </SplitPane>
 
-    <DocMindContextMenu
+    <SeekMindContextMenu
       v-if="collectionMenuVisible"
       :x="collectionMenuPosition.x"
       :y="collectionMenuPosition.y"
       :items="collectionContextMenuItems"
       @close="collectionMenuVisible = false"
     />
-    <DocMindContextMenu
+    <SeekMindContextMenu
       v-if="itemMenuVisible"
       :x="itemMenuPosition.x"
       :y="itemMenuPosition.y"

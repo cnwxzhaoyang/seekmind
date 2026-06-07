@@ -1,13 +1,13 @@
 [package]
-name = "DocMind"
+name = "SeekMind"
 version = "0.1.0"
-description = "DocMind local document search tool"
+description = "SeekMind local document search tool"
 authors = ["Yang Zhao"]
 edition = "2021"
-default-run = "DocMind"
+default-run = "SeekMind"
 
 [lib]
-name = "docmind_lib"
+name = "seekmind_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

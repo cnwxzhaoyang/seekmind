@@ -11,3 +11,7 @@ __pycache__/
 /src-tauri/resources/
 /.docmind-dev/
 /ui-prototype/*
+
+/.seekmind-cache/
+/.seekmind-build/
+/.seekmind-dev/

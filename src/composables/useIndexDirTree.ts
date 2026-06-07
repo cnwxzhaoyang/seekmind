@@ -1,5 +1,5 @@
 import { computed, ref, unref, type MaybeRef } from "vue";
-import type { IndexDirView } from "../types/docmind";
+import type { IndexDirView } from "../types/SeekMind";
 
 export interface IndexDirTreeNode {
   dir: IndexDirView;

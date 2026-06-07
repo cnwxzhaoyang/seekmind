@@ -5,14 +5,14 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight, UploadCloud, Eye, Copy, FileText } from "lucide-vue-next";
-import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
-import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
-import DocMindIndexTree from "../components/docmind/DocMindIndexTree.vue";
-import DocMindTaskCard from "../components/docmind/DocMindTaskCard.vue";
+import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindIndexTree from "../components/SeekMind/SeekMindIndexTree.vue";
+import SeekMindTaskCard from "../components/SeekMind/SeekMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
-import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
 import { formatDirectoryCitation } from "../utils/citation";
 import type {
@@ -22,7 +22,7 @@ import type {
   IndexStatusView,
   ImportedPathView,
   ImportPathsView,
-} from "../types/docmind";
+} from "../types/SeekMind";
 
 const { t } = useI18n();
 
@@ -71,7 +71,7 @@ const copyText = async (text: string, successMessage: string) => {
     }
     infoMessage.value = successMessage;
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, successMessage);
+    errorMessage.value = formatSeekMindError(error, successMessage);
   }
 };
 
@@ -96,10 +96,10 @@ const loadDirs = async () => {
   errorMessage.value = "";
 
   try {
-    dirs.value = await docmindApi.listIndexDirs();
+    dirs.value = await seekMindApi.listIndexDirs();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.title"));
-    console.error("[DocMind] loadDirs failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.title"));
+    console.error("[SeekMind] loadDirs failed", error);
   } finally {
     loading.value = false;
   }
@@ -107,9 +107,9 @@ const loadDirs = async () => {
 
 const loadStatus = async () => {
   try {
-    status.value = await docmindApi.getIndexStatus();
+    status.value = await seekMindApi.getIndexStatus();
   } catch (error) {
-    console.error("[DocMind] loadStatus failed", error);
+    console.error("[SeekMind] loadStatus failed", error);
   }
 };
 
@@ -143,7 +143,7 @@ const installIndexRefreshListener = async () => {
   }
 
   unlistenIndexRefreshProgress = await listen<IndexRefreshProgressView>(
-    "docmind:index-refresh-progress",
+    "seekmind:index-refresh-progress",
     (event) => {
       const payload = event.payload;
       status.value = payload.status;
@@ -170,7 +170,7 @@ const installDocumentRefreshListener = async () => {
   }
 
   unlistenDocumentRefreshProgress = await listen<DocumentRefreshProgressView>(
-    "docmind:document-refresh-progress",
+    "seekmind:document-refresh-progress",
     (event) => {
       const payload = event.payload;
       if (payload.state === "running") {
@@ -243,13 +243,13 @@ const chooseAndAddDir = async () => {
 
   busyPath.value = selected;
   try {
-    await docmindApi.addIndexDir(selected);
+    await seekMindApi.addIndexDir(selected);
     infoMessage.value = t("page.library.info.added", { path: selected });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.error.addDir"));
-    console.error("[DocMind] addIndexDir failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.error.addDir"));
+    console.error("[SeekMind] addIndexDir failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -261,7 +261,7 @@ const refreshIndex = async () => {
   infoMessage.value = "";
 
   try {
-    const started = await docmindApi.refreshIndex();
+    const started = await seekMindApi.refreshIndex();
     const finished = await waitForIndexRefreshJob(started.job_id);
     if (finished.state === "failed") {
       throw new Error(finished.message || t("page.library.error.rebuild"));
@@ -269,8 +269,8 @@ const refreshIndex = async () => {
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.status.btn.reindex"));
-    console.error("[DocMind] refreshIndex failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.status.btn.reindex"));
+    console.error("[SeekMind] refreshIndex failed", error);
   } finally {
     refreshing.value = false;
   }
@@ -282,7 +282,7 @@ const refreshSingleDir = async (path: string) => {
   infoMessage.value = "";
 
   try {
-    const started = await docmindApi.refreshIndexDir(path);
+    const started = await seekMindApi.refreshIndexDir(path);
     const finished = await waitForIndexRefreshJob(started.job_id);
     if (finished.state === "failed") {
       throw new Error(finished.message || t("page.library.error.rebuild"));
@@ -291,8 +291,8 @@ const refreshSingleDir = async (path: string) => {
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.error.rebuild"));
-    console.error("[DocMind] refreshIndexDir failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.error.rebuild"));
+    console.error("[SeekMind] refreshIndexDir failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -304,13 +304,13 @@ const toggleDir = async (dir: IndexDirView) => {
   infoMessage.value = "";
 
   try {
-    await docmindApi.setIndexDirEnabled(dir.path, !dir.enabled);
+    await seekMindApi.setIndexDirEnabled(dir.path, !dir.enabled);
     infoMessage.value = dir.enabled ? t("page.library.info.disabled", { path: dir.path }) : t("page.library.info.enabled", { path: dir.path });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.error.toggleDir"));
-    console.error("[DocMind] setIndexDirEnabled failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.error.toggleDir"));
+    console.error("[SeekMind] setIndexDirEnabled failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -322,11 +322,11 @@ const quickLookDir = async (path: string) => {
   infoMessage.value = "";
 
   try {
-    await docmindApi.quickLookFile(path);
+    await seekMindApi.quickLookFile(path);
     infoMessage.value = t("page.library.action.quickLookOpened");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.action.quickLookFailed"));
-    console.error("[DocMind] quickLookDir failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.action.quickLookFailed"));
+    console.error("[SeekMind] quickLookDir failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -358,13 +358,13 @@ const removeDir = async (path: string) => {
   infoMessage.value = "";
 
   try {
-    await docmindApi.removeIndexDir(path);
+    await seekMindApi.removeIndexDir(path);
     infoMessage.value = t("page.library.info.deleted", { path });
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.error.deleteDir"));
-    console.error("[DocMind] removeIndexDir failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.error.deleteDir"));
+    console.error("[SeekMind] removeIndexDir failed", error);
   } finally {
     busyPath.value = null;
   }
@@ -436,7 +436,7 @@ const processImportedFiles = async (importedFiles: ImportedPathView[]) => {
   for (const file of queued) {
     busyPath.value = file.dir_path;
     try {
-      const started = await docmindApi.refreshDocument(file.path, file.dir_path);
+      const started = await seekMindApi.refreshDocument(file.path, file.dir_path);
       const finished = await waitForDocumentRefreshJob(started.job_id);
       if (finished.state === "failed") {
         throw new Error(finished.message || t("page.library.error.rebuild"));
@@ -451,7 +451,7 @@ const processImportedDirs = async (dirsToRefresh: string[]) => {
   for (const path of dirsToRefresh) {
     busyPath.value = path;
     try {
-      const started = await docmindApi.refreshIndexDir(path);
+      const started = await seekMindApi.refreshIndexDir(path);
       const finished = await waitForIndexRefreshJob(started.job_id);
       if (finished.state === "failed") {
         throw new Error(finished.message || t("page.library.error.rebuild"));
@@ -473,7 +473,7 @@ const importDroppedPaths = async (paths: string[]) => {
   infoMessage.value = "";
 
   try {
-    const result: ImportPathsView = await docmindApi.importPaths(normalized);
+    const result: ImportPathsView = await seekMindApi.importPaths(normalized);
     const dirsToRefresh = result.added_dirs.filter((path) => path !== result.virtual_dir);
     if (dirsToRefresh.length > 0) {
       infoMessage.value = t("page.library.info.importing", { count: normalized.length });
@@ -504,8 +504,8 @@ const importDroppedPaths = async (paths: string[]) => {
     await loadDirs();
     await loadStatus();
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.library.error.importPaths"));
-    console.error("[DocMind] importPaths failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.library.error.importPaths"));
+    console.error("[SeekMind] importPaths failed", error);
   } finally {
     importing.value = false;
     dragActive.value = false;
@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
     <header class="flex h-12 items-center justify-between gap-4 border-b border-default bg-header px-5">
       <div class="min-w-0">
         <h1 class="text-base font-semibold tracking-tight text-primary">{{ t("page.library.title") }}</h1>
-        <p class="docmind-item-meta mt-0.5">{{ t("page.library.subtitle") }}</p>
+        <p class="seekmind-item-meta mt-0.5">{{ t("page.library.subtitle") }}</p>
       </div>
       <button
         class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
@@ -578,7 +578,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <DocMindTaskCard
+      <SeekMindTaskCard
         :task="status?.current_task ?? null"
         :title="t('page.library.taskTitle')"
         :description="status?.current_task?.details ?? t('page.library.taskSyncing')"
@@ -597,11 +597,11 @@ onBeforeUnmount(() => {
       </div>
 
         <div class="mb-3 flex items-center justify-between border-b border-default bg-surface px-4 py-2">
-        <div class="docmind-section-label">{{ t("page.library.emptyState.title") }}</div>
-        <DocMindBadge tone="default">
+        <div class="seekmind-section-label">{{ t("page.library.emptyState.title") }}</div>
+        <SeekMindBadge tone="default">
           <FolderOpen class="mr-1" :size="13" />
           {{ explicitIndexDirCount }}
-        </DocMindBadge>
+        </SeekMindBadge>
       </div>
 
       <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-sm text-muted">
@@ -609,11 +609,11 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="dirs.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-sm text-muted">
-        <div class="docmind-section-label">{{ t("page.library.emptyState.title") }}</div>
-        <div class="docmind-item-meta mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
+        <div class="seekmind-section-label">{{ t("page.library.emptyState.title") }}</div>
+        <div class="seekmind-item-meta mt-1.5">{{ t("page.library.emptyState.subtitle") }}</div>
       </div>
 
-      <DocMindIndexTree
+      <SeekMindIndexTree
         v-else
         :rows="visibleDirRows"
         :selected-path="''"
@@ -626,7 +626,7 @@ onBeforeUnmount(() => {
         @contextmenu="handleTreeContextMenu"
         @toggle="setDirExpanded"
       />
-      <DocMindContextMenu
+      <SeekMindContextMenu
         v-if="contextMenuVisible"
         :items="contextMenuItems"
         :x="contextMenuPosition.x"

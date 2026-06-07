@@ -32,7 +32,7 @@
     "office": {
       "warningTitle": "Office 解析未就绪",
       "warningDesc": "未检测到 soffice / libreoffice。`.doc`、`.ppt`、`.pptx` 将降级为纯文本提取，图片和表格预览可能缺失。",
-      "warningHint": "请安装 LibreOffice，或设置 `DOCMIND_OFFICE_BIN` 指向可执行文件。Windows 和 macOS 都会使用同一套探测逻辑。",
+      "warningHint": "请安装 LibreOffice，或设置 `SEEKMIND_OFFICE_BIN` 指向可执行文件。Windows 和 macOS 都会使用同一套探测逻辑。",
       "runtimeLabel": "Office 转换器",
       "runtimeAvailable": "已检测到 {bin}",
       "runtimeUnavailable": "未检测到 soffice / libreoffice",
@@ -85,7 +85,7 @@
     "appQa": {
       "title": "模型管理",
       "subtitle": "基于本地文档片段进行多轮问答。",
-      "placeholder": "输入问题，DocMind 会先检索本地文档再回答。",
+      "placeholder": "输入问题，SeekMind 会先检索本地文档再回答。",
       "ready": "问答模型已配置",
       "notConfigured": "问答模型未配置或已关闭",
       "createSession": "创建会话",
@@ -97,7 +97,7 @@
       "generating": "正在生成答案...",
       "streaming": "流式输出中",
       "verifying": "正在校验引用...",
-      "generatingHint": "DocMind 正在检索来源并组织答案，请稍等片刻。",
+      "generatingHint": "SeekMind 正在检索来源并组织答案，请稍等片刻。",
       "stop": "取消",
       "stopping": "取消中...",
       "sendHint": "Enter 发送，Shift+Enter 换行",
@@ -280,7 +280,7 @@
       "qa": {
         "title": "来源问答",
         "subtitle": "基于本地文档片段直接回答问题。",
-        "placeholder": "输入一个问题，DocMind 会先检索本地文档再回答。",
+        "placeholder": "输入一个问题，SeekMind 会先检索本地文档再回答。",
         "ready": "问答模型已配置",
         "notConfigured": "问答模型未配置或已关闭",
         "ask": "开始问答",
@@ -290,7 +290,7 @@
         "searching": "正在检索来源...",
         "generating": "正在生成答案...",
         "streaming": "流式输出中",
-        "generatingHint": "DocMind 正在检索来源并组织答案，请稍等片刻。",
+        "generatingHint": "SeekMind 正在检索来源并组织答案，请稍等片刻。",
         "stop": "取消",
         "stopping": "取消中...",
       "sendHint": "Enter 发送，Shift+Enter 换行",
@@ -418,7 +418,7 @@
 
     "chunks": {
       "title": "文档切片",
-      "subtitle": "按目录选择文档，直接查看 docMind 如何把内容切成段落块。",
+      "subtitle": "按目录选择文档，直接查看 SeekMind 如何把内容切成段落块。",
       "parserInfo": "当前解析器：",
       "parserInfo2": "；点击\"重新切片\"会优先使用当前启用的解析链路。",
       "parserPython": "Python",
@@ -488,7 +488,7 @@
 
     "library": {
       "title": "文档目录",
-      "subtitle": "添加需要索引的文件夹，docMind 会在本地解析和建立索引。",
+      "subtitle": "添加需要索引的文件夹，SeekMind 会在本地解析和建立索引。",
       "btn": {
         "addDir": "添加目录"
       },
@@ -842,7 +842,7 @@
         "desc": "说明当前应用如何处理你的文档与索引数据。",
         "localFirst": "本地优先",
         "localFirstDesc": "文档只在当前 Mac 上解析和索引，不上传云端。",
-        "remoteModel": "启用远端模型时，DocMind 会把选中的文档片段发送到你配置的模型服务。",
+        "remoteModel": "启用远端模型时，SeekMind 会把选中的文档片段发送到你配置的模型服务。",
         "localOnlyHint": "你可以把它理解为默认离线工作模式：搜索、切片和索引都只在本机完成。"
       },
       "placeholder": {

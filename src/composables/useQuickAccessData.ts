@@ -1,6 +1,6 @@
 import { ref } from "vue";
-import { docmindApi } from "../services/docmindApi";
-import type { FavoriteView, IndexDirView, RecentDocumentView, SearchHistoryView } from "../types/docmind";
+import { seekMindApi } from "../services/seekMindApi";
+import type { FavoriteView, IndexDirView, RecentDocumentView, SearchHistoryView } from "../types/SeekMind";
 
 const quickDirs = ref<IndexDirView[]>([]);
 const searchHistory = ref<SearchHistoryView[]>([]);
@@ -13,10 +13,10 @@ export const useQuickAccessData = () => {
     loadingQuickAccess.value = true;
     try {
       const [dirs, history, recent, favoriteList] = await Promise.all([
-        docmindApi.listIndexDirs(),
-        docmindApi.listSearchHistory(10),
-        docmindApi.listRecentDocuments(8),
-        docmindApi.listFavorites(12),
+        seekMindApi.listIndexDirs(),
+        seekMindApi.listSearchHistory(10),
+        seekMindApi.listRecentDocuments(8),
+        seekMindApi.listFavorites(12),
       ]);
 
       quickDirs.value = dirs.filter((dir) => dir.enabled);

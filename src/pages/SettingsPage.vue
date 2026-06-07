@@ -8,14 +8,14 @@ import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Settings, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
-import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindConfirmDialog from "../components/docmind/DocMindConfirmDialog.vue";
-import DocMindQaPanel from "../components/docmind/DocMindQaPanel.vue";
-import DocMindSemanticPanel from "../components/docmind/DocMindSemanticPanel.vue";
-import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindConfirmDialog from "../components/SeekMind/SeekMindConfirmDialog.vue";
+import SeekMindQaPanel from "../components/SeekMind/SeekMindQaPanel.vue";
+import SeekMindSemanticPanel from "../components/SeekMind/SeekMindSemanticPanel.vue";
+import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
 import { setLocale as setI18nLocale } from "../i18n";
-import type { IndexSettingsView, NetworkProxySettingsView } from "../types/docmind";
+import type { IndexSettingsView, NetworkProxySettingsView } from "../types/SeekMind";
 
 const { t, locale } = useI18n();
 const { themeMode, setTheme } = useTheme();
@@ -145,12 +145,12 @@ const loadSettings = async () => {
   errorMessage.value = "";
 
   try {
-    const settings = await docmindApi.getIndexSettings();
+    const settings = await seekMindApi.getIndexSettings();
     savedSettings.value = settings;
     applySettings(settings);
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.settings.error.load"));
-    console.error("[DocMind] getIndexSettings failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.settings.error.load"));
+    console.error("[SeekMind] getIndexSettings failed", error);
   } finally {
     loading.value = false;
   }
@@ -161,12 +161,12 @@ const loadNetworkProxySettings = async () => {
   networkErrorMessage.value = "";
 
   try {
-    const settings = await docmindApi.getNetworkProxySettings();
+    const settings = await seekMindApi.getNetworkProxySettings();
     savedNetworkProxySettings.value = settings;
     applyNetworkProxySettings(settings);
   } catch (error) {
-    networkErrorMessage.value = formatDocmindError(error, t("page.settings.network.error.load"));
-    console.error("[DocMind] getNetworkProxySettings failed", error);
+    networkErrorMessage.value = formatSeekMindError(error, t("page.settings.network.error.load"));
+    console.error("[SeekMind] getNetworkProxySettings failed", error);
   } finally {
     networkLoading.value = false;
   }
@@ -193,12 +193,12 @@ const saveSettings = async () => {
   };
 
   try {
-    await docmindApi.saveIndexSettings(payload);
+    await seekMindApi.saveIndexSettings(payload);
     infoMessage.value = t("page.settings.saved");
     savedSettings.value = payload;
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.settings.error.save"));
-    console.error("[DocMind] saveIndexSettings failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.settings.error.save"));
+    console.error("[SeekMind] saveIndexSettings failed", error);
   } finally {
     saving.value = false;
   }
@@ -216,13 +216,13 @@ const saveNetworkProxySettings = async () => {
   };
 
   try {
-    const settings = await docmindApi.saveNetworkProxySettings(payload);
+    const settings = await seekMindApi.saveNetworkProxySettings(payload);
     savedNetworkProxySettings.value = settings;
     applyNetworkProxySettings(settings);
     networkInfoMessage.value = t("page.settings.network.saved");
   } catch (error) {
-    networkErrorMessage.value = formatDocmindError(error, t("page.settings.network.error.save"));
-    console.error("[DocMind] saveNetworkProxySettings failed", error);
+    networkErrorMessage.value = formatSeekMindError(error, t("page.settings.network.error.save"));
+    console.error("[SeekMind] saveNetworkProxySettings failed", error);
   } finally {
     networkSaving.value = false;
   }
@@ -244,11 +244,11 @@ const handleClearConfirm = async () => {
   infoMessage.value = "";
 
   try {
-    await docmindApi.clearAllIndexes();
+    await seekMindApi.clearAllIndexes();
     infoMessage.value = t("page.settings.cleared");
   } catch (error) {
-    errorMessage.value = formatDocmindError(error, t("page.settings.error.clear"));
-    console.error("[DocMind] clearAllIndexes failed", error);
+    errorMessage.value = formatSeekMindError(error, t("page.settings.error.clear"));
+    console.error("[SeekMind] clearAllIndexes failed", error);
   } finally {
     clearing.value = false;
   }
@@ -380,7 +380,7 @@ onBeforeUnmount(() => {
     <header class="settings-prototype-topbar">
       <div class="settings-prototype-header-left">
         <div class="settings-prototype-header-title">
-          <span class="settings-prototype-title-icon docmind-page-header-icon" aria-hidden="true">
+          <span class="settings-prototype-title-icon seekmind-page-header-icon" aria-hidden="true">
             <Settings :size="17" />
           </span>
           <h1 class="settings-prototype-title">{{ t("page.settings.title") }}</h1>
@@ -426,10 +426,10 @@ onBeforeUnmount(() => {
           <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
             <div class="settings-sidebar-head flex items-center justify-between border-b border-default px-4 py-2.5">
               <div>
-                <div class="docmind-section-label">导航</div>
-                <div class="docmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
+                <div class="seekmind-section-label">导航</div>
+                <div class="seekmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
               </div>
-              <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
+              <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
             </div>
             <div class="settings-sidebar-nav space-y-2 p-3">
               <button
@@ -469,7 +469,7 @@ onBeforeUnmount(() => {
 
           <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
             <div class="border-b border-default px-4 py-2.5">
-              <div class="docmind-section-label">快捷</div>
+              <div class="seekmind-section-label">快捷</div>
             </div>
             <div class="grid gap-2 p-3">
               <button
@@ -500,12 +500,12 @@ onBeforeUnmount(() => {
 
           <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
             <div class="border-b border-default px-4 py-2.5">
-              <div class="docmind-section-label">状态</div>
+              <div class="seekmind-section-label">状态</div>
             </div>
             <div class="space-y-3 p-3 text-sm">
               <div class="flex items-center justify-between gap-3">
                 <span class="text-dim">{{ t("page.settings.status.synced") }}</span>
-                <DocMindBadge :tone="hasChanges ? 'warning' : 'success'">{{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}</DocMindBadge>
+                <SeekMindBadge :tone="hasChanges ? 'warning' : 'success'">{{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}</SeekMindBadge>
               </div>
               <div class="flex items-center justify-between gap-3">
                 <span class="text-dim">{{ t("page.settings.language") }}</span>
@@ -526,7 +526,7 @@ onBeforeUnmount(() => {
             <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon docmind-primary-icon">
+                  <span class="settings-section-icon seekmind-primary-icon">
                     <SlidersHorizontal :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -534,14 +534,14 @@ onBeforeUnmount(() => {
                     <div class="settings-section-desc">{{ t("page.settings.rulesDesc") }}</div>
                   </div>
                 </div>
-                <DocMindBadge tone="default">{{ t("status.localEffective") }}</DocMindBadge>
+                <SeekMindBadge tone="default">{{ t("status.localEffective") }}</SeekMindBadge>
               </div>
 
               <div class="space-y-5 p-4">
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.label.excludeDirs") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.placeholder.dirs") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.label.excludeDirs") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.placeholder.dirs") }}</div>
                   </div>
                   <textarea
                     v-model="excludeDirsText"
@@ -553,8 +553,8 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.label.excludeExts") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.placeholder.exts") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.label.excludeExts") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.placeholder.exts") }}</div>
                   </div>
                   <textarea
                     v-model="excludeExtsText"
@@ -566,8 +566,8 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.label.maxFileSize") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.label.maxFileSize") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
                   </div>
                   <div class="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
                     <input
@@ -578,7 +578,7 @@ onBeforeUnmount(() => {
                       class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
                     />
                     <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm text-dim">
-                      <div class="docmind-section-label">{{ t("page.settings.label.currentStatus") }}</div>
+                      <div class="seekmind-section-label">{{ t("page.settings.label.currentStatus") }}</div>
                       <div class="mt-1 text-sm font-medium text-primary">
                         {{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}
                       </div>
@@ -591,7 +591,7 @@ onBeforeUnmount(() => {
             <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon docmind-primary-icon">
+                  <span class="settings-section-icon seekmind-primary-icon">
                     <Sparkles :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -599,14 +599,14 @@ onBeforeUnmount(() => {
                     <div class="settings-section-desc">{{ t("page.settings.semantic.desc") }}</div>
                   </div>
                 </div>
-                <DocMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</DocMindBadge>
+                <SeekMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</SeekMindBadge>
               </div>
 
               <div class="space-y-5 p-4">
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.semantic.title") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.semantic.title") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
                   </div>
                   <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
                     <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
@@ -616,11 +616,11 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.semantic.weight") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.semantic.weight") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
                   </div>
                   <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                    <div class="mb-2 flex items-center justify-between docmind-item-meta">
+                    <div class="mb-2 flex items-center justify-between seekmind-item-meta">
                       <span>{{ t("page.settings.semantic.weight") }}</span>
                       <span>{{ Math.round(semanticWeight * 100) }}%</span>
                     </div>
@@ -637,11 +637,11 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.semantic.threshold") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.semantic.threshold") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
                   </div>
                   <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                    <div class="mb-2 flex items-center justify-between docmind-item-meta">
+                    <div class="mb-2 flex items-center justify-between seekmind-item-meta">
                       <span>{{ t("page.settings.semantic.threshold") }}</span>
                       <span>{{ Math.round(semanticThreshold * 100) }}%</span>
                     </div>
@@ -658,8 +658,8 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.preference.title") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.preference.title") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.preference.title") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.preference.title") }}</div>
                   </div>
                   <div class="grid gap-2 rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
                     <label class="inline-flex items-center justify-between gap-3">
@@ -679,26 +679,26 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                   <div>
-                    <div class="docmind-section-label">{{ t("page.settings.weight.title") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.settings.weight.title") }}</div>
+                    <div class="seekmind-section-label">{{ t("page.settings.weight.title") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.weight.title") }}</div>
                   </div>
                   <div class="space-y-4 rounded-lg border border-default bg-panel px-4 py-3">
                     <label class="block">
-                      <div class="mb-2 flex items-center justify-between docmind-item-meta">
+                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
                         <span>{{ t("page.settings.weight.titleWeight") }}</span>
                         <span>{{ titleWeight.toFixed(2) }}</span>
                       </div>
                       <input v-model.number="titleWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                     </label>
                     <label class="block">
-                      <div class="mb-2 flex items-center justify-between docmind-item-meta">
+                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
                         <span>{{ t("page.settings.weight.filenameWeight") }}</span>
                         <span>{{ filenameWeight.toFixed(2) }}</span>
                       </div>
                       <input v-model.number="filenameWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
                     </label>
                     <label class="block">
-                      <div class="mb-2 flex items-center justify-between docmind-item-meta">
+                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
                         <span>{{ t("page.settings.weight.preferenceWeight") }}</span>
                         <span>{{ preferenceWeight.toFixed(2) }}</span>
                       </div>
@@ -711,18 +711,18 @@ onBeforeUnmount(() => {
           </div>
 
           <div id="settings-qa" class="scroll-mt-4">
-            <DocMindQaPanel />
+            <SeekMindQaPanel />
           </div>
 
           <div id="settings-model" class="scroll-mt-4">
-            <DocMindSemanticPanel />
+            <SeekMindSemanticPanel />
           </div>
 
           <div class="grid gap-4 xl:grid-cols-2">
             <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon docmind-primary-icon">
+                  <span class="settings-section-icon seekmind-primary-icon">
                     <Languages :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -730,11 +730,11 @@ onBeforeUnmount(() => {
                     <div class="settings-section-desc">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
                   </div>
                 </div>
-                <DocMindBadge tone="default">{{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}</DocMindBadge>
+                <SeekMindBadge tone="default">{{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}</SeekMindBadge>
               </div>
               <div class="space-y-5 p-4">
                 <div>
-                  <div class="mb-2 docmind-section-label">{{ t("page.settings.language") }}</div>
+                  <div class="mb-2 seekmind-section-label">{{ t("page.settings.language") }}</div>
                   <div class="grid gap-2">
                     <button
                       class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
@@ -758,7 +758,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div>
-                  <div class="mb-2 docmind-section-label">{{ t("page.settings.theme") }}</div>
+                  <div class="mb-2 seekmind-section-label">{{ t("page.settings.theme") }}</div>
                   <div class="grid gap-2">
                     <button
                       class="inline-flex items-center justify-center gap-1.5 rounded-md border px-4 py-2.5 text-sm font-medium transition"
@@ -795,10 +795,10 @@ onBeforeUnmount(() => {
             <section class="rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div>
-                  <div class="docmind-section-label">{{ t("page.settings.section.instructions") }}</div>
-                  <div class="docmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
+                  <div class="seekmind-section-label">{{ t("page.settings.section.instructions") }}</div>
+                  <div class="seekmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
                 </div>
-                <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
+                <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
               </div>
               <div class="space-y-2 p-4 text-sm text-secondary">
                 <p>• {{ t("page.settings.instructions.dirs") }}</p>
@@ -811,7 +811,7 @@ onBeforeUnmount(() => {
           <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
             <div class="settings-section-head">
               <div class="settings-section-head-left">
-                <span class="settings-section-icon docmind-primary-icon">
+                <span class="settings-section-icon seekmind-primary-icon">
                   <Globe :size="18" />
                 </span>
                 <div class="min-w-0">
@@ -819,9 +819,9 @@ onBeforeUnmount(() => {
                   <div class="settings-section-desc">{{ t("page.settings.network.desc") }}</div>
                 </div>
               </div>
-              <DocMindBadge :tone="networkProxyEnabled ? 'success' : 'default'">
+              <SeekMindBadge :tone="networkProxyEnabled ? 'success' : 'default'">
                 {{ networkProxyEnabled ? t("page.settings.network.enabled") : t("page.settings.network.disabled") }}
-              </DocMindBadge>
+              </SeekMindBadge>
             </div>
 
             <div class="space-y-5 p-4">
@@ -840,8 +840,8 @@ onBeforeUnmount(() => {
 
               <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                 <div>
-                  <div class="docmind-section-label">{{ t("page.settings.network.enableLabel") }}</div>
-                  <div class="docmind-item-meta mt-1">{{ t("page.settings.network.enableHint") }}</div>
+                  <div class="seekmind-section-label">{{ t("page.settings.network.enableLabel") }}</div>
+                  <div class="seekmind-item-meta mt-1">{{ t("page.settings.network.enableHint") }}</div>
                 </div>
                 <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
                   <input
@@ -855,8 +855,8 @@ onBeforeUnmount(() => {
 
               <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
                 <div>
-                  <div class="docmind-section-label">{{ t("page.settings.network.proxyUrl") }}</div>
-                  <div class="docmind-item-meta mt-1">{{ t("page.settings.network.proxyUrlHint") }}</div>
+                  <div class="seekmind-section-label">{{ t("page.settings.network.proxyUrl") }}</div>
+                  <div class="seekmind-item-meta mt-1">{{ t("page.settings.network.proxyUrlHint") }}</div>
                 </div>
                 <input
                   v-model="networkProxyUrl"
@@ -867,12 +867,12 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="rounded-lg border border-default bg-panel px-4 py-3 text-xs leading-5 text-secondary">
-                <div class="docmind-section-label text-primary">{{ t("page.settings.network.exampleTitle") }}</div>
+                <div class="seekmind-section-label text-primary">{{ t("page.settings.network.exampleTitle") }}</div>
                 <div class="mt-1">{{ t("page.settings.network.exampleDesc") }}</div>
               </div>
 
               <div class="flex items-center justify-end gap-2">
-                <DocMindBadge v-if="hasNetworkProxyChanges" tone="warning">{{ t("page.settings.status.changed") }}</DocMindBadge>
+                <SeekMindBadge v-if="hasNetworkProxyChanges" tone="warning">{{ t("page.settings.status.changed") }}</SeekMindBadge>
                 <button
                   class="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
                   :disabled="networkLoading || networkSaving"
@@ -888,7 +888,7 @@ onBeforeUnmount(() => {
           <section class="rounded-lg border border-default bg-surface">
             <div class="settings-section-head">
               <div class="settings-section-head-left">
-                <span class="settings-section-icon docmind-primary-icon">
+                <span class="settings-section-icon seekmind-primary-icon">
                   <Shield :size="18" />
                 </span>
                 <div class="min-w-0">
@@ -896,7 +896,7 @@ onBeforeUnmount(() => {
                   <div class="settings-section-desc">{{ t("page.settings.privacy.desc") }}</div>
                 </div>
               </div>
-              <DocMindBadge tone="success">{{ t("status.savedLocally") }}</DocMindBadge>
+              <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
             </div>
             <div class="space-y-2 p-4 text-sm text-secondary">
               <p>{{ t("page.settings.privacy.localFirst") }}</p>
@@ -909,16 +909,16 @@ onBeforeUnmount(() => {
           <section id="settings-danger" class="scroll-mt-4 rounded-lg border border-danger-soft bg-danger-soft px-4 py-3">
             <div class="settings-section-head settings-section-head-danger">
               <div class="min-w-0">
-                <div class="flex items-center gap-2 docmind-section-label text-danger">
+                <div class="flex items-center gap-2 seekmind-section-label text-danger">
                   <Trash2 :size="15" />
                   {{ t("page.settings.section.danger") }}
                 </div>
-                <div class="docmind-item-meta mt-1 text-secondary">{{ t("page.settings.danger.desc") }}</div>
-                <div class="docmind-item-meta mt-2 leading-5 text-secondary">
+                <div class="seekmind-item-meta mt-1 text-secondary">{{ t("page.settings.danger.desc") }}</div>
+                <div class="seekmind-item-meta mt-2 leading-5 text-secondary">
                   {{ t("page.settings.danger.detail") }}
                 </div>
               </div>
-              <DocMindBadge tone="warning">{{ t("page.settings.btn.clear") }}</DocMindBadge>
+              <SeekMindBadge tone="warning">{{ t("page.settings.btn.clear") }}</SeekMindBadge>
             </div>
             <div class="mt-4 flex justify-end">
               <button
@@ -935,7 +935,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <DocMindConfirmDialog
+    <SeekMindConfirmDialog
       :visible="showClearConfirm"
       :title="t('page.settings.btn.clear')"
       :message="t('page.settings.confirmClear')"
@@ -1173,8 +1173,8 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.settings-prototype-sidebar .docmind-section-label,
-.settings-prototype-main .docmind-section-label {
+.settings-prototype-sidebar .seekmind-section-label,
+.settings-prototype-main .seekmind-section-label {
   color: #cbd8ea;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1182,8 +1182,8 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
-.settings-prototype-sidebar .docmind-item-meta,
-.settings-prototype-main .docmind-item-meta {
+.settings-prototype-sidebar .seekmind-item-meta,
+.settings-prototype-main .seekmind-item-meta {
   color: #9aa9bd;
 }
 
@@ -1319,13 +1319,13 @@ html:not(.dark) .settings-prototype-sidebar button[class*="border-accent"] .text
   color: rgba(232, 241, 255, 0.88) !important;
 }
 
-html:not(.dark) .settings-prototype-sidebar .docmind-section-label,
-html:not(.dark) .settings-prototype-main .docmind-section-label {
+html:not(.dark) .settings-prototype-sidebar .seekmind-section-label,
+html:not(.dark) .settings-prototype-main .seekmind-section-label {
   color: #475569;
 }
 
-html:not(.dark) .settings-prototype-sidebar .docmind-item-meta,
-html:not(.dark) .settings-prototype-main .docmind-item-meta {
+html:not(.dark) .settings-prototype-sidebar .seekmind-item-meta,
+html:not(.dark) .settings-prototype-main .seekmind-item-meta {
   color: #64748b;
 }
 

@@ -30,14 +30,14 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-vue-next";
-import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPicker.vue";
-import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
-import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
-import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
-import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
+import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindCollectionPicker from "../components/SeekMind/SeekMindCollectionPicker.vue";
+import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRenderer.vue";
+import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreviewBlockRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
-import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   PreviewBlockView,
@@ -51,7 +51,7 @@ import type {
   QaSessionView,
   QaSettingsView,
   QaSourceView,
-} from "../types/docmind";
+} from "../types/SeekMind";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -109,7 +109,7 @@ const emptyMarkdownBlock: PreviewBlockView = {
   html: "",
 };
 
-const qaUiStateStorageKey = "docmind.qa.uiState";
+const qaUiStateStorageKey = "seekmind.qa.uiState";
 
 interface QaUiState {
   sessionId: string;
@@ -365,20 +365,20 @@ const loadSelectedSourcePreviewBlocks = async (source: QaSourceView | null) => {
 
   loadingSelectedSourcePreview.value = true;
   try {
-    const chunks = await docmindApi.listDocumentChunks(source.path);
+    const chunks = await seekMindApi.listDocumentChunks(source.path);
     if (requestId !== selectedSourcePreviewRequestId) {
       return;
     }
 
     const matchedChunk = resolveSourceChunk(chunks, source);
     selectedSourceHydratedPreviewBlocks.value = matchedChunk?.preview_blocks ?? [];
-    console.debug("[DocMind] qa source preview blocks loaded", {
+    console.debug("[SeekMind] qa source preview blocks loaded", {
       sourceId: source.source_id,
       chunkId: source.chunk_id,
       blockCount: selectedSourceHydratedPreviewBlocks.value.length,
     });
   } catch (error) {
-    console.warn("[DocMind] qa source preview blocks load failed", {
+    console.warn("[SeekMind] qa source preview blocks load failed", {
       sourceId: source.source_id,
       chunkId: source.chunk_id,
       path: source.path,
@@ -516,15 +516,15 @@ const routeSessionId = computed(() => (typeof route.query.session === "string" ?
 
 const loadQaSettings = async () => {
   try {
-    qaSettings.value = await docmindApi.getQaSettings();
+    qaSettings.value = await seekMindApi.getQaSettings();
   } catch (error) {
-    console.error("[DocMind] getQaSettings failed", error);
+    console.error("[SeekMind] getQaSettings failed", error);
   }
 };
 
 const loadQaModelProfiles = async () => {
   try {
-    qaModelProfiles.value = await docmindApi.listQaModelProfiles();
+    qaModelProfiles.value = await seekMindApi.listQaModelProfiles();
     if (
       qaProfileChoice.value !== "__current__" &&
       !qaModelProfiles.value.some((item) => item.id === qaProfileChoice.value)
@@ -532,7 +532,7 @@ const loadQaModelProfiles = async () => {
       qaProfileChoice.value = "__current__";
     }
   } catch (error) {
-    console.error("[DocMind] listQaModelProfiles failed", error);
+    console.error("[SeekMind] listQaModelProfiles failed", error);
   }
 };
 
@@ -552,14 +552,14 @@ const setCurrentSession = async (
     return;
   }
 
-  const messages = await docmindApi.listQaMessages(sessionId, 100);
+  const messages = await seekMindApi.listQaMessages(sessionId, 100);
   qaMessages.value = messages;
   qaAnswer.value = messages.find((item) => item.id === uiState.answerId) ?? messages[messages.length - 1] ?? null;
   qaSelectedSourceId.value =
     qaAnswer.value?.sources.find((item) => item.source_id === uiState.selectedSourceId)?.source_id ?? "";
   qaSessionTitle.value = qaSessions.value.find((item) => item.id === sessionId)?.title ?? qaSessionTitle.value;
   expandedMessages.value = uiState.expandedMessages ?? {};
-  await docmindApi.recordRecentView("qa_session", sessionId, qaSessionTitle.value || t("page.appQa.defaultSessionTitle"), "");
+  await seekMindApi.recordRecentView("qa_session", sessionId, qaSessionTitle.value || t("page.appQa.defaultSessionTitle"), "");
   chatShouldFollowLatest.value = true;
   void scrollChatToBottom(true);
 };
@@ -576,7 +576,7 @@ const syncRouteSession = async (sessionId: string) => {
 };
 
 const refreshSessions = async (preferLatest = false) => {
-  const sessions = await docmindApi.listQaSessions(50);
+  const sessions = await seekMindApi.listQaSessions(50);
   qaSessions.value = sessions;
 
   if (qaSessionId.value) {
@@ -599,7 +599,7 @@ const deleteSession = async (sessionId: string) => {
   }
 
   const deletingCurrent = qaSessionId.value === sessionId;
-  await docmindApi.removeQaSession(sessionId);
+  await seekMindApi.removeQaSession(sessionId);
   if (deletingCurrent) {
     resetCurrentSessionState();
     await syncRouteSession("");
@@ -672,7 +672,7 @@ const loadInitialData = async () => {
       await syncRouteSession(qaSessions.value[0].id);
     }
   } catch (error) {
-    console.error("[DocMind] loadInitialData failed", error);
+    console.error("[SeekMind] loadInitialData failed", error);
   } finally {
     loading.value = false;
   }
@@ -683,12 +683,12 @@ const ensureSession = async (title: string) => {
     return qaSessionId.value;
   }
 
-  const session = await docmindApi.createQaSession(title.trim());
+  const session = await seekMindApi.createQaSession(title.trim());
   qaSessions.value = [session, ...qaSessions.value.filter((item) => item.id !== session.id)];
   qaSessionId.value = session.id;
   qaSessionTitle.value = session.title;
   await syncRouteSession(session.id);
-  await docmindApi.recordRecentView("qa_session", session.id, session.title, "");
+  await seekMindApi.recordRecentView("qa_session", session.id, session.title, "");
   return session.id;
 };
 
@@ -697,7 +697,7 @@ const installQaProgressListener = async () => {
     return;
   }
 
-  unlistenQaProgress = await listen<QaAnswerProgressView>("docmind:qa:answer-progress", (event) => {
+  unlistenQaProgress = await listen<QaAnswerProgressView>("seekmind:qa:answer-progress", (event) => {
     const payload = event.payload;
     if (payload.job_id !== qaActiveJobId.value) {
       return;
@@ -806,7 +806,7 @@ const saveRenamedSession = async (session: QaSessionView) => {
   }
 
   try {
-    await docmindApi.updateQaSessionTitle(session.id, nextTitle);
+    await seekMindApi.updateQaSessionTitle(session.id, nextTitle);
     qaSessions.value = qaSessions.value.map((item) =>
       item.id === session.id ? { ...item, title: nextTitle } : item,
     );
@@ -814,7 +814,7 @@ const saveRenamedSession = async (session: QaSessionView) => {
       qaSessionTitle.value = nextTitle;
     }
   } catch (error) {
-    qaErrorMessage.value = formatDocmindError(error, t("page.appQa.renameFailed"));
+    qaErrorMessage.value = formatSeekMindError(error, t("page.appQa.renameFailed"));
   }
 };
 
@@ -845,7 +845,7 @@ const runQa = async () => {
       .map((message) => message.question.trim())
       .filter(Boolean)
       .slice(-6);
-    const started: QaAskStartView = await docmindApi.askQuestion(
+    const started: QaAskStartView = await seekMindApi.askQuestion(
       question,
       [],
       6,
@@ -884,7 +884,7 @@ const runQa = async () => {
 
     qaInfoMessage.value = t("page.appQa.searching");
   } catch (error) {
-    qaErrorMessage.value = formatDocmindError(error, t("page.appQa.askFailed"));
+    qaErrorMessage.value = formatSeekMindError(error, t("page.appQa.askFailed"));
     qaLoading.value = false;
     qaActiveJobId.value = "";
   } finally {
@@ -904,7 +904,7 @@ const stopQa = async () => {
   qaErrorMessage.value = "";
 
   try {
-    await docmindApi.cancelQaQuestion(jobId);
+    await seekMindApi.cancelQaQuestion(jobId);
     if (qaAnswer.value && qaAnswer.value.id === jobId) {
       qaAnswer.value = {
         ...qaAnswer.value,
@@ -940,12 +940,12 @@ const selectSource = (sourceId: string) => {
 
 const openSelectedQaFile = async () => {
   if (!selectedSource.value) return;
-  await docmindApi.openFile(selectedSource.value.path);
+  await seekMindApi.openFile(selectedSource.value.path);
 };
 
 const quickLookSelectedQaFile = async () => {
   if (!selectedSource.value) return;
-  await docmindApi.quickLookFile(selectedSource.value.path);
+  await seekMindApi.quickLookFile(selectedSource.value.path);
 };
 
 const copySelectedQaPath = async () => {
@@ -961,9 +961,9 @@ const copySelectedQaCitation = async () => {
 const loadCollections = async () => {
   collectionPickerLoading.value = true;
   try {
-    collections.value = await docmindApi.listCollections();
+    collections.value = await seekMindApi.listCollections();
   } catch (error) {
-    console.error("[DocMind] listCollections failed", error);
+    console.error("[SeekMind] listCollections failed", error);
   } finally {
     collectionPickerLoading.value = false;
   }
@@ -1012,14 +1012,14 @@ const addSelectedSourceToCollection = async (collectionId: string) => {
     }),
   };
 
-  await docmindApi.addCollectionItem(input);
+  await seekMindApi.addCollectionItem(input);
   qaInfoMessage.value = t("page.collections.itemAddedToCollection", { name: collection?.name ?? t("common.none") });
   collectionPickerVisible.value = false;
   await loadCollections();
 };
 
 const createCollectionAndAddSource = async (name: string) => {
-  const created = await docmindApi.createCollection(name, "");
+  const created = await seekMindApi.createCollection(name, "");
   collections.value = [created, ...collections.value.filter((item) => item.id !== created.id)];
   await addSelectedSourceToCollection(created.id);
 };
@@ -1069,7 +1069,7 @@ const getSessionMarkdownPayload = async (session: QaSessionView | null = current
   const title = session?.title || qaSessionTitle.value || t("page.appQa.defaultSessionTitle");
   const messages =
     session && session.id !== qaSessionId.value
-      ? await docmindApi.listQaMessages(session.id, 50)
+      ? await seekMindApi.listQaMessages(session.id, 50)
       : qaMessages.value;
 
   return {
@@ -1098,10 +1098,10 @@ const exportSessionMarkdown = async (session: QaSessionView | null = currentSess
       return;
     }
 
-    const savedPath = await docmindApi.exportQaSessionMarkdown(targetPath, markdown);
+    const savedPath = await seekMindApi.exportQaSessionMarkdown(targetPath, markdown);
     qaInfoMessage.value = t("page.appQa.exportedMarkdown", { path: savedPath });
   } catch (error) {
-    qaErrorMessage.value = formatDocmindError(error, t("page.appQa.exportFailed"));
+    qaErrorMessage.value = formatSeekMindError(error, t("page.appQa.exportFailed"));
   }
 };
 
@@ -1182,7 +1182,7 @@ watch(routeSessionId, async (next, previous) => {
         <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-default bg-sidebar">
           <div class="border-b border-default px-4 py-3">
             <div class="flex items-center justify-between gap-2">
-              <div class="docmind-section-label">{{ t("page.appQa.sessions") }}</div>
+              <div class="seekmind-section-label">{{ t("page.appQa.sessions") }}</div>
               <div class="flex items-center gap-1.5">
                 <button
                   class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent text-white shadow-sm hover:bg-accent/90"
@@ -1263,7 +1263,7 @@ watch(routeSessionId, async (next, previous) => {
                     />
                     <div v-else class="truncate text-sm font-medium text-primary">{{ session.title }}</div>
                     <div class="mt-1 flex items-center gap-2 text-[11px] text-muted">
-                      <DocMindBadge tone="default">{{ t("page.appQa.messageCount", { count: session.message_count }) }}</DocMindBadge>
+                      <SeekMindBadge tone="default">{{ t("page.appQa.messageCount", { count: session.message_count }) }}</SeekMindBadge>
                       <span class="truncate">{{ session.updated_at }}</span>
                     </div>
                   </div>
@@ -1283,10 +1283,10 @@ watch(routeSessionId, async (next, previous) => {
               {{ currentSession ? currentSession.title : t("page.appQa.currentSessionEmpty") }}
             </div>
             <div class="flex items-center gap-2">
-              <DocMindBadge tone="default">{{ qaMessages.length }}</DocMindBadge>
-              <DocMindBadge :tone="isQaConfigured(qaSettings) ? 'success' : 'default'">
+              <SeekMindBadge tone="default">{{ qaMessages.length }}</SeekMindBadge>
+              <SeekMindBadge :tone="isQaConfigured(qaSettings) ? 'success' : 'default'">
                 {{ isQaConfigured(qaSettings) ? t("page.appQa.enabled") : t("page.appQa.disabled") }}
-              </DocMindBadge>
+              </SeekMindBadge>
             </div>
           </div>
 
@@ -1326,10 +1326,10 @@ watch(routeSessionId, async (next, previous) => {
                       ]"
                     >
                       <template v-if="isMessagePending(message)">
-                        <span class="docmind-typing-indicator" aria-hidden="true">
-                          <span class="docmind-typing-dot" />
-                          <span class="docmind-typing-dot" />
-                          <span class="docmind-typing-dot" />
+                        <span class="seekmind-typing-indicator" aria-hidden="true">
+                          <span class="seekmind-typing-dot" />
+                          <span class="seekmind-typing-dot" />
+                          <span class="seekmind-typing-dot" />
                         </span>
                       </template>
                       <template v-else>
@@ -1339,27 +1339,27 @@ watch(routeSessionId, async (next, previous) => {
                           :title="t('page.appQa.generating')"
                           aria-label="answer streaming"
                         >
-                          <span class="docmind-typing-indicator" aria-hidden="true">
-                            <span class="docmind-typing-dot" />
-                            <span class="docmind-typing-dot" />
-                            <span class="docmind-typing-dot" />
+                          <span class="seekmind-typing-indicator" aria-hidden="true">
+                            <span class="seekmind-typing-dot" />
+                            <span class="seekmind-typing-dot" />
+                            <span class="seekmind-typing-dot" />
                           </span>
                         </div>
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2">
-                          <DocMindBadge
+                          <SeekMindBadge
                             v-if="['cancelled', 'failed', 'insufficient_evidence', 'model_not_configured'].includes(message.state)"
                             tone="default"
                           >
                             {{ t(`page.appSearch.qa.state.${message.state}`) }}
-                          </DocMindBadge>
-                          <DocMindBadge v-if="message.state === 'cancelled'" tone="danger">
+                          </SeekMindBadge>
+                          <SeekMindBadge v-if="message.state === 'cancelled'" tone="danger">
                             {{ t("page.appSearch.qa.cancelledByUser") }}
-                          </DocMindBadge>
+                          </SeekMindBadge>
                         </div>
                       </div>
                       <div v-if="shouldShowMessageBody(message)" class="mt-3">
-                        <DocMindMarkdownRenderer
+                        <SeekMindMarkdownRenderer
                           v-if="hasMessageAnswer(message)"
                           :block="emptyMarkdownBlock"
                           :markdown="messageBodyMarkdown(message)"
@@ -1382,9 +1382,9 @@ watch(routeSessionId, async (next, previous) => {
                         <div class="mt-1 text-xs leading-5 text-danger/90">{{ messageFailureHint(message) }}</div>
                       </div>
                       <div v-if="shouldShowMessageMeta(message)" class="mt-3 flex flex-wrap items-center gap-2 text-xs text-dim">
-                        <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
-                        <DocMindBadge tone="default" :title="message.created_at">{{ formatLocalDateTime(message.created_at) }}</DocMindBadge>
-                        <DocMindBadge tone="default">{{ t("page.appQa.sourceCount", { count: message.sources.length }) }}</DocMindBadge>
+                        <SeekMindBadge tone="default">{{ message.model || t("common.none") }}</SeekMindBadge>
+                        <SeekMindBadge tone="default" :title="message.created_at">{{ formatLocalDateTime(message.created_at) }}</SeekMindBadge>
+                        <SeekMindBadge tone="default">{{ t("page.appQa.sourceCount", { count: message.sources.length }) }}</SeekMindBadge>
                         <button
                           class="inline-flex items-center gap-1 rounded-full border border-default bg-badge px-2 py-0.5 text-[12px] text-secondary hover:bg-surface-hover"
                           type="button"
@@ -1401,7 +1401,7 @@ watch(routeSessionId, async (next, previous) => {
                         v-if="expandedMessages[message.id]"
                         class="mt-4 rounded-xl border border-default bg-panel/40 p-3"
                       >
-                        <div class="docmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
+                        <div class="seekmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
                         <div class="mt-3 overflow-x-auto rounded-lg border border-default bg-surface">
                           <table class="w-full min-w-[720px] table-fixed text-left text-xs">
                             <thead class="border-b border-default bg-panel/70 text-[11px] uppercase tracking-wide text-muted">
@@ -1423,7 +1423,7 @@ watch(routeSessionId, async (next, previous) => {
                                 @contextmenu.prevent="openSourceContextMenu(source, $event)"
                               >
                                 <td class="px-3 py-2 align-top">
-                                  <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
+                                  <SeekMindBadge tone="default">{{ source.source_id }}</SeekMindBadge>
                                 </td>
                                 <td class="truncate px-3 py-2 align-top font-medium text-primary">
                                   {{ source.file_name }}
@@ -1520,12 +1520,12 @@ watch(routeSessionId, async (next, previous) => {
           <div class="border-b border-default px-4 py-3">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <div class="docmind-section-label">{{ t("page.appQa.sourceDetails") }}</div>
+                <div class="seekmind-section-label">{{ t("page.appQa.sourceDetails") }}</div>
                 <div class="mt-1 truncate text-sm font-medium text-primary">{{ selectedSource.file_name }}</div>
                 <div class="mt-1 break-all text-xs text-muted">{{ selectedSource.path }}</div>
               </div>
               <div class="flex items-center gap-2">
-                <DocMindBadge tone="default">{{ selectedSource.source_id }}</DocMindBadge>
+                <SeekMindBadge tone="default">{{ selectedSource.source_id }}</SeekMindBadge>
                 <button
                   class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
                   type="button"
@@ -1541,12 +1541,12 @@ watch(routeSessionId, async (next, previous) => {
           <div class="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
             <div class="rounded-lg border border-default bg-surface px-3 py-2.5">
               <div class="flex items-center justify-between gap-3">
-                <div class="docmind-section-label">{{ t("page.appQa.sourceMeta") }}</div>
+                <div class="seekmind-section-label">{{ t("page.appQa.sourceMeta") }}</div>
                 <div class="flex shrink-0 items-center gap-1.5">
-                  <DocMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</DocMindBadge>
-                  <DocMindBadge tone="default">
+                  <SeekMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</SeekMindBadge>
+                  <SeekMindBadge tone="default">
                     {{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}
-                  </DocMindBadge>
+                  </SeekMindBadge>
                 </div>
               </div>
               <div class="mt-2 truncate rounded-md bg-panel/70 px-2.5 py-1.5 text-xs leading-5 text-secondary" :title="selectedSourceCitation">
@@ -1555,12 +1555,12 @@ watch(routeSessionId, async (next, previous) => {
             </div>
 
             <div class="rounded-lg border border-default bg-surface p-4">
-              <div class="docmind-section-label">{{ t("page.appQa.referenceSnippet") }}</div>
+              <div class="seekmind-section-label">{{ t("page.appQa.referenceSnippet") }}</div>
               <div v-if="loadingSelectedSourcePreview && selectedSourcePreviewBlocks.length === 0" class="mt-3 rounded-md bg-panel/70 px-3 py-3 text-sm text-muted">
                 {{ t("common.loading") }}
               </div>
               <div v-else-if="selectedSourcePreviewBlocks.length > 0" class="mt-3 space-y-2">
-                <DocMindPreviewBlockRenderer
+                <SeekMindPreviewBlockRenderer
                   v-for="block in selectedSourcePreviewBlocks"
                   :key="block.block_index"
                   :block="block"
@@ -1569,7 +1569,7 @@ watch(routeSessionId, async (next, previous) => {
               <div v-else class="mt-3 whitespace-pre-wrap rounded-md border border-default bg-panel/70 px-3 py-3 text-sm leading-7 text-secondary">
                 {{ selectedSource.snippet }}
               </div>
-              <p class="docmind-item-meta mt-3">{{ selectedSource.rank_reason }}</p>
+              <p class="seekmind-item-meta mt-3">{{ selectedSource.rank_reason }}</p>
             </div>
 
           </div>
@@ -1579,21 +1579,21 @@ watch(routeSessionId, async (next, previous) => {
         </aside>
       </template>
     </SplitPane>
-    <DocMindContextMenu
+    <SeekMindContextMenu
       v-if="sessionMenuVisible"
       :items="sessionContextMenuItems"
       :x="sessionMenuPosition.x"
       :y="sessionMenuPosition.y"
       @close="sessionMenuVisible = false"
     />
-    <DocMindContextMenu
+    <SeekMindContextMenu
       v-if="sourceMenuVisible"
       :items="sourceContextMenuItems"
       :x="sourceMenuPosition.x"
       :y="sourceMenuPosition.y"
       @close="sourceMenuVisible = false"
     />
-    <DocMindCollectionPicker
+    <SeekMindCollectionPicker
       :visible="collectionPickerVisible"
       :collections="collections"
       :loading="collectionPickerLoading"
@@ -1608,7 +1608,7 @@ watch(routeSessionId, async (next, previous) => {
 
 <style scoped>
 /* 修复：流式等待态使用绝对定位的三点提示，不占文档流，避免和最终回答的气泡布局不一致。 */
-@keyframes docmindTypingPulse {
+@keyframes seekmindTypingPulse {
   0%,
   80%,
   100% {
@@ -1622,26 +1622,26 @@ watch(routeSessionId, async (next, previous) => {
   }
 }
 
-.docmind-typing-indicator {
+.seekmind-typing-indicator {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   min-height: 10px;
 }
 
-.docmind-typing-dot {
+.seekmind-typing-dot {
   width: 4px;
   height: 4px;
   border-radius: 9999px;
   background: currentColor;
-  animation: docmindTypingPulse 1.2s infinite ease-in-out;
+  animation: seekmindTypingPulse 1.2s infinite ease-in-out;
 }
 
-.docmind-typing-dot:nth-child(2) {
+.seekmind-typing-dot:nth-child(2) {
   animation-delay: 0.15s;
 }
 
-.docmind-typing-dot:nth-child(3) {
+.seekmind-typing-dot:nth-child(3) {
   animation-delay: 0.3s;
 }
 </style>

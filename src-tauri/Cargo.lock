@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "DocMind"
+name = "SeekMind"
 version = "0.1.0"
 dependencies = [
  "block2",

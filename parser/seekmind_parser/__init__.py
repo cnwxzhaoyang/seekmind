@@ -1,0 +1,2 @@
+"""SeekMind parser sidecar package."""
+

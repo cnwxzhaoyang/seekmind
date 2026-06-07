@@ -13,17 +13,17 @@ import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, BookMarked, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight, X } from "lucide-vue-next";
-import DocMindBadge from "../components/docmind/DocMindBadge.vue";
-import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPicker.vue";
-import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
-import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
-import DocMindHighlightedText from "../components/docmind/DocMindHighlightedText.vue";
-import DocMindMarkdownRenderer from "../components/docmind/DocMindMarkdownRenderer.vue";
-import DocMindPreviewBlockRenderer from "../components/docmind/DocMindPreviewBlockRenderer.vue";
-import DocMindSearchResultGroupCard from "../components/docmind/DocMindSearchResultGroupCard.vue";
+import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindCollectionPicker from "../components/SeekMind/SeekMindCollectionPicker.vue";
+import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindHighlightedText from "../components/SeekMind/SeekMindHighlightedText.vue";
+import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRenderer.vue";
+import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreviewBlockRenderer.vue";
+import SeekMindSearchResultGroupCard from "../components/SeekMind/SeekMindSearchResultGroupCard.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { useQuickAccessData } from "../composables/useQuickAccessData";
-import { docmindApi, formatDocmindError } from "../services/docmindApi";
+import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
 const { t } = useI18n();
@@ -39,7 +39,7 @@ import type {
   SearchDebugReportEventView,
   SearchDebugView,
   SearchResultView,
-} from "../types/docmind";
+} from "../types/SeekMind";
 
 const route = useRoute();
 const router = useRouter();
@@ -340,7 +340,7 @@ const copyText = async (text: string, successMessage: string) => {
     }
     setActionMessage(successMessage);
   } catch (error) {
-    console.error("[DocMind] copyText failed", error);
+    console.error("[SeekMind] copyText failed", error);
     setActionError(t("page.appSearch.detail.copyFailed"));
   }
 };
@@ -352,7 +352,7 @@ const handleGlobalShortcut = (event: KeyboardEvent) => {
   }
 };
 
-const isSearchClickDebugEnabled = () => globalThis.localStorage?.getItem("DOCMIND_DEBUG_SEARCH_CLICK") === "1";
+const isSearchClickDebugEnabled = () => globalThis.localStorage?.getItem("SEEKMIND_DEBUG_SEARCH_CLICK") === "1";
 
 const selectResult = (id: string) => {
   if (isSearchClickDebugEnabled()) {
@@ -387,20 +387,20 @@ const setResultFilterMode = (mode: "all" | "favorites") => {
 };
 
 const loadParserRuntime = async () => {
-  parserRuntime.value = await docmindApi.getParserRuntime();
+  parserRuntime.value = await seekMindApi.getParserRuntime();
 };
 
 const loadQaSettings = async () => {
   try {
-    qaSettings.value = await docmindApi.getQaSettings();
+    qaSettings.value = await seekMindApi.getQaSettings();
   } catch (error) {
-    console.error("[DocMind] getQaSettings failed", error);
+    console.error("[SeekMind] getQaSettings failed", error);
   }
 };
 
 const loadLatestQaSession = async () => {
   try {
-    const sessions = await docmindApi.listQaSessions(1);
+    const sessions = await seekMindApi.listQaSessions(1);
     const latest = sessions[0];
     if (!latest) {
       return;
@@ -408,13 +408,13 @@ const loadLatestQaSession = async () => {
 
     qaSessionId.value = latest.id;
     qaSessionTitle.value = latest.title;
-    const messages = await docmindApi.listQaMessages(latest.id, 50);
+    const messages = await seekMindApi.listQaMessages(latest.id, 50);
     qaMessages.value = messages;
     qaAnswer.value = messages[messages.length - 1] ?? null;
     qaSelectedSourceClosed.value = false;
     qaSelectedSourceId.value = qaAnswer.value?.sources[0]?.source_id ?? "";
   } catch (error) {
-    console.error("[DocMind] loadLatestQaSession failed", error);
+    console.error("[SeekMind] loadLatestQaSession failed", error);
   }
 };
 
@@ -423,7 +423,7 @@ const ensureQaSession = async (title: string) => {
     return qaSessionId.value;
   }
 
-  const session = await docmindApi.createQaSession(title);
+  const session = await seekMindApi.createQaSession(title);
   qaSessionId.value = session.id;
   qaSessionTitle.value = session.title;
   return session.id;
@@ -435,7 +435,7 @@ const installQaProgressListener = async () => {
   }
 
   unlistenQaProgress = await listen<QaAnswerProgressView>(
-    "docmind:qa:answer-progress",
+    "seekmind:qa:answer-progress",
     (event) => {
       const payload = event.payload;
       if (payload.job_id !== qaActiveJobId.value) {
@@ -539,7 +539,7 @@ const runQa = async () => {
 
     const questionText = qaQuestion.value.trim();
     const sessionId = await ensureQaSession(questionText);
-    const started: QaAskStartView = await docmindApi.askQuestion(questionText, [], 6, sessionId);
+    const started: QaAskStartView = await seekMindApi.askQuestion(questionText, [], 6, sessionId);
     qaActiveJobId.value = started.job_id;
     qaAnswer.value = started.status;
     qaMessages.value.push(started.status);
@@ -561,7 +561,7 @@ const runQa = async () => {
     qaAnswer.value = null;
     qaSelectedSourceClosed.value = false;
     qaSelectedSourceId.value = "";
-    qaErrorMessage.value = formatDocmindError(error, t("page.appSearch.qa.askFailed"));
+    qaErrorMessage.value = formatSeekMindError(error, t("page.appSearch.qa.askFailed"));
     qaLoading.value = false;
     qaActiveJobId.value = "";
   } finally {
@@ -607,7 +607,7 @@ const stopQa = async () => {
   qaErrorMessage.value = "";
 
   try {
-    await docmindApi.cancelQaQuestion(jobId);
+    await seekMindApi.cancelQaQuestion(jobId);
     if (qaAnswer.value && qaAnswer.value.id === jobId) {
       qaAnswer.value = {
         ...qaAnswer.value,
@@ -641,7 +641,7 @@ const closeSelectedResult = () => {
 
 const openSelectedQaFile = async () => {
   if (!qaSelectedSource.value) return;
-  await docmindApi.openFile(qaSelectedSource.value.path);
+  await seekMindApi.openFile(qaSelectedSource.value.path);
   await loadQuickAccessData();
 };
 
@@ -649,7 +649,7 @@ const quickLookSelectedQaFile = async () => {
   if (!qaSelectedSource.value) return;
 
   try {
-    await docmindApi.quickLookFile(qaSelectedSource.value.path);
+    await seekMindApi.quickLookFile(qaSelectedSource.value.path);
     setActionMessage(t("page.appSearch.detail.quickLookOpened"));
   } catch (error) {
     setActionError(error instanceof Error ? error.message : t("page.appSearch.detail.quickLookFailed"));
@@ -704,7 +704,7 @@ const installSearchDebugReportListener = async () => {
   }
 
   unlistenSearchDebugReport = await listen<SearchDebugReportEventView>(
-    "docmind:search-debug-report",
+    "seekmind:search-debug-report",
     (event) => {
       const payload = event.payload;
       if (payload.request_id !== activeDebugRequestId.value) {
@@ -742,7 +742,7 @@ const requestSearchDebugReport = async () => {
   debugReportError.value = "";
 
   try {
-    await docmindApi.requestSearchDebugReport(requestId, query.value, 20);
+    await seekMindApi.requestSearchDebugReport(requestId, query.value, 20);
   } catch (error) {
     if (activeDebugRequestId.value !== requestId) {
       return;
@@ -807,7 +807,7 @@ const loadSelectedContext = async (current: SearchResultView | null | undefined)
   }
 
   try {
-    const chunks = await docmindApi.listDocumentChunks(current.path);
+    const chunks = await seekMindApi.listDocumentChunks(current.path);
     if (requestId !== selectedContextRequestId) {
       if (isSearchClickDebugEnabled()) {
         console.debug("[AppSearch] loadSelectedContext ignored stale response", {
@@ -849,7 +849,7 @@ const loadSelectedContext = async (current: SearchResultView | null | undefined)
     selectedChunkCount.value = null;
     selectedDocumentChunks.value = [];
     selectedChunkIndex.value = -1;
-    console.error("[DocMind] loadSelectedContext failed", error);
+    console.error("[SeekMind] loadSelectedContext failed", error);
   }
 };
 
@@ -874,7 +874,7 @@ const runSearch = async () => {
   errorMessage.value = "";
 
   try {
-    results.value = await docmindApi.searchDocuments(query.value, 20);
+    results.value = await seekMindApi.searchDocuments(query.value, 20);
     selectedResultClosed.value = false;
     selectedId.value = "";
     expandedGroups.value = {};
@@ -903,7 +903,7 @@ const runSearch = async () => {
 
 const openSelectedFile = async () => {
   if (!selected.value) return;
-  await docmindApi.openFile(selected.value.path);
+  await seekMindApi.openFile(selected.value.path);
   await loadQuickAccessData();
 };
 
@@ -911,7 +911,7 @@ const quickLookSelectedFile = async () => {
   if (!selected.value) return;
 
   try {
-    await docmindApi.quickLookFile(selected.value.path);
+    await seekMindApi.quickLookFile(selected.value.path);
     setActionMessage(t("page.appSearch.detail.quickLookOpened"));
   } catch (error) {
     setActionError(error instanceof Error ? error.message : t("page.appSearch.detail.quickLookFailed"));
@@ -939,7 +939,7 @@ const viewChunks = async () => {
 };
 
 const toggleFavoriteResult = async (item: SearchResultView) => {
-  await docmindApi.toggleResultFavorite(
+  await seekMindApi.toggleResultFavorite(
     item.path,
     item.heading,
     item.paragraph ?? null,
@@ -952,9 +952,9 @@ const toggleFavoriteResult = async (item: SearchResultView) => {
 const loadCollections = async () => {
   collectionPickerLoading.value = true;
   try {
-    collections.value = await docmindApi.listCollections();
+    collections.value = await seekMindApi.listCollections();
   } catch (error) {
-    console.error("[DocMind] listCollections failed", error);
+    console.error("[SeekMind] listCollections failed", error);
   } finally {
     collectionPickerLoading.value = false;
   }
@@ -1004,14 +1004,14 @@ const addSelectedResultToCollection = async (collectionId: string) => {
     }),
   };
 
-  await docmindApi.addCollectionItem(input);
+  await seekMindApi.addCollectionItem(input);
   actionMessage.value = t("page.collections.itemAddedToCollection", { name: collection?.name ?? t("common.none") });
   collectionPickerVisible.value = false;
   await loadCollections();
 };
 
 const createCollectionAndAddResult = async (name: string) => {
-  const created = await docmindApi.createCollection(name, "");
+  const created = await seekMindApi.createCollection(name, "");
   collections.value = [created, ...collections.value.filter((item) => item.id !== created.id)];
   await addSelectedResultToCollection(created.id);
 };
@@ -1242,8 +1242,8 @@ watch(showDebugPanel, async (visible) => {
             <div class="border-b border-default bg-surface px-4 py-3 space-y-3">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <div class="docmind-section-label">{{ qaMode ? t("page.appSearch.qa.title") : t("page.appSearch.title") }}</div>
-                  <div class="docmind-item-meta mt-1">
+                  <div class="seekmind-section-label">{{ qaMode ? t("page.appSearch.qa.title") : t("page.appSearch.title") }}</div>
+                  <div class="seekmind-item-meta mt-1">
                     {{ qaMode ? t("page.appSearch.qa.subtitle") : t("page.appSearch.subtitle") }}
                   </div>
                 </div>
@@ -1324,10 +1324,10 @@ watch(showDebugPanel, async (visible) => {
                   <div class="text-sm font-medium text-warning">
                     {{ officeNotice.title }}
                   </div>
-                  <div class="docmind-item-meta mt-1 leading-5 text-secondary">
+                  <div class="seekmind-item-meta mt-1 leading-5 text-secondary">
                     {{ officeNotice.desc }}
                   </div>
-                  <div class="docmind-item-meta mt-1 leading-5">
+                  <div class="seekmind-item-meta mt-1 leading-5">
                     {{ officeNotice.hint }}
                   </div>
                 </div>
@@ -1345,9 +1345,9 @@ watch(showDebugPanel, async (visible) => {
               >
                 <Filter :size="14" />
                 {{ t("page.appSearch.filter") }}
-                <DocMindBadge v-if="resultFilterMode !== 'all'" tone="success">
+                <SeekMindBadge v-if="resultFilterMode !== 'all'" tone="success">
                   {{ t(`page.appSearch.filterMode.${resultFilterMode}`) }}
-                </DocMindBadge>
+                </SeekMindBadge>
               </button>
             </div>
             <div v-if="!qaMode && showResultFilterPanel" class="border-b border-default bg-panel px-4 py-3">
@@ -1376,12 +1376,12 @@ watch(showDebugPanel, async (visible) => {
                 {{ qaAnswer ? t("page.appSearch.qa.resultCount", { count: qaAnswer.sources.length }) : t("page.appSearch.qa.waiting") }}
               </div>
               <div class="flex items-center gap-2 text-xs text-dim">
-                <DocMindBadge :tone="qaStateTone">
+                <SeekMindBadge :tone="qaStateTone">
                   {{ qaStateLabel }}
-                </DocMindBadge>
-                <DocMindBadge tone="default">
+                </SeekMindBadge>
+                <SeekMindBadge tone="default">
                   {{ isQaConfigured(qaSettings) ? t("page.appSearch.qa.enabled") : t("page.appSearch.qa.disabled") }}
-                </DocMindBadge>
+                </SeekMindBadge>
               </div>
             </div>
 
@@ -1389,8 +1389,8 @@ watch(showDebugPanel, async (visible) => {
               <div v-if="!qaMode && showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                  <div class="docmind-section-label">{{ t("page.appSearch.debug.title") }}</div>
-                    <div class="docmind-item-meta mt-1">{{ t("page.appSearch.debug.desc") }}</div>
+                  <div class="seekmind-section-label">{{ t("page.appSearch.debug.title") }}</div>
+                    <div class="seekmind-item-meta mt-1">{{ t("page.appSearch.debug.desc") }}</div>
                   </div>
                   <button class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover" @click="requestSearchDebugReport">
                     {{ t("common.refresh") }}
@@ -1405,19 +1405,19 @@ watch(showDebugPanel, async (visible) => {
                 <div v-else-if="debugReport" class="mt-3 space-y-3">
                   <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="docmind-section-label">{{ t("page.appSearch.debug.hits") }}</div>
-                      <div class="mt-1 docmind-metric-value text-primary">{{ debugReport.hit_count }}</div>
+                      <div class="seekmind-section-label">{{ t("page.appSearch.debug.hits") }}</div>
+                      <div class="mt-1 seekmind-metric-value text-primary">{{ debugReport.hit_count }}</div>
                     </div>
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="docmind-section-label">{{ t("page.appSearch.debug.keywordHits") }}</div>
-                      <div class="mt-1 docmind-metric-value text-primary">{{ debugReport.keyword_hit_count }}</div>
+                      <div class="seekmind-section-label">{{ t("page.appSearch.debug.keywordHits") }}</div>
+                      <div class="mt-1 seekmind-metric-value text-primary">{{ debugReport.keyword_hit_count }}</div>
                     </div>
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="docmind-section-label">{{ t("page.appSearch.debug.semanticHits") }}</div>
-                      <div class="mt-1 docmind-metric-value text-primary">{{ debugReport.semantic_hit_count }}</div>
+                      <div class="seekmind-section-label">{{ t("page.appSearch.debug.semanticHits") }}</div>
+                      <div class="mt-1 seekmind-metric-value text-primary">{{ debugReport.semantic_hit_count }}</div>
                     </div>
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
-                      <div class="docmind-section-label">{{ t("page.appSearch.debug.mode") }}</div>
+                      <div class="seekmind-section-label">{{ t("page.appSearch.debug.mode") }}</div>
                       <div class="mt-1 text-sm font-medium text-primary">{{ debugReport.search_mode }}</div>
                     </div>
                   </div>
@@ -1439,7 +1439,7 @@ watch(showDebugPanel, async (visible) => {
                 </div>
 
                 <div class="space-y-3 pr-2 pb-4">
-                  <DocMindSearchResultGroupCard
+                  <SeekMindSearchResultGroupCard
                     v-for="group in groupedResults"
                     :key="group.path"
                     :group="group"
@@ -1475,30 +1475,30 @@ watch(showDebugPanel, async (visible) => {
                   >
                     <div class="flex items-center justify-between gap-3">
                       <div class="min-w-0">
-                        <div class="docmind-section-label">{{ t("page.appSearch.qa.answerTitle") }}</div>
+                        <div class="seekmind-section-label">{{ t("page.appSearch.qa.answerTitle") }}</div>
                         <div class="mt-1 text-sm font-medium text-primary">{{ message.question }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <DocMindBadge tone="default">
+                        <SeekMindBadge tone="default">
                           {{ qaLoading && qaAnswer?.id === message.id ? qaInfoMessage || t("page.appSearch.qa.streaming") : t(`page.appSearch.qa.state.${message.state}`) }}
-                        </DocMindBadge>
-                        <DocMindBadge v-if="message.state === 'cancelled'" tone="danger">
+                        </SeekMindBadge>
+                        <SeekMindBadge v-if="message.state === 'cancelled'" tone="danger">
                           {{ t("page.appSearch.qa.cancelledByUser") }}
-                        </DocMindBadge>
+                        </SeekMindBadge>
                       </div>
                     </div>
                     <div class="mt-2 whitespace-pre-wrap text-sm leading-7 text-primary">
                       {{ message.answer || t("page.appSearch.qa.noAnswer") }}
                     </div>
                     <div class="mt-3 flex flex-wrap gap-2 text-xs text-dim">
-                      <DocMindBadge tone="default">{{ message.model || t("common.none") }}</DocMindBadge>
-                      <DocMindBadge tone="default">{{ message.created_at }}</DocMindBadge>
-                      <DocMindBadge tone="default">{{ t("page.appSearch.qa.sourceCount", { count: message.sources.length }) }}</DocMindBadge>
+                      <SeekMindBadge tone="default">{{ message.model || t("common.none") }}</SeekMindBadge>
+                      <SeekMindBadge tone="default">{{ message.created_at }}</SeekMindBadge>
+                      <SeekMindBadge tone="default">{{ t("page.appSearch.qa.sourceCount", { count: message.sources.length }) }}</SeekMindBadge>
                     </div>
                   </div>
 
                   <div v-if="qaAnswer" class="space-y-2">
-                    <div class="docmind-section-label px-1">{{ t("page.appSearch.qa.sourcesTitle") }}</div>
+                    <div class="seekmind-section-label px-1">{{ t("page.appSearch.qa.sourcesTitle") }}</div>
                     <div
                       v-for="source in qaAnswer.sources"
                       :key="source.source_id"
@@ -1509,7 +1509,7 @@ watch(showDebugPanel, async (visible) => {
                       <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                           <div class="flex flex-wrap items-center gap-2">
-                            <DocMindBadge tone="default">{{ source.source_id }}</DocMindBadge>
+                            <SeekMindBadge tone="default">{{ source.source_id }}</SeekMindBadge>
                             <span class="text-sm font-medium text-primary">{{ source.file_name }}</span>
                           </div>
                           <div class="mt-1 text-xs text-muted">{{ source.path }}</div>
@@ -1538,8 +1538,8 @@ watch(showDebugPanel, async (visible) => {
 
         <template #right>
           <aside class="min-h-0 flex-1 overflow-y-auto bg-panel/70 px-5 py-4">
-            <div v-if="!qaMode && selected" class="docmind-detail">
-              <div class="docmind-detail-block py-0">
+            <div v-if="!qaMode && selected" class="seekmind-detail">
+              <div class="seekmind-detail-block py-0">
                 <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
                     <div class="truncate text-base font-semibold leading-6 text-primary" :title="selected.file_name">
@@ -1550,7 +1550,7 @@ watch(showDebugPanel, async (visible) => {
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <div class="docmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
+                    <div class="seekmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
                       {{ selected.ext.toUpperCase() }}
                     </div>
                     <button
@@ -1563,39 +1563,39 @@ watch(showDebugPanel, async (visible) => {
                     </button>
                   </div>
                 </div>
-                <div v-if="selectedTitlePath" class="docmind-detail-kv mt-2" :title="selectedTitlePath">
-                  <div class="docmind-detail-kv-label">
+                <div v-if="selectedTitlePath" class="seekmind-detail-kv mt-2" :title="selectedTitlePath">
+                  <div class="seekmind-detail-kv-label">
                     {{ t("page.appSearch.detail.titlePath") }}
                   </div>
-                  <div class="docmind-detail-kv-value">
+                  <div class="seekmind-detail-kv-value">
                     {{ selectedTitlePath }}
                   </div>
                 </div>
               </div>
 
-              <div class="docmind-detail-block flex flex-wrap gap-1.5 py-2.5">
-                <DocMindBadge>{{ selected.ext.toUpperCase() }}</DocMindBadge>
-                <DocMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</DocMindBadge>
-                <DocMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</DocMindBadge>
-                <DocMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</DocMindBadge>
-                <DocMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</DocMindBadge>
-                <DocMindBadge tone="default">{{ selectedChunkPositionLabel }}</DocMindBadge>
-                <DocMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</DocMindBadge>
-                <DocMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</DocMindBadge>
+              <div class="seekmind-detail-block flex flex-wrap gap-1.5 py-2.5">
+                <SeekMindBadge>{{ selected.ext.toUpperCase() }}</SeekMindBadge>
+                <SeekMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</SeekMindBadge>
+                <SeekMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</SeekMindBadge>
+                <SeekMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</SeekMindBadge>
+                <SeekMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</SeekMindBadge>
+                <SeekMindBadge tone="default">{{ selectedChunkPositionLabel }}</SeekMindBadge>
+                <SeekMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</SeekMindBadge>
+                <SeekMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</SeekMindBadge>
               </div>
 
               <!-- 修复：右侧命中详情不再重复展示文件操作，统一交给结果列表右键菜单承载，避免同一动作出现两个入口。 -->
 
-              <div class="docmind-detail-block">
-                <div class="docmind-detail-title">{{ t("page.appSearch.detail.hitParagraph") }}</div>
+              <div class="seekmind-detail-block">
+                <div class="seekmind-detail-title">{{ t("page.appSearch.detail.hitParagraph") }}</div>
                 <div v-if="selectedPreviewBlocks.length > 0" class="space-y-2">
-                  <DocMindPreviewBlockRenderer
+                  <SeekMindPreviewBlockRenderer
                     v-for="block in selectedPreviewBlocks"
                     :key="block.block_index"
                     :block="block"
                   />
                 </div>
-                <DocMindMarkdownRenderer
+                <SeekMindMarkdownRenderer
                   v-else
                   :block="{
                     block_index: 0,
@@ -1614,36 +1614,36 @@ watch(showDebugPanel, async (visible) => {
                 />
               </div>
 
-              <div class="docmind-detail-block">
-                <div class="docmind-detail-title">{{ t("page.appSearch.detail.contextPreview") }}</div>
+              <div class="seekmind-detail-block">
+                <div class="seekmind-detail-title">{{ t("page.appSearch.detail.contextPreview") }}</div>
                 <div v-if="selectedChunk" class="space-y-3">
                   <div
                     v-for="item in selectedContextChunks"
                     :key="item.key"
-                    class="docmind-context-row"
-                    :class="item.key === 'current' ? 'docmind-context-row--active' : ''"
+                    class="seekmind-context-row"
+                    :class="item.key === 'current' ? 'seekmind-context-row--active' : ''"
                   >
-                    <div class="docmind-section-label" :class="item.key === 'current' ? 'text-accent-text' : 'text-dim'">
+                    <div class="seekmind-section-label" :class="item.key === 'current' ? 'text-accent-text' : 'text-dim'">
                       {{ item.label }}
                     </div>
                     <div v-if="item.chunk?.title_path || item.chunk?.heading" class="mt-1 text-[11px] text-dim">
                       {{ t("page.appSearch.detail.titlePath") }}：{{ item.chunk?.title_path || item.chunk?.heading }}
                     </div>
                     <div class="mt-1 text-sm leading-7" :class="item.key === 'current' ? 'text-primary' : 'text-secondary'">
-                      <DocMindHighlightedText
+                      <SeekMindHighlightedText
                         v-if="item.key === 'current' && !(item.chunk?.preview_blocks?.length)"
                         :text="item.chunk?.snippet ?? ''"
                         :query="query"
                         :spans="selected.highlight_spans"
                       />
                       <div v-else-if="item.chunk?.preview_blocks?.length" class="space-y-2">
-                        <DocMindPreviewBlockRenderer
+                        <SeekMindPreviewBlockRenderer
                           v-for="block in item.chunk.preview_blocks"
                           :key="block.block_index"
                           :block="block"
                         />
                       </div>
-                      <DocMindMarkdownRenderer
+                      <SeekMindMarkdownRenderer
                         v-else
                         :block="{
                           block_index: 0,
@@ -1658,7 +1658,7 @@ watch(showDebugPanel, async (visible) => {
                         }"
                       />
                     </div>
-                    <div class="docmind-item-meta mt-1">
+                    <div class="seekmind-item-meta mt-1">
                       {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
                     </div>
                   </div>
@@ -1666,7 +1666,7 @@ watch(showDebugPanel, async (visible) => {
                 <div v-else class="rounded-md bg-surface px-3 py-3 text-sm text-muted">
                   {{ t("page.appSearch.detail.noContext") }}
                 </div>
-                <p class="docmind-item-meta mt-3">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
+                <p class="seekmind-item-meta mt-3">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
               </div>
 
               <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
@@ -1677,7 +1677,7 @@ watch(showDebugPanel, async (visible) => {
               </div>
             </div>
 
-            <div v-else-if="qaMode && qaSelectedSource" class="docmind-detail">
+            <div v-else-if="qaMode && qaSelectedSource" class="seekmind-detail">
               <div class="mb-4 rounded-lg border border-default bg-panel p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -1685,7 +1685,7 @@ watch(showDebugPanel, async (visible) => {
                     <div class="mt-1 break-all text-xs text-muted">{{ qaSelectedSource.path }}</div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
+                    <div class="seekmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
                       {{ qaSelectedSource.ext.toUpperCase() }}
                     </div>
                     <button
@@ -1709,16 +1709,16 @@ watch(showDebugPanel, async (visible) => {
               </div>
 
               <div class="mb-4 flex flex-wrap gap-2">
-                <DocMindBadge>{{ qaSelectedSource.ext.toUpperCase() }}</DocMindBadge>
-                <DocMindBadge>{{ qaSelectedSource.page ? t("searchResultCard.page", { page: qaSelectedSource.page }) : t("searchResultCard.paragraph", { para: qaSelectedSource.paragraph }) }}</DocMindBadge>
-                <DocMindBadge v-if="qaSelectedSource.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: qaSelectedSource.page }) }}</DocMindBadge>
-                <DocMindBadge tone="success">{{ t("page.appSearch.qa.sourceId", { id: qaSelectedSource.source_id }) }}</DocMindBadge>
+                <SeekMindBadge>{{ qaSelectedSource.ext.toUpperCase() }}</SeekMindBadge>
+                <SeekMindBadge>{{ qaSelectedSource.page ? t("searchResultCard.page", { page: qaSelectedSource.page }) : t("searchResultCard.paragraph", { para: qaSelectedSource.paragraph }) }}</SeekMindBadge>
+                <SeekMindBadge v-if="qaSelectedSource.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: qaSelectedSource.page }) }}</SeekMindBadge>
+                <SeekMindBadge tone="success">{{ t("page.appSearch.qa.sourceId", { id: qaSelectedSource.source_id }) }}</SeekMindBadge>
               </div>
 
               <div class="mb-4 rounded-lg border border-default bg-surface p-4">
                 <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.qa.sourceSnippet") }}</div>
                 <div v-if="qaSelectedPreviewBlocks.length > 0" class="space-y-2">
-                  <DocMindPreviewBlockRenderer
+                  <SeekMindPreviewBlockRenderer
                     v-for="block in qaSelectedPreviewBlocks"
                     :key="block.block_index"
                     :block="block"
@@ -1727,13 +1727,13 @@ watch(showDebugPanel, async (visible) => {
                 <div v-else class="whitespace-pre-wrap text-sm leading-7 text-primary">
                   {{ qaSelectedSource.snippet }}
                 </div>
-                <p class="docmind-item-meta mt-3">{{ qaSelectedSource.rank_reason }}</p>
+                <p class="seekmind-item-meta mt-3">{{ qaSelectedSource.rank_reason }}</p>
               </div>
 
               <div class="mt-4 rounded-lg border border-default bg-surface p-4">
-                <div class="docmind-section-label">{{ t("page.appSearch.qa.sourceMeta") }}</div>
-                <div class="mt-1 docmind-metric-value text-primary">{{ qaSelectedCitation || t("common.none") }}</div>
-                <div class="mt-1 docmind-item-meta">
+                <div class="seekmind-section-label">{{ t("page.appSearch.qa.sourceMeta") }}</div>
+                <div class="mt-1 seekmind-metric-value text-primary">{{ qaSelectedCitation || t("common.none") }}</div>
+                <div class="mt-1 seekmind-item-meta">
                   {{ qaAnswer?.retrieval.search_mode || t("common.none") }} · {{ qaAnswer?.retrieval.selected_count ?? 0 }}/{{ qaAnswer?.retrieval.candidate_count ?? 0 }}
                 </div>
               </div>
@@ -1764,14 +1764,14 @@ watch(showDebugPanel, async (visible) => {
         </template>
       </SplitPane>
 
-      <DocMindContextMenu
+      <SeekMindContextMenu
         v-if="resultMenuVisible"
         :items="resultContextMenuItems"
         :x="resultMenuPosition.x"
         :y="resultMenuPosition.y"
         @close="resultMenuVisible = false"
       />
-      <DocMindCollectionPicker
+      <SeekMindCollectionPicker
         :visible="collectionPickerVisible"
         :collections="collections"
         :loading="collectionPickerLoading"

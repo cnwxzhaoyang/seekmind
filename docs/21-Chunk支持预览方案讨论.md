@@ -11,7 +11,7 @@
 可以做到，但关键点是：
 
 不要把 chunk 理解成纯文本。
-docMind 里应该区分两种数据：
+SeekMind 里应该区分两种数据：
 检索 chunk 和 预览 block。
 
 Embedding 阶段主要处理文本语义；预览阶段需要保留文档结构，包括标题、段落、表格、图片、页码、位置等。
@@ -349,7 +349,7 @@ Block 14: 段落：生成后的 .offline-repo...
     },
     {
       "type": "image",
-      "asset_url": "docmind://asset/doc_001/img_003.png",
+      "asset_url": "SeekMind://asset/doc_001/img_003.png",
       "caption": "图 3：离线仓库目录结构"
     }
   ]
@@ -379,11 +379,11 @@ ListBlock.vue
 QuoteBlock.vue
 8. 图片文件存哪里？
 
-建议放在 docMind 的应用数据目录下。
+建议放在 SeekMind 的应用数据目录下。
 
 例如：
 
-~/Library/Application Support/docMind/assets/
+~/Library/Application Support/SeekMind/assets/
   └─ doc_001/
       ├─ img_001.png
       ├─ img_002.jpg
@@ -585,7 +585,7 @@ API平台设计.docx
 
 15. MVP 阶段怎么取舍？
 
-我建议 docMind MVP 分成两层。
+我建议 SeekMind MVP 分成两层。
 
 MVP 0.1：先实现结构化文本预览
 
@@ -637,7 +637,7 @@ Tantivy / Vector DB 索引 SearchChunks
 Embedding 不负责保存原文结构，Block 模型才负责。
 搜索命中 chunk，预览回查 blocks。
 
-17. 你可以这样改 docMind 的 MVP 数据流
+17. 你可以这样改 SeekMind 的 MVP 数据流
 
 原来的：
 
@@ -663,7 +663,7 @@ SearchChunks：由 blocks 生成，用于检索
 3. 图片要保存 asset_path，并尽量生成 caption/ocr_text/surrounding_text。
 4. 搜索 chunk 要记录 block_ids，预览时通过 block_ids 还原原始结构。
 
-这样 docMind 才能做到：
+这样 SeekMind 才能做到：
 
 搜得到
 看得懂

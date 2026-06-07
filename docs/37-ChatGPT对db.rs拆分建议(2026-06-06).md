@@ -11,7 +11,7 @@
 可以先拆成这样：
 
 ```
-src/docmind/storage/
+src/seekmind/storage/
 ├── database/
 │   ├── mod.rs              // Database 结构体、open_or_init、pool、index_job_running
 │   ├── schema.rs           // init_schema + ensure_xxx migration
@@ -42,7 +42,7 @@ pub use database::{
 };
 ```
 
-这样外部如果还在用 `crate::docmind::storage::db::Database`，你可以短期保留 `db.rs` 做 re-export，后续再统一改引用。
+这样外部如果还在用 `crate::seekmind::storage::db::Database`，你可以短期保留 `db.rs` 做 re-export，后续再统一改引用。
 
 ---
 
@@ -91,7 +91,7 @@ use std::sync::{
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
-use crate::docmind::storage::fulltext::SearchIndex;
+use crate::seekmind::storage::fulltext::SearchIndex;
 
 #[derive(Clone)]
 pub struct Database {
@@ -380,7 +380,7 @@ use std::sync::{
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
-use crate::docmind::storage::fulltext::SearchIndex;
+use crate::seekmind::storage::fulltext::SearchIndex;
 
 #[derive(Clone)]
 pub struct Database {
@@ -406,7 +406,7 @@ impl Database {
 
     pub async fn open_or_init() -> Result<Self, String> {
         let path = util::database_path();
-        eprintln!("[DocMind] SQLite database path: {}", path.display());
+        eprintln!("[seekmind] SQLite database path: {}", path.display());
 
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
