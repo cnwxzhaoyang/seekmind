@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "DocMind local document search tool"
 authors = ["Yang Zhao"]
 edition = "2021"
+default-run = "DocMind"
 
 [lib]
 name = "docmind_lib"
@@ -43,5 +44,6 @@ sha2 = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6.4", default-features = false, features = ["std"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSBitmapImageRep", "NSColor", "NSGraphics", "NSImage", "NSImageRep", "NSOpenPanel", "NSPanel", "NSResponder", "NSView", "NSWindow", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSBitmapImageRep", "NSColor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSOpenPanel", "NSPanel", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "objc2-core-graphics"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSError", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGImage"] }

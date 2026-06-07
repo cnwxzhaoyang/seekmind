@@ -225,7 +225,7 @@ pub struct ParserRuntimeView {
     pub active: String,
     pub system_locale: String,
     pub system_language: String,
-    pub tesseract_languages: Vec<String>,
+    pub vision_ocr_languages: Vec<String>,
     pub chinese_ocr_available: bool,
     #[serde(default)]
     pub chinese_ocr_warning: Option<String>,

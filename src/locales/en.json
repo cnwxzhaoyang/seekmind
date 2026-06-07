@@ -39,10 +39,10 @@
       "runtimePlatform": "Platform: {platform}"
     },
     "ocr": {
-      "warningTitle": "Chinese OCR language pack missing",
-      "warningDesc": "The system language is Chinese, but Tesseract Chinese language packs were not detected.",
-      "warningHint": "Install `chi_sim` or `chi_tra`, otherwise Chinese text in scanned PDFs may be recognized as garbage.",
-      "runtimeLabel": "OCR Languages"
+      "warningTitle": "Chinese OCR language missing",
+      "warningDesc": "The system language is Chinese, but no usable Vision OCR Chinese language configuration was detected.",
+      "warningHint": "Make sure the bundled Vision OCR helper includes Chinese language settings, otherwise Chinese text in scanned PDFs may be recognized as garbage.",
+      "runtimeLabel": "Vision OCR Languages"
     },
     "of": "·",
     "delete": "Delete"
@@ -624,7 +624,7 @@
         "availableHint": "Available languages: {languages}",
         "availableDesc": "Scanned PDFs will be OCRed automatically and the results will be saved into the index.",
         "unavailableTitle": "Scanned PDF OCR unavailable",
-        "unavailableHint": "Install Tesseract and make sure OCR languages are available before indexing scans.",
+        "unavailableHint": "Make sure the bundled Vision OCR helper is available and Chinese language settings are packaged before indexing scans.",
         "retry": "Retry OCR"
       },
       "failed": {

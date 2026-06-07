@@ -12,7 +12,7 @@ import { computed, onActivated, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
-import { BookMarked, ClipboardCopy, Eye, FileDown, FileText, Files, FolderPlus, Layers3, MessageSquareText, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
+import { BookMarked, ClipboardCopy, Eye, FileDown, FileText, Files, FolderPlus, Layers3, MessageSquareText, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/docmind/DocMindContextMenu.vue";
@@ -33,6 +33,8 @@ const collectionItemTagsMap = ref<Record<string, TagView[]>>({});
 const collectionItems = ref<CollectionItemView[]>([]);
 const selectedCollectionId = ref("");
 const selectedItemId = ref("");
+// 右侧详情面板关闭时直接从 SplitPane 移除，避免只清空内容但仍然占位。
+const showDetailPanel = ref(false);
 const collectionFilter = ref("");
 const itemTagFilter = ref("");
 const collectionName = ref("");
@@ -86,6 +88,12 @@ const selectedCollection = computed(
 const selectedItem = computed(
   () => collectionItems.value.find((item) => item.id === selectedItemId.value) ?? null,
 );
+
+const splitPanels = computed(() => [
+  { key: "left", initialSize: 320, minSize: 280 },
+  { key: "middle", flex: true, minSize: 360 },
+  ...(showDetailPanel.value ? [{ key: "right", initialSize: 360, minSize: 320 }] : []),
+]);
 
 const filteredCollections = computed(() => {
   const query = collectionFilter.value.trim().toLowerCase();
@@ -159,6 +167,7 @@ const refreshItemSelectionByFilter = () => {
   if (visibleItems.length === 0) {
     selectedItemId.value = "";
     itemNoteDraft.value = "";
+    showDetailPanel.value = false;
     void loadItemTags("");
     return;
   }
@@ -310,6 +319,7 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
     collectionItems.value = [];
     selectedItemId.value = "";
     itemNoteDraft.value = "";
+    showDetailPanel.value = false;
     return;
   }
 
@@ -326,6 +336,7 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
     if (preserveSelected && selectedItemId.value && visibleItems.some((item) => item.id === selectedItemId.value)) {
       const current = items.find((item) => item.id === selectedItemId.value) ?? null;
       itemNoteDraft.value = current?.note ?? "";
+      showDetailPanel.value = Boolean(current);
       if (current) {
         await loadItemTags(current.id);
       }
@@ -335,6 +346,7 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
     const next = visibleItems[0] ?? null;
     selectedItemId.value = next?.id ?? "";
     itemNoteDraft.value = next?.note ?? "";
+    showDetailPanel.value = Boolean(next);
     await loadItemTags(next?.id ?? "");
   } catch (error) {
     errorMessage.value = formatDocmindError(error, t("page.collections.error.loadItems"));
@@ -364,6 +376,7 @@ const startNewCollection = () => {
   itemTags.value = [];
   collectionTagName.value = "";
   itemTagName.value = "";
+  showDetailPanel.value = false;
 };
 
 const saveCollection = async () => {
@@ -426,7 +439,19 @@ const deleteCollection = async (collection: CollectionView) => {
 const selectItem = (item: CollectionItemView) => {
   selectedItemId.value = item.id;
   itemNoteDraft.value = item.note;
+  showDetailPanel.value = true;
   void loadItemTags(item.id);
+};
+
+const closeSelectedItem = () => {
+  console.debug("[DocMind] collection detail panel closed", {
+    itemId: selectedItemId.value,
+  });
+  selectedItemId.value = "";
+  itemNoteDraft.value = "";
+  itemTagName.value = "";
+  showDetailPanel.value = false;
+  void loadItemTags("");
 };
 
 const saveItemNote = async () => {
@@ -522,6 +547,7 @@ const removeItem = async (item: CollectionItemView) => {
       const next = collectionItems.value[0] ?? null;
       selectedItemId.value = next?.id ?? "";
       itemNoteDraft.value = next?.note ?? "";
+      showDetailPanel.value = Boolean(next);
       await loadItemTags(next?.id ?? "");
     }
     infoMessage.value = t("page.collections.itemRemoved");
@@ -752,11 +778,7 @@ onActivated(async () => {
       {{ infoMessage }}
     </div>
 
-    <SplitPane class="min-h-0 flex-1" :panels="[
-      { key: 'left', initialSize: 320, minSize: 280 },
-      { key: 'middle', flex: true, minSize: 360 },
-      { key: 'right', initialSize: 360, minSize: 320 },
-    ]">
+    <SplitPane class="min-h-0 flex-1" :panels="splitPanels">
       <template #left>
         <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-r border-default bg-sidebar/30">
           <div class="px-4 py-3">
@@ -1018,14 +1040,23 @@ onActivated(async () => {
         </section>
       </template>
 
-      <template #right>
+      <template v-if="showDetailPanel" #right>
         <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-default bg-panel/80">
           <div class="docmind-section-header docmind-section-header--balanced">
             <span class="card-icon docmind-page-header-icon"><BookMarked :size="17" /></span>
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
               <div class="text-sm font-semibold text-primary">{{ t("page.collections.detailTitle") }}</div>
               <div class="mt-1 text-xs text-muted">{{ t("page.collections.detailDesc") }}</div>
             </div>
+            <button
+              v-if="selectedItem"
+              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+              type="button"
+              :title="t('common.close')"
+              @click="closeSelectedItem"
+            >
+              <X :size="14" />
+            </button>
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">
             <div v-if="!selectedItem" class="rounded-lg border border-dashed border-default bg-surface px-4 py-8 text-center text-xs text-muted">

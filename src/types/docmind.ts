@@ -198,7 +198,7 @@ export interface ParserRuntimeView {
   active: "python" | "rust";
   system_locale: string;
   system_language: string;
-  tesseract_languages: string[];
+  vision_ocr_languages: string[];
   chinese_ocr_available: boolean;
   chinese_ocr_warning?: string | null;
   pdf_ocr_available: boolean;

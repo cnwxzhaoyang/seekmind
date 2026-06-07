@@ -19,6 +19,7 @@ dependencies = [
  "num_cpus",
  "objc2",
  "objc2-app-kit",
+ "objc2-core-graphics",
  "objc2-foundation",
  "pinyin",
  "reqwest 0.12.28",
@@ -2879,6 +2880,7 @@ dependencies = [
  "block2",
  "objc2",
  "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation",
 ]
 

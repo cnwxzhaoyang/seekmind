@@ -1844,33 +1844,31 @@ def pdf_image_extraction_enabled() -> bool:
 
 
 
+def vision_ocr_binary() -> Optional[str]:
+    bundled = os.environ.get("DOCMIND_VISION_OCR_BIN", "").strip()
+    if bundled and Path(bundled).is_file():
+        return bundled
+
+    # 修复：沙盒版 OCR 不能再默认依赖系统路径，这里优先使用随 App 打包的 Vision OCR helper。
+    for candidate in (
+        shutil.which("vision-ocr"),
+        str(Path(__file__).resolve().parents[2] / "src-tauri" / "app-resources" / "ocr" / "vision-ocr"),
+    ):
+        if candidate and Path(candidate).is_file():
+            return candidate
+
+    return None
+
+
 def pdf_ocr_enabled() -> bool:
-    return os.environ.get("DOCMIND_DISABLE_PDF_OCR", "").strip() != "1" and shutil.which("tesseract") is not None
+    return os.environ.get("DOCMIND_DISABLE_PDF_OCR", "").strip() != "1" and vision_ocr_binary() is not None
 
 
 @lru_cache(maxsize=1)
-def tesseract_languages() -> set[str]:
-    try:
-        result = subprocess.run(
-            ["tesseract", "--list-langs"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except Exception:  # noqa: BLE001
-        return set()
-
-    if result.returncode != 0:
-        return set()
-
-    langs: set[str] = set()
-    for line in result.stdout.splitlines():
-        cleaned = line.strip()
-        if not cleaned or cleaned.lower().startswith("list of available languages"):
-            continue
-        langs.add(cleaned)
-    return langs
+def vision_ocr_languages() -> list[str]:
+    raw = os.environ.get("DOCMIND_VISION_OCR_LANGS", "").strip() or "zh-Hans,en-US"
+    languages = [part.strip() for part in raw.split(",") if part.strip()]
+    return languages or ["zh-Hans", "en-US"]
 
 
 def contains_cjk(text: str) -> bool:
@@ -1880,7 +1878,7 @@ def contains_cjk(text: str) -> bool:
 
 def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
     if not pdf_ocr_enabled():
-        pdf_debug_log(f"page={page_index} OCR skipped: disabled or tesseract missing")
+        pdf_debug_log(f"page={page_index} OCR skipped: disabled or Vision OCR helper missing")
         return None
 
     try:
@@ -1902,42 +1900,36 @@ def ocr_pdf_page_text(path: Path, page_index: int) -> Optional[str]:
         pdf_debug_log(f"page={page_index} OCR render failed: {exc}")
         return None
 
-    langs = os.environ.get("DOCMIND_TESSERACT_LANGS", "chi_sim+eng").strip() or "chi_sim+eng"
-    candidates = [langs, "eng"] if langs != "eng" else ["eng"]
-    prefer_cjk = any(part.strip().startswith("chi") for part in langs.split("+"))
-    available_langs = tesseract_languages()
-    for lang in candidates:
-        requested_parts = [part.strip() for part in lang.split("+") if part.strip()]
-        if requested_parts and not all(part in available_langs for part in requested_parts):
-            pdf_debug_log(
-                f"page={page_index} OCR language skipped: lang={lang} available={sorted(available_langs)}"
-            )
-            continue
-        try:
-            result = subprocess.run(
-                ["tesseract", str(render_path), "stdout", "-l", lang, "--psm", "6"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        except Exception:
-            continue
-        if result.returncode != 0:
-            pdf_debug_log(f"pdfimages failed page={page_index} code={result.returncode} stderr={normalize_whitespace(result.stderr)[:240]}")
-            continue
-        text = normalize_whitespace(result.stdout)
-        if not text:
-            continue
-        if looks_like_pdf_text_layer_noise(text):
-            pdf_debug_log(f"page={page_index} OCR output rejected as noise")
-            continue
-        if prefer_cjk and not contains_cjk(text):
-            pdf_debug_log(f"page={page_index} OCR output rejected: missing CJK characters")
-            continue
-        if is_meaningful_text(text):
-            return text
-    return None
+    langs = ",".join(vision_ocr_languages())
+    binary = vision_ocr_binary()
+    if not binary:
+        pdf_debug_log(f"page={page_index} OCR skipped: bundled Vision OCR helper missing")
+        return None
+    try:
+        result = subprocess.run(
+            [binary, "--image", str(render_path), "--langs", langs],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception as exc:
+        pdf_debug_log(f"page={page_index} OCR execution failed: {exc}")
+        return None
+    if result.returncode != 0:
+        pdf_debug_log(
+            f"page={page_index} OCR failed code={result.returncode} stderr={normalize_whitespace(result.stderr)[:240]}"
+        )
+        return None
+    text = normalize_whitespace(result.stdout)
+    if not text:
+        return None
+    if looks_like_pdf_text_layer_noise(text):
+        pdf_debug_log(f"page={page_index} OCR output rejected as noise")
+        return None
+    if not is_meaningful_text(text):
+        return None
+    return text
 
 
 def render_pdf_page_preview_block(path: Path, heading: Optional[str], page_index: int) -> Optional[Block]:
@@ -2256,7 +2248,7 @@ def parse_pdf(
             page_index = task.page_index
             if not pdf_ocr_enabled():
                 skipped_pages += 1
-                ocr_reason = "tesseract 未安装" if shutil.which("tesseract") is None else "DOCMIND_DISABLE_PDF_OCR=1"
+                ocr_reason = "Vision OCR helper 未安装" if vision_ocr_binary() is None else "DOCMIND_DISABLE_PDF_OCR=1"
                 task.status = "skipped"
                 task.error = ocr_reason
                 progress(

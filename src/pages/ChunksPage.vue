@@ -7,7 +7,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2 } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -36,6 +36,8 @@ const documents = ref<DocumentView[]>([]);
 const chunks = ref<ChunkView[]>([]);
 const selectedDirPath = ref("");
 const selectedDocPath = ref("");
+// 右侧详情面板关闭时直接从 SplitPane 移除，避免只清空内容但右栏仍占位。
+const showDetailPanel = ref(false);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
 const loading = ref(false);
 const loadingDocs = ref(false);
@@ -92,7 +94,7 @@ const formatDirectoryLabel = (path: string, tailSegments = 1) => {
 
 const splitPanels = computed(() => [
   { key: "center", minSize: 320, flex: true },
-  { key: "right", minSize: 380, flex: true },
+  ...(showDetailPanel.value ? [{ key: "right", minSize: 380, flex: true }] : []),
 ]);
 
 const queuedDocPaths = computed(() => new Set(refreshQueue.value.map((doc) => doc.path)));
@@ -320,6 +322,7 @@ const syncSelection = async (forceReload = false) => {
     const matchedDoc = documents.value.find((doc) => doc.path === targetPath);
     const nextDocPath = matchedDoc?.path ?? documents.value[0]?.path ?? "";
     selectedDocPath.value = nextDocPath;
+    showDetailPanel.value = Boolean(nextDocPath);
 
     if (routeChanged || forceReload || dirChanged || chunks.value.length === 0) {
       await loadChunks();
@@ -343,6 +346,7 @@ const switchDirectory = async (path: string) => {
   actionErrorMessage.value = "";
   selectedDirPath.value = path;
   selectedDocPath.value = "";
+  showDetailPanel.value = false;
   documents.value = [];
   chunks.value = [];
   hasInitializedSelection.value = true;
@@ -417,6 +421,15 @@ const copyCurrentDocumentPath = async () => {
   }
 
   await copyText(currentDocument.value.path, t("page.chunks.action.copiedPath"));
+};
+
+const closeCurrentDocument = () => {
+  console.debug("[DocMind] chunks detail panel closed", {
+    docPath: selectedDocPath.value,
+  });
+  selectedDocPath.value = "";
+  chunks.value = [];
+  showDetailPanel.value = false;
 };
 
 const copyChunkCitation = async (chunk: ChunkView) => {
@@ -613,6 +626,7 @@ const refreshPdfOcrDocument = async (doc: DocumentView) => {
 };
 
 const selectDoc = async (path: string) => {
+  showDetailPanel.value = Boolean(path);
   void router.replace({ query: { ...route.query, path } });
 };
 
@@ -742,6 +756,7 @@ const deleteCurrentDocument = async () => {
     if (selectedDocPath.value === doc.path) {
       selectedDocPath.value = "";
       chunks.value = [];
+      showDetailPanel.value = false;
     }
     await loadDocuments();
     setActionMessage(t("page.chunks.action.deleted"));
@@ -993,14 +1008,25 @@ watch(
                   {{ currentDocumentRefreshWarning }}
                 </div>
               </div>
-              <button
-                class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover"
-                :disabled="loading || !selectedDirPath"
-                @click="void syncSelection()"
-              >
-                <RefreshCw :size="14" />
-                {{ t("page.chunks.btn.refresh") }}
-              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  v-if="currentDocument"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                  type="button"
+                  :title="t('common.close')"
+                  @click="closeCurrentDocument"
+                >
+                  <X :size="14" />
+                </button>
+                <button
+                  class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover"
+                  :disabled="loading || !selectedDirPath"
+                  @click="void syncSelection()"
+                >
+                  <RefreshCw :size="14" />
+                  {{ t("page.chunks.btn.refresh") }}
+                </button>
+              </div>
             </div>
 
             <div class="shrink-0 mb-3">

@@ -12,6 +12,8 @@ use super::parser::{office_converter_config_json, python_parser_config_json};
 use super::search::{normalize_query, normalize_search_text};
 use super::storage::types::IndexSettings;
 use super::storage::{indexer, scanner, Database};
+use crate::docmind::vision_ocr::bundled_vision_ocr_binary;
+use crate::docmind::vision_ocr::has_chinese_vision_language;
 use crate::docmind::semantic::store as semantic_store;
 use std::collections::HashSet;
 use std::env;
@@ -854,28 +856,28 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
     let office_config = office_converter_config_json();
     let system_locale = detect_system_locale();
     let system_language = detect_system_language(&system_locale);
-    let tesseract_languages = available_tesseract_languages();
-    let chinese_ocr_available = has_chinese_tesseract_language(&tesseract_languages);
+    let vision_ocr_languages = available_vision_ocr_languages();
+    let chinese_ocr_available = has_chinese_vision_language(&vision_ocr_languages);
     let chinese_ocr_warning = if system_language == "zh" && !chinese_ocr_available {
-        Some("当前系统语言为中文，但未检测到中文 OCR 语言包（chi_sim / chi_tra）。扫描件中文识别可能失效，请安装 Tesseract 中文语言包。".to_string())
+        Some("当前系统语言为中文，但未检测到可用的中文 Vision OCR 语言配置（如 zh-Hans / zh-Hant）。扫描件中文识别可能失效，请检查打包内 Vision OCR helper。".to_string())
     } else {
         None
     };
-    // 修复：OCR 状态需要同时向前端暴露“是否可用”和“为什么不可用”，否则状态页只能展示语言包而无法说明扫描件是否能识别。
+    // 修复：OCR 状态需要同时向前端暴露“是否可用”和“为什么不可用”，否则状态页只能展示语言配置而无法说明扫描件是否能识别。
     let pdf_ocr_disabled = std::env::var("DOCMIND_DISABLE_PDF_OCR")
         .ok()
         .map(|value| value.trim() == "1")
         .unwrap_or(false);
-    let pdf_ocr_available = !pdf_ocr_disabled && !tesseract_languages.is_empty();
+    let pdf_ocr_available = !pdf_ocr_disabled && !vision_ocr_languages.is_empty();
     let pdf_ocr_message = if pdf_ocr_available {
         format!(
             "扫描版 PDF OCR 已启用，可用语言：{}",
-            tesseract_languages.join(", ")
+            vision_ocr_languages.join(", ")
         )
     } else if pdf_ocr_disabled {
         "扫描版 PDF OCR 已通过 DOCMIND_DISABLE_PDF_OCR 关闭。".to_string()
     } else {
-        "未检测到可用的 Tesseract OCR 语言包，扫描版 PDF 将无法自动识别。".to_string()
+        "未检测到可用的 Vision OCR helper，扫描版 PDF 将无法自动识别。".to_string()
     };
     let enabled = config
         .get("enabled")
@@ -898,7 +900,7 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
         active,
         system_locale,
         system_language,
-        tesseract_languages,
+        vision_ocr_languages,
         chinese_ocr_available,
         chinese_ocr_warning,
         pdf_ocr_available,
@@ -1004,56 +1006,75 @@ fn normalize_locale_value(value: &str) -> String {
         .to_string()
 }
 
-fn available_tesseract_languages() -> Vec<String> {
+fn available_vision_ocr_languages() -> Vec<String> {
     static CACHE: OnceLock<Vec<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            for candidate in tesseract_binary_candidates() {
-                let output = Command::new(candidate).arg("--list-langs").output();
+            for candidate in vision_ocr_binary_candidates() {
+                let mut command = Command::new(&candidate);
+                let output = command.arg("--probe").output();
                 let Ok(output) = output else {
+                    eprintln!(
+                        "[DocMind] Vision OCR runtime probe failed for {}",
+                        candidate.display()
+                    );
                     continue;
                 };
                 if !output.status.success() {
+                    eprintln!(
+                        "[DocMind] Vision OCR runtime probe returned non-success for {}: {}",
+                        candidate.display(),
+                        output.status
+                    );
                     continue;
                 }
 
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let languages: Vec<String> = stdout
-                    .lines()
+                    .split(|ch: char| matches!(ch, ',' | '[' | ']' | ' ' | '\n' | '\t'))
                     .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .filter(|line| {
-                        !line
-                            .to_lowercase()
-                            .starts_with("list of available languages")
-                    })
-                    .map(ToOwned::to_owned)
+                    .filter(|part| !part.is_empty())
+                    .map(|part| part.trim_matches(['"', '\'']).to_string())
                     .collect();
 
                 if !languages.is_empty() {
+                    eprintln!(
+                        "[DocMind] Vision OCR runtime probe succeeded with {} languages via {}",
+                        languages.len(),
+                        candidate.display()
+                    );
                     return languages;
                 }
             }
 
+            eprintln!("[DocMind] Vision OCR runtime probe found no usable helper binary");
             Vec::new()
         })
         .clone()
 }
 
-fn tesseract_binary_candidates() -> [&'static str; 4] {
-    [
-        "/opt/homebrew/bin/tesseract",
-        "/usr/local/bin/tesseract",
-        "/opt/local/bin/tesseract",
-        "tesseract",
-    ]
-}
+fn vision_ocr_binary_candidates() -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
 
-fn has_chinese_tesseract_language(languages: &[String]) -> bool {
-    languages.iter().any(|lang| {
-        let lowered = lang.to_lowercase();
-        lowered == "chi_sim" || lowered == "chi_tra" || lowered.starts_with("chi_")
-    })
+    if let Ok(value) = std::env::var("DOCMIND_VISION_OCR_BIN") {
+        let candidate = std::path::PathBuf::from(value);
+        if candidate.exists() {
+            candidates.push(candidate);
+        }
+    }
+
+    if let Some(candidate) = bundled_vision_ocr_binary() {
+        candidates.push(candidate);
+    }
+
+    candidates.extend([
+        std::path::PathBuf::from("/opt/homebrew/bin/vision-ocr"),
+        std::path::PathBuf::from("/usr/local/bin/vision-ocr"),
+        std::path::PathBuf::from("/opt/local/bin/vision-ocr"),
+        std::path::PathBuf::from("vision-ocr"),
+    ]);
+
+    candidates
 }
 
 #[tauri::command]

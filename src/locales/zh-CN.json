@@ -39,10 +39,10 @@
       "runtimePlatform": "当前平台：{platform}"
     },
     "ocr": {
-      "warningTitle": "中文 OCR 语言包缺失",
-      "warningDesc": "当前系统语言为中文，但未检测到 Tesseract 中文语言包。",
-      "warningHint": "请安装 `chi_sim` 或 `chi_tra`，否则扫描件中的中文可能会被识别成乱码。",
-      "runtimeLabel": "OCR 语言包"
+      "warningTitle": "中文 OCR 语言缺失",
+      "warningDesc": "当前系统语言为中文，但未检测到可用的 Vision OCR 中文语言配置。",
+      "warningHint": "请确认打包内 Vision OCR helper 已包含中文语言配置，否则扫描件中的中文可能会被识别成乱码。",
+      "runtimeLabel": "Vision OCR 语言"
     },
     "of": "·",
     "delete": "删除"
@@ -621,7 +621,7 @@
         "availableHint": "当前可用语言包：{languages}",
         "availableDesc": "扫描版 PDF 会自动尝试 OCR，并将识别结果保存进索引。",
         "unavailableTitle": "扫描版 PDF OCR 不可用",
-        "unavailableHint": "请安装 Tesseract 并确保语言包可用后再索引扫描件。",
+        "unavailableHint": "请确认 Vision OCR helper 可用，并确保中文语言配置已打包后再索引扫描件。",
         "retry": "重跑 OCR"
       },
       "failed": {

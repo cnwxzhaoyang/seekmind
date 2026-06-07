@@ -12,7 +12,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, BookMarked, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight } from "lucide-vue-next";
+import { AlertCircle, BookMarked, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight, X } from "lucide-vue-next";
 import DocMindBadge from "../components/docmind/DocMindBadge.vue";
 import DocMindCollectionPicker from "../components/docmind/DocMindCollectionPicker.vue";
 import DocMindContextMenu from "../components/docmind/DocMindContextMenu.vue";
@@ -52,6 +52,7 @@ const qaSessionId = ref("");
 const qaSessionTitle = ref("");
 const qaSettings = ref<QaSettingsView | null>(null);
 const qaSelectedSourceId = ref("");
+const qaSelectedSourceClosed = ref(false);
 const qaLoading = ref(false);
 const qaCancelling = ref(false);
 const qaErrorMessage = ref("");
@@ -77,6 +78,7 @@ const errorMessage = ref("");
 const expandedGroups = ref<Record<string, boolean>>({});
 const showResultFilterPanel = ref(false);
 const resultFilterMode = ref<"all" | "favorites">("all");
+const selectedResultClosed = ref(false);
 const routeSyncReady = ref(false);
 let selectedContextRequestId = 0;
 let unlistenSearchDebugReport: null | (() => void) = null;
@@ -134,7 +136,13 @@ const isQaConfigured = (settings: QaSettingsView | null) =>
   Boolean(settings?.enabled && settings.base_url.trim() && settings.model.trim());
 
 const qaSelectedSource = computed(
-  () => qaAnswer.value?.sources.find((item) => item.source_id === qaSelectedSourceId.value) ?? qaAnswer.value?.sources[0] ?? null,
+  () => {
+    if (qaSelectedSourceClosed.value) {
+      return null;
+    }
+
+    return qaAnswer.value?.sources.find((item) => item.source_id === qaSelectedSourceId.value) ?? qaAnswer.value?.sources[0] ?? null;
+  },
 );
 
 const selectedTitlePath = computed(() =>
@@ -358,6 +366,7 @@ const selectResult = (id: string) => {
     });
   }
 
+  selectedResultClosed.value = false;
   selectedId.value = id;
 };
 
@@ -402,6 +411,7 @@ const loadLatestQaSession = async () => {
     const messages = await docmindApi.listQaMessages(latest.id, 50);
     qaMessages.value = messages;
     qaAnswer.value = messages[messages.length - 1] ?? null;
+    qaSelectedSourceClosed.value = false;
     qaSelectedSourceId.value = qaAnswer.value?.sources[0]?.source_id ?? "";
   } catch (error) {
     console.error("[DocMind] loadLatestQaSession failed", error);
@@ -449,7 +459,9 @@ const installQaProgressListener = async () => {
       } else if (qaAnswer.value) {
         qaMessages.value.push(qaAnswer.value);
       }
-      qaSelectedSourceId.value = qaSelectedSourceId.value || payload.sources[0]?.source_id || "";
+      if (!qaSelectedSourceClosed.value) {
+        qaSelectedSourceId.value = qaSelectedSourceId.value || payload.sources[0]?.source_id || "";
+      }
 
       if (payload.state === "searching") {
         qaLoading.value = true;
@@ -531,6 +543,7 @@ const runQa = async () => {
     qaActiveJobId.value = started.job_id;
     qaAnswer.value = started.status;
     qaMessages.value.push(started.status);
+    qaSelectedSourceClosed.value = false;
     qaSelectedSourceId.value = started.status.sources[0]?.source_id ?? "";
     qaQuestion.value = "";
 
@@ -546,6 +559,7 @@ const runQa = async () => {
     }
   } catch (error) {
     qaAnswer.value = null;
+    qaSelectedSourceClosed.value = false;
     qaSelectedSourceId.value = "";
     qaErrorMessage.value = formatDocmindError(error, t("page.appSearch.qa.askFailed"));
     qaLoading.value = false;
@@ -568,6 +582,7 @@ const newQaSession = () => {
   qaSessionId.value = "";
   qaSessionTitle.value = "";
   qaQuestion.value = "";
+  qaSelectedSourceClosed.value = false;
   qaSelectedSourceId.value = "";
   qaInfoMessage.value = "";
   qaErrorMessage.value = "";
@@ -576,6 +591,7 @@ const newQaSession = () => {
 
 const selectQaMessage = (message: QaAnswerView) => {
   qaAnswer.value = message;
+  qaSelectedSourceClosed.value = false;
   qaSelectedSourceId.value = message.sources[0]?.source_id ?? "";
 };
 
@@ -609,7 +625,18 @@ const stopQa = async () => {
 };
 
 const selectQaSource = (sourceId: string) => {
+  qaSelectedSourceClosed.value = false;
   qaSelectedSourceId.value = sourceId;
+};
+
+const closeSelectedQaSource = () => {
+  qaSelectedSourceClosed.value = true;
+  qaSelectedSourceId.value = "";
+};
+
+const closeSelectedResult = () => {
+  selectedResultClosed.value = true;
+  selectedId.value = "";
 };
 
 const openSelectedQaFile = async () => {
@@ -829,6 +856,7 @@ const loadSelectedContext = async (current: SearchResultView | null | undefined)
 const runSearch = async () => {
   if (!query.value.trim()) {
     results.value = [];
+    selectedResultClosed.value = false;
     selectedId.value = "";
     expandedGroups.value = {};
     clearSearchDebugReport();
@@ -847,6 +875,7 @@ const runSearch = async () => {
 
   try {
     results.value = await docmindApi.searchDocuments(query.value, 20);
+    selectedResultClosed.value = false;
     selectedId.value = "";
     expandedGroups.value = {};
     if (showDebugPanel.value) {
@@ -857,6 +886,7 @@ const runSearch = async () => {
     await loadQuickAccessData();
   } catch (error) {
     results.value = [];
+    selectedResultClosed.value = false;
     selectedId.value = "";
     expandedGroups.value = {};
     errorMessage.value = error instanceof Error ? error.message : t("page.appSearch.searchFailed");
@@ -1098,6 +1128,7 @@ onMounted(async () => {
     await runSearch();
   } else {
     results.value = [];
+    selectedResultClosed.value = false;
     selectedId.value = "";
     expandedGroups.value = {};
     clearSearchDebugReport();
@@ -1116,6 +1147,7 @@ onBeforeUnmount(() => {
 watch(query, () => {
   if (!query.value.trim()) {
     results.value = [];
+    selectedResultClosed.value = false;
     selectedId.value = "";
     expandedGroups.value = {};
     clearSearchDebugReport();
@@ -1141,6 +1173,7 @@ watch(routeSearchQuery, async (next) => {
   }
 
   results.value = [];
+  selectedResultClosed.value = false;
   selectedId.value = "";
   expandedGroups.value = {};
   clearSearchDebugReport();
@@ -1168,16 +1201,20 @@ watch(
 watch(
   filteredResults,
   (items) => {
-    if (!items.length) {
-      if (selectedId.value) {
-        selectedId.value = "";
-      }
-      return;
+  if (!items.length) {
+    if (selectedId.value) {
+      selectedId.value = "";
     }
+    return;
+  }
 
-    if (selected.value && items.some((item) => item.id === selected.value?.id)) {
-      return;
-    }
+  if (selectedResultClosed.value) {
+    return;
+  }
+
+  if (selected.value && items.some((item) => item.id === selected.value?.id)) {
+    return;
+  }
 
     selectedId.value = items[0].id;
   },
@@ -1512,8 +1549,18 @@ watch(showDebugPanel, async (visible) => {
                       {{ selected.path }}
                     </div>
                   </div>
-                  <div class="docmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
-                    {{ selected.ext.toUpperCase() }}
+                  <div class="flex items-center gap-2">
+                    <div class="docmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
+                      {{ selected.ext.toUpperCase() }}
+                    </div>
+                    <button
+                      class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                      type="button"
+                      :title="t('common.close')"
+                      @click="closeSelectedResult"
+                    >
+                      <X :size="14" />
+                    </button>
                   </div>
                 </div>
                 <div v-if="selectedTitlePath" class="docmind-detail-kv mt-2" :title="selectedTitlePath">
@@ -1637,8 +1684,18 @@ watch(showDebugPanel, async (visible) => {
                     <div class="text-lg font-semibold text-primary">{{ qaSelectedSource.file_name }}</div>
                     <div class="mt-1 break-all text-xs text-muted">{{ qaSelectedSource.path }}</div>
                   </div>
-                  <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
-                    {{ qaSelectedSource.ext.toUpperCase() }}
+                  <div class="flex items-center gap-2">
+                    <div class="docmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
+                      {{ qaSelectedSource.ext.toUpperCase() }}
+                    </div>
+                    <button
+                      class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                      type="button"
+                      :title="t('common.close')"
+                      @click="closeSelectedQaSource"
+                    >
+                      <X :size="14" />
+                    </button>
                   </div>
                 </div>
                 <div v-if="qaSelectedTitlePath" class="mt-3 rounded-md border border-default bg-surface px-3 py-2">

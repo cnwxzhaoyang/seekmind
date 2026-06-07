@@ -1,9 +1,16 @@
+/*
+ * @author MorningSun
+ * @CreatedDate 2026/06/06
+ * @Description DocMind sidecar and bundled helper environment wiring.
+ */
+
 use std::path::PathBuf;
 use std::process::Command;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
+use crate::docmind::vision_ocr::{bundled_vision_ocr_binary, default_vision_ocr_languages};
 use crate::docmind::storage::types::NetworkProxySettings;
 
 fn target_triple_suffix() -> String {
@@ -111,6 +118,20 @@ pub fn configure_sidecar_command(command: &mut Command) {
     let cache_dir = ensure_fastembed_cache_dir();
     command.env("DOCMIND_FASTEMBED_CACHE_DIR", &cache_dir);
     command.env("HF_HOME", cache_dir.join("huggingface"));
+
+    // 修复：沙盒运行时不能再依赖系统路径下的 OCR 进程，这里改为注入打包内 Vision OCR helper。
+    if let Some(binary) = bundled_vision_ocr_binary() {
+        let languages = default_vision_ocr_languages();
+        eprintln!(
+            "[DocMind] using bundled Vision OCR helper: bin={}, langs={}",
+            binary.display(),
+            languages.join(",")
+        );
+        command.env("DOCMIND_VISION_OCR_BIN", &binary);
+        command.env("DOCMIND_VISION_OCR_LANGS", languages.join(","));
+    } else {
+        eprintln!("[DocMind] bundled Vision OCR helper not found; PDF OCR may be unavailable in sandbox");
+    }
 }
 
 pub fn apply_network_proxy_environment(settings: Option<&NetworkProxySettings>) {

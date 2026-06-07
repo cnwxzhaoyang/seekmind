@@ -1,3 +1,9 @@
+/*
+ * @author MorningSun
+ * @CreatedDate 2026/06/06
+ * @Description DocMind Tauri application entry point and public helper wrappers.
+ */
+
 mod docmind;
 
 use std::fs;
@@ -28,6 +34,10 @@ pub fn reset_local_storage() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+pub fn run_vision_ocr_helper(args: &[String]) -> Result<(), String> {
+    docmind::vision_ocr::run_cli(args)
 }
 
 pub fn run() {

@@ -213,11 +213,11 @@ const pdfOcrNotice = computed(() => {
 });
 
 const ocrLanguagesPreview = computed(() => {
-  if (!parserRuntime.value?.tesseract_languages.length) {
+  if (!parserRuntime.value?.vision_ocr_languages.length) {
     return t("common.none");
   }
 
-  const languages = parserRuntime.value.tesseract_languages;
+  const languages = parserRuntime.value.vision_ocr_languages;
   const previewCount = 8;
   const preview = languages.slice(0, previewCount).join(", ");
   if (languages.length > previewCount) {
@@ -236,8 +236,8 @@ const chineseOcrNotice = computed(() => {
     title: t("common.ocr.warningTitle"),
     desc: t("common.ocr.warningDesc"),
     hint: t("common.ocr.warningHint"),
-    languages: parserRuntime.value.tesseract_languages.length
-      ? parserRuntime.value.tesseract_languages.join(", ")
+    languages: parserRuntime.value.vision_ocr_languages.length
+      ? parserRuntime.value.vision_ocr_languages.join(", ")
       : t("common.unknown"),
   };
 });

@@ -5,6 +5,7 @@ pub mod qa;
 pub mod search;
 pub mod semantic;
 pub mod sidecar;
+pub mod vision_ocr;
 pub mod storage;
 
 pub mod collections;
