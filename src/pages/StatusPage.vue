@@ -30,7 +30,6 @@ import {
 import SvgIcon from "../components/SvgIcon.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
-import SeekMindIndexTree from "../components/SeekMind/SeekMindIndexTree.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { formatDirectoryCitation } from "../utils/citation";
@@ -1069,343 +1068,311 @@ onBeforeUnmount(() => {
       <div class="panel-content">
         <!-- 左侧面板 -->
         <div class="left-panel">
-        <!-- 索引控制 -->
-        <div class="card">
-          <div class="card-header">
-            <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-settings" size="lg" /></span>
-            <h2>{{ t("page.status.section.control") }}</h2>
-          </div>
-          <p class="card-description">{{ t("page.status.section.controlDesc") }}</p>
-          <div class="control-buttons">
-            <button
-              class="btn btn-secondary"
-              :disabled="
-                refreshing ||
-                loading ||
-                !status?.current_task ||
-                status.current_task.state === 'paused'
-              "
-              @click="pauseIndexing"
-            >
-              <span class="btn-icon"><SvgIcon icon="icon-pause" size="sm" /></span>
-              {{
-                actionState === "pausing"
-                  ? t("page.status.btn.pausing")
-                  : t("page.status.btn.pause")
-              }}
-            </button>
-            <button
-              class="btn btn-secondary"
-              :disabled="
-                refreshing ||
-                loading ||
-                !status?.current_task ||
-                status.current_task.state !== 'paused'
-              "
-              @click="resumeIndexing"
-            >
-              <span class="btn-icon"><SvgIcon icon="icon-play" size="sm" /></span>
-              {{
-                actionState === "resuming"
-                  ? t("page.status.btn.resuming")
-                  : t("page.status.btn.resume")
-              }}
-            </button>
-            <button
-              class="btn btn-primary"
-              :disabled="refreshing || loading"
-              @click="refreshIndex"
-            >
-              <span class="btn-icon"><SvgIcon icon="icon-refresh" size="sm" /></span>
-              {{
-                refreshing
-                  ? t("page.status.btn.rebuilding")
-                  : t("page.status.btn.reindex")
-              }}
-            </button>
-          </div>
-        </div>
+          <!-- 索引目录 -->
+          <div class="card info-card-large">
+            <div class="card-header card-header--stacked">
+              <div class="card-head-main">
+                <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-info" size="lg" /></span>
+                <div class="card-head-copy">
+                  <h2>{{ t("sidebar.indexDirs") }}</h2>
+                  <p>{{ t("page.status.section.indexDirsDesc") }}</p>
+                </div>
+              </div>
+              <span class="file-count">{{ explicitIndexDirCount }} 个目录</span>
+            </div>
 
-        <!-- 统计信息 -->
-        <div class="card">
-          <div class="card-header">
-            <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-chart" size="lg" /></span>
-            <h2>{{ t("page.status.section.statistics") }}</h2>
-          </div>
-          <div class="stats-grid">
-            <div class="stat-item">
-              <span class="stat-icon indexed" aria-hidden="true"><FileCheck :size="18" /></span>
-              <div class="stat-content">
-                <div class="stat-label">{{ t("page.status.stats.indexedFiles") }}</div>
-                <div class="stat-value">{{ status?.indexed_docs ?? 0 }}</div>
-                <div class="stat-desc">{{ t("page.status.stats.indexedFilesDesc") }}</div>
-              </div>
+            <div class="directory-actions">
+              <button
+                class="btn btn-ghost icon-btn"
+                :disabled="
+                  refreshing ||
+                  loading ||
+                  !status?.current_task ||
+                  status.current_task.state === 'paused'
+                "
+                @click="pauseIndexing"
+                :title="t('page.status.btn.pause')"
+                :aria-label="t('page.status.btn.pause')"
+              >
+                <span class="btn-icon" aria-hidden="true"><SvgIcon icon="icon-pause" size="sm" /></span>
+              </button>
+              <button
+                class="btn btn-ghost icon-btn"
+                :disabled="
+                  refreshing ||
+                  loading ||
+                  !status?.current_task ||
+                  status.current_task.state !== 'paused'
+                "
+                @click="resumeIndexing"
+                :title="t('page.status.btn.resume')"
+                :aria-label="t('page.status.btn.resume')"
+              >
+                <span class="btn-icon" aria-hidden="true"><SvgIcon icon="icon-play" size="sm" /></span>
+              </button>
+              <button
+                class="btn btn-primary icon-btn"
+                :disabled="refreshing || loading"
+                @click="refreshIndex"
+                :title="t('page.status.btn.reindex')"
+                :aria-label="t('page.status.btn.reindex')"
+              >
+                <span class="btn-icon" aria-hidden="true"><SvgIcon icon="icon-refresh" size="sm" /></span>
+              </button>
+              <button
+                class="btn btn-primary icon-btn"
+                :disabled="importing || refreshing || !!busyPath"
+                @click="chooseAndAddDir"
+                :title="t('page.library.btn.addDir')"
+                :aria-label="t('page.library.btn.addDir')"
+              >
+                <FolderPlus :size="14" />
+              </button>
             </div>
-            <div class="stat-item">
-              <span class="stat-icon scanned" aria-hidden="true"><FolderOpenDot :size="18" /></span>
-              <div class="stat-content">
-                <div class="stat-label">{{ t("page.status.stats.indexedCount") }}</div>
-                <div class="stat-value">{{ status?.scanned_docs ?? 0 }}</div>
-                <div class="stat-desc">{{ t("page.status.stats.indexedCountDesc") }}</div>
-              </div>
-            </div>
-            <div class="stat-item">
-              <span class="stat-icon error" aria-hidden="true"><TriangleAlert :size="18" /></span>
-              <div class="stat-content">
-                <div class="stat-label">{{ t("page.status.stats.errorCount") }}</div>
-                <div class="stat-value error-value">{{ status?.failed_files ?? 0 }}</div>
-                <div class="stat-desc">{{ t("page.status.stats.errorCountDesc") }}</div>
-              </div>
-            </div>
-            <div class="stat-item">
-              <span class="stat-icon pending" aria-hidden="true"><FileClock :size="18" /></span>
-              <div class="stat-content">
-                <div class="stat-label">{{ t("page.status.stats.pendingFiles") }}</div>
-                <div class="stat-value">{{ pendingCount }}</div>
-                <div class="stat-desc">{{ t("page.status.stats.pendingFilesDesc") }}</div>
-              </div>
-            </div>
-            <div class="stat-item">
-              <span class="stat-icon scanned" aria-hidden="true"><ScanText :size="18" /></span>
-              <div class="stat-content">
-                <div class="stat-label">{{ t("page.status.stats.ocrTasks") }}</div>
-                <div class="stat-value">{{ status?.pdf_ocr_tasks ?? 0 }}</div>
-                <div class="stat-desc">{{ t("page.status.stats.ocrTasksDesc") }}</div>
-                <button
-                  type="button"
-                  class="stat-action-button"
-                  :disabled="refreshing || loading"
-                  @click="refreshPdfOcrTasks"
-                >
-                  {{ t("page.status.ocr.retry") }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <!-- 索引进度 -->
-        <div class="card">
-          <div class="card-header">
-            <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-clock" size="lg" /></span>
-            <h2>{{ t("page.status.section.progress") }}</h2>
-          </div>
-
-          <div class="progress-section">
-            <div class="progress-label">
-              <span>{{ t("page.status.progress.overall") }}</span>
-              <span class="progress-percentage">{{ indexProgressPercent }}%</span>
-            </div>
-            <div class="progress-bar">
+            <div class="dir-tree-toolbar">
+              <!-- 目录拖拽提示保留为说明区，按钮已合并到上方一排图标操作。 -->
               <div
-                class="progress-fill"
-                :style="{ width: indexProgressPercent + '%' }"
-              ></div>
-            </div>
-            <div class="progress-current">
-              {{ t("page.status.progress.currentFile") }}：
-              <span class="file-name-highlight">{{
-                status?.current_task?.current_file ?? "-"
-              }}</span>
-            </div>
-          </div>
-
-          <div class="time-info">
-            <div class="time-item">
-              <span class="time-icon"><SvgIcon icon="icon-clock" size="sm" /></span>
-              <div>
-                <div class="time-label">{{ t("page.status.progress.duration") }}</div>
-                <div class="time-value">{{ currentTaskDurationText }}</div>
+                class="drop-zone"
+                :class="dragActive ? 'drop-zone-active' : ''"
+              >
+                <UploadCloud :size="14" />
+                <span>{{ dragActive ? t("page.library.dropActive") : t("page.library.dropHint") }}</span>
               </div>
             </div>
-            <div class="time-item">
-              <span class="time-icon"><SvgIcon icon="icon-clock" size="sm" /></span>
-              <div>
-                <div class="time-label">{{ t("page.status.progress.startTime") }}</div>
-                <div class="time-value">{{ currentTaskStartTimeText }}</div>
-              </div>
-            </div>
-          </div>
 
-          <div class="status-stats">
-            <div class="status-stat success">
-              <span class="stat-icon"><SvgIcon icon="icon-success" size="sm" /></span>
-              <div>
-                <div class="stat-label">{{ t("page.status.progress.success") }}</div>
-                <div class="stat-value">{{ status?.current_task?.succeeded ?? 0 }}</div>
+            <div class="dir-list">
+              <div
+                v-if="visibleDirRows.length === 0"
+                class="dir-list-empty"
+              >
+                {{ t("page.status.emptyDirs") }}
               </div>
-            </div>
-            <div class="status-stat error">
-              <span class="stat-icon"><SvgIcon icon="icon-error" size="sm" /></span>
-              <div>
-                <div class="stat-label">{{ t("page.status.progress.failed") }}</div>
-                <div class="stat-value">{{ status?.current_task?.failed ?? 0 }}</div>
-              </div>
-            </div>
-            <div class="status-stat skipped">
-              <span class="stat-icon">⊘</span>
-              <div>
-                <div class="stat-label">{{ t("page.status.progress.skipped") }}</div>
-                <div class="stat-value">{{ status?.current_task?.skipped ?? 0 }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 错误摘要 -->
-        <div class="card">
-          <div class="card-header">
-            <!-- 对齐原型：错误摘要使用红色错误语义图标。 -->
-            <span class="card-icon seekmind-page-header-icon error"><SvgIcon icon="icon-error" size="lg" /></span>
-            <h2>{{ t("page.status.section.errorSummary") }}</h2>
-          </div>
-
-          <div class="error-circle-container">
-            <svg class="error-circle" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="45" class="circle-bg"></circle>
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                class="circle-progress"
-                :style="{
-                  strokeDashoffset:
-                    282.7 -
-                    (282.7 *
-                      Math.min(errorTypeList.reduce((s, e) => s + e.count, 0), 100)) /
-                      100,
-                }"
-              ></circle>
-            </svg>
-            <div class="error-text">
-              <div class="error-count">{{ status?.failed_files ?? 0 }}</div>
-              <div class="error-label">{{ t("page.status.errorSummary.totalErrors") }}</div>
-            </div>
-          </div>
-
-          <div class="error-types">
-            <div class="error-type-header">{{ t("page.status.errorSummary.errorType") }}</div>
-            <div
-              v-for="err in errorTypeList"
-              :key="err.name"
-              class="error-type-item"
-            >
-              <div class="error-type-name" :title="err.name">{{ err.name }}</div>
-              <div class="error-type-bar">
+              <div
+                v-else
+                class="dir-card-list"
+              >
                 <div
-                  class="error-bar-fill"
-                  :style="{ width: err.percentage + '%' }"
+                  v-for="row in visibleDirRows"
+                  :key="row.fullPath"
+                  class="dir-card-row"
+                  :class="[
+                    row.depth > 0 ? 'dir-card-row--child' : '',
+                    row.hasChildren ? 'dir-card-row--branch' : '',
+                  ]"
+                  :style="{ paddingLeft: `${16 + row.depth * 16}px` }"
+                  @contextmenu="handleTreeContextMenu(row, $event)"
+                  @click="row.hasChildren ? setDirExpanded(row.fullPath, !row.expanded) : undefined"
+                >
+                  <button
+                    v-if="row.hasChildren"
+                    class="dir-expand-btn"
+                    type="button"
+                    :title="row.expanded ? t('sidebar.collapse') : t('sidebar.expand')"
+                    @click.stop="setDirExpanded(row.fullPath, !row.expanded)"
+                  >
+                    <span>{{ row.expanded ? "▾" : "▸" }}</span>
+                  </button>
+                  <span
+                    v-else
+                    class="dir-expand-spacer"
+                  />
+                  <span class="dir-folder-icon">
+                    <FolderOpenDot :size="18" />
+                  </span>
+                  <div class="dir-card-main">
+                    <strong>{{ row.displayName }}</strong>
+                    <span>{{ row.fullPath }}</span>
+                  </div>
+                  <div class="dir-card-meta">
+                    <span>{{ row.dir.docs }} 文件</span>
+                    <span>{{ row.dir.chunks }} 片段</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+      </div>
+
+        <!-- 右侧面板 -->
+      <div class="right-panel">
+          <!-- 统计信息 -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-chart" size="lg" /></span>
+              <div class="card-head-copy">
+                <h2>{{ t("page.status.section.statistics") }}</h2>
+              </div>
+            </div>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-icon indexed" aria-hidden="true"><FileCheck :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.stats.indexedFiles") }}</div>
+                  <div class="stat-value">{{ status?.indexed_docs ?? 0 }}</div>
+                </div>
+              </div>
+              <div class="stat-item">
+                <span class="stat-icon scanned" aria-hidden="true"><FolderOpenDot :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.stats.indexedCount") }}</div>
+                  <div class="stat-value">{{ status?.scanned_docs ?? 0 }}</div>
+                </div>
+              </div>
+              <div class="stat-item">
+                <span class="stat-icon scanned" aria-hidden="true"><FileText :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.stats.chunkTotal") }}</div>
+                  <div class="stat-value">{{ status?.indexed_chunks ?? 0 }}</div>
+                </div>
+              </div>
+              <div class="stat-item">
+                <span class="stat-icon error" aria-hidden="true"><TriangleAlert :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.stats.errorCount") }}</div>
+                  <div class="stat-value error-value">{{ status?.failed_files ?? 0 }}</div>
+                </div>
+              </div>
+              <div class="stat-item">
+                <span class="stat-icon pending" aria-hidden="true"><FileClock :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.stats.pendingFiles") }}</div>
+                  <div class="stat-value">{{ pendingCount }}</div>
+                </div>
+              </div>
+              <div class="stat-item">
+                <span class="stat-icon scanned" aria-hidden="true"><ScanText :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.stats.ocrTasks") }}</div>
+                  <div class="stat-value">{{ status?.pdf_ocr_tasks ?? 0 }}</div>
+                  <button
+                    type="button"
+                    class="stat-action-button"
+                    :disabled="refreshing || loading"
+                    @click="refreshPdfOcrTasks"
+                  >
+                    {{ t("page.status.ocr.retry") }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 索引进度 -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-clock" size="lg" /></span>
+              <div class="card-head-copy">
+                <h2>{{ t("page.status.section.progress") }}</h2>
+              </div>
+            </div>
+
+            <div class="progress-section">
+              <div class="progress-label">
+                <span>{{ t("page.status.progress.overall") }}</span>
+                <span class="progress-percentage">{{ indexProgressPercent }}%</span>
+              </div>
+              <div class="progress-bar">
+                <div
+                  class="progress-fill"
+                  :style="{ width: indexProgressPercent + '%' }"
                 ></div>
               </div>
-              <div class="error-type-count">{{ err.count }} ({{ err.percentage }}%)</div>
-            </div>
-            <div v-if="errorTypeList.length === 0" class="error-type-empty">-</div>
-          </div>
-
-          <div v-if="parserRuntime" class="environment-info">
-            <div class="env-item">
-              <span class="env-label">{{ t("page.status.errorSummary.pythonVersion") }}</span>
-              <span class="env-value">{{ parserRuntime.python_bin }}</span>
-            </div>
-            <div class="env-item">
-              <span class="env-label">{{ t("page.status.errorSummary.timeout") }}</span>
-              <span class="env-value">{{ parserRuntime.timeout_ms }} ms</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 右侧面板 -->
-      <div class="right-panel">
-        <!-- 索引信息 -->
-        <div class="card info-card-large">
-          <div class="card-header">
-            <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-info" size="lg" /></span>
-            <h2>{{ t("page.status.section.indexInfo") }}</h2>
-            <span class="file-count">{{ dirs.length }} 个目录</span>
-          </div>
-
-          <div class="dir-tree-toolbar">
-            <button
-              class="btn btn-secondary btn-sm"
-              :disabled="importing || refreshing || !!busyPath"
-              @click="chooseAndAddDir"
-            >
-              <FolderPlus :size="14" />
-              {{ t("page.library.btn.addDir") }}
-            </button>
-            <div
-              class="drop-zone"
-              :class="dragActive ? 'drop-zone-active' : ''"
-            >
-              <UploadCloud :size="14" />
-              <span>{{ dragActive ? t("page.library.dropActive") : t("page.library.dropHint") }}</span>
-            </div>
-          </div>
-
-          <div class="dir-tree-container">
-            <div
-              v-if="dirs.length === 0"
-              class="dir-list-empty"
-            >
-              {{ t("page.status.emptyDirs") }}
-            </div>
-            <SeekMindIndexTree
-              v-else
-              :rows="visibleDirRows"
-              :selected-path="''"
-              :path-tooltip="true"
-              :selectable="false"
-              :virtual-label="t('common.virtualDir')"
-              :expand-title="t('sidebar.expand')"
-              :collapse-title="t('sidebar.collapse')"
-              density="compact"
-              @contextmenu="handleTreeContextMenu"
-              @toggle="setDirExpanded"
-            />
-          </div>
-        </div>
-
-        <!-- 最新异常 -->
-        <div class="card">
-          <div class="card-header">
-            <!-- 对齐原型：最新异常使用警告图标，但保留异常红色语义。 -->
-            <span class="card-icon seekmind-page-header-icon error"><SvgIcon icon="icon-warning" size="lg" /></span>
-            <h2>{{ t("page.status.section.latestException") }}</h2>
-            <span class="exception-count">{{ status?.failed_items?.length ?? 0 }}</span>
-          </div>
-
-          <div v-if="latestExceptions.length > 0" class="exception-content">
-            <div
-              v-for="(item, idx) in latestExceptions.slice(0, 1)"
-              :key="idx"
-              class="exception-item"
-            >
-              <div class="exception-header">
-                <span class="exception-file">{{ t("page.status.exception.errorFile") }}：{{ item.file }}</span>
-                <span class="exception-type-tag">{{ item.type }}</span>
+              <div class="progress-current">
+                {{ t("page.status.progress.currentFile") }}：
+                <span class="file-name-highlight">{{
+                  status?.current_task?.current_file ?? "-"
+                }}</span>
               </div>
-              <div class="exception-time">
-                {{ t("page.status.exception.exceptionTime") }}：{{ item.time }}
+            </div>
+
+            <div class="progress-metrics">
+              <div class="progress-metric">
+                <span class="progress-metric-icon"><SvgIcon icon="icon-clock" size="sm" /></span>
+                <div class="progress-metric-label">{{ t("page.status.progress.duration") }}</div>
+                <div class="progress-metric-value">{{ currentTaskDurationText }}</div>
               </div>
-              <div v-if="item.message" class="exception-message">
-                {{ item.message }}
+              <div class="progress-metric">
+                <span class="progress-metric-icon"><SvgIcon icon="icon-clock" size="sm" /></span>
+                <div class="progress-metric-label">{{ t("page.status.progress.startTime") }}</div>
+                <div class="progress-metric-value">{{ currentTaskStartTimeText }}</div>
+              </div>
+              <div class="progress-metric">
+                <span class="progress-metric-icon success"><SvgIcon icon="icon-success" size="sm" /></span>
+                <div class="progress-metric-label">{{ t("page.status.progress.success") }}</div>
+                <div class="progress-metric-value">{{ status?.current_task?.succeeded ?? 0 }}</div>
+              </div>
+              <div class="progress-metric">
+                <span class="progress-metric-icon error"><SvgIcon icon="icon-error" size="sm" /></span>
+                <div class="progress-metric-label">{{ t("page.status.progress.failed") }}</div>
+                <div class="progress-metric-value">{{ status?.current_task?.failed ?? 0 }}</div>
+              </div>
+              <div class="progress-metric">
+                <span class="progress-metric-icon skipped">⊘</span>
+                <div class="progress-metric-label">{{ t("page.status.progress.skipped") }}</div>
+                <div class="progress-metric-value">{{ status?.current_task?.skipped ?? 0 }}</div>
               </div>
             </div>
           </div>
 
-          <div v-else class="exception-empty">
-            <span class="empty-icon"><SvgIcon icon="icon-success" size="lg" /></span>
-            <p>{{ t("page.status.exception.noException") }}</p>
+          <!-- 健康状态 -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon seekmind-page-header-icon"><SvgIcon icon="icon-error" size="lg" /></span>
+              <div class="card-head-copy">
+                <h2>{{ t("page.status.section.healthStatus") }}</h2>
+              </div>
+            </div>
+
+            <!-- 健康区改成和索引统计一致的紧凑小卡片，避免圆环摘要占用大块空白。 -->
+            <div class="health-grid health-grid--cards">
+              <div class="stat-item health-metric">
+                <span class="stat-icon error" aria-hidden="true"><TriangleAlert :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.errorSummary.totalErrors") }}</div>
+                  <div class="stat-value error-value">{{ status?.failed_files ?? 0 }}</div>
+                </div>
+              </div>
+              <div class="stat-item health-metric">
+                <span class="stat-icon scanned" aria-hidden="true"><SvgIcon icon="icon-info" size="sm" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.errorSummary.errorType") }}</div>
+                  <div class="stat-value health-value-truncate" :title="errorTypeList[0]?.name || '-'">
+                    {{ errorTypeList[0]?.name || "-" }}
+                  </div>
+                </div>
+              </div>
+              <div class="stat-item health-metric">
+                <span class="stat-icon scanned" aria-hidden="true"><SvgIcon icon="icon-info" size="sm" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.errorSummary.pythonVersion") }}</div>
+                  <div class="stat-value">{{ parserRuntime?.python_bin || "-" }}</div>
+                </div>
+              </div>
+              <div class="stat-item health-metric">
+                <span class="stat-icon pending" aria-hidden="true"><FileClock :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.errorSummary.timeout") }}</div>
+                  <div class="stat-value">{{ parserRuntime?.timeout_ms ?? 0 }} ms</div>
+                </div>
+              </div>
+              <div class="stat-item health-metric">
+                <span class="stat-icon scanned" aria-hidden="true"><Eye :size="18" /></span>
+                <div class="stat-content">
+                  <div class="stat-label">{{ t("page.status.section.latestException") }}</div>
+                  <div
+                    class="stat-value health-value-truncate"
+                    :title="latestExceptions.length > 0 ? latestExceptions[0].file : t('page.status.exception.noException')"
+                  >
+                    {{ latestExceptions.length > 0 ? latestExceptions[0].file : t("page.status.exception.noException") }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="exception-footer">
-            <button class="view-all-btn" @click="syncDashboardState">
-              {{ t("page.status.exception.viewAll") }}
-            </button>
-          </div>
         </div>
-      </div>
       </div>
     </main>
 
@@ -1428,16 +1395,23 @@ onBeforeUnmount(() => {
 
 .index-status-panel {
   margin: 12px;
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: transparent;
   color: var(--color-text-primary);
   min-height: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: 24px;
-  box-shadow: var(--shadow-card);
+}
+
+.index-status-panel :deep(.seekmind-page-header-icon) {
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Office 提示 */
@@ -1447,9 +1421,8 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  background-color: rgba(187, 128, 9, 0.15);
-  border: 1px solid rgba(187, 128, 9, 0.4);
-  border-radius: 14px;
+  background-color: rgba(187, 128, 9, 0.12);
+  border-radius: 16px;
 }
 .office-notice-icon {
   color: var(--color-warning);
@@ -1478,14 +1451,12 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  background-color: rgba(37, 99, 235, 0.08);
-  border: 1px solid rgba(37, 99, 235, 0.22);
-  border-radius: 14px;
+  background-color: rgba(37, 99, 235, 0.06);
+  border-radius: 16px;
 }
 
 .ocr-notice-warning {
-  background-color: rgba(187, 128, 9, 0.15);
-  border-color: rgba(187, 128, 9, 0.4);
+  background-color: rgba(187, 128, 9, 0.12);
 }
 
 .ocr-notice-icon {
@@ -1527,12 +1498,10 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  min-height: 48px;
+  min-height: 44px;
   padding: 0 20px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border);
-  background-color: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
+  background: transparent;
 }
 
 .header-left {
@@ -1563,7 +1532,8 @@ onBeforeUnmount(() => {
 }
 
 .header-description {
-  font-size: 13px;
+  max-width: 64ch;
+  font-size: 12px;
   line-height: 1.35;
   color: var(--color-text-secondary);
   margin: 0;
@@ -1572,7 +1542,7 @@ onBeforeUnmount(() => {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
@@ -1580,23 +1550,21 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 5px 11px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .status-badge.status-running {
-  background-color: var(--color-emerald-soft);
+  background-color: rgba(34, 197, 94, 0.12);
   color: var(--color-success);
-  border: 1px solid var(--color-success);
 }
 
 .status-badge.status-idle {
-  background-color: var(--color-badge-bg);
+  background-color: rgba(148, 163, 184, 0.12);
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
 }
 
 .status-dot {
@@ -1633,8 +1601,8 @@ onBeforeUnmount(() => {
 .refresh-btn {
   width: 36px;
   height: 36px;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-surface);
+  border: 0;
+  background-color: rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -1646,8 +1614,7 @@ onBeforeUnmount(() => {
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background-color: var(--color-surface-active);
-  border-color: var(--color-accent);
+  background-color: rgba(47, 129, 255, 0.08);
   color: var(--color-accent);
 }
 
@@ -1661,63 +1628,105 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 12px 16px 16px;
 }
 
 /* 主容器 */
 .panel-content {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  align-items: start;
+  gap: 16px;
+  align-items: stretch;
 }
 
 .left-panel,
 .right-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* 左侧目录卡需要随列高拉伸，目录过多时仅在卡片内部滚动，避免整页高度继续膨胀。 */
+.left-panel > .info-card-large {
+  flex: 1;
+  min-height: 0;
 }
 
 /* 卡片通用 */
 .card {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: var(--shadow-sm);
+  background-color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+  padding-bottom: 0;
+}
+
+.card-header--stacked {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.card-head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
 }
 
 .card-icon {
   display: inline-flex;
   align-items: center;
-}
-
-.card-icon.error {
-  color: var(--color-danger);
+  justify-content: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(47, 129, 255, 0.12);
+  color: var(--color-accent);
 }
 
 .card-header h2 {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
   flex: 1;
   margin: 0;
 }
 
-.card-description {
-  font-size: 13px;
+.card-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.card-head-copy h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.card-head-copy p {
+  font-size: 12px;
   color: var(--color-text-secondary);
-  margin-bottom: 16px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.card-description {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
   line-height: 1.5;
 }
 
@@ -1725,26 +1734,79 @@ onBeforeUnmount(() => {
 .exception-count {
   font-size: 12px;
   color: var(--color-text-secondary);
-  background-color: var(--color-page-bg);
+  background-color: rgba(148, 163, 184, 0.12);
   padding: 3px 8px;
   border-radius: 999px;
   white-space: nowrap;
 }
 
-/* 控制按钮 */
-.control-buttons {
+/* 目录内控制 */
+.directory-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.directory-actions .btn {
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.directory-actions .btn .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.directory-actions .btn .btn-icon :deep(svg) {
+  width: 16px;
+  height: 16px;
+}
+
+.directory-actions .btn.btn-ghost {
+  background-color: rgba(255, 255, 255, 0.84);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.directory-actions .btn.btn-ghost:hover:not(:disabled) {
+  background-color: rgba(47, 129, 255, 0.08);
+  color: var(--color-accent);
+}
+
+.directory-actions .btn.btn-primary {
+  background-color: rgba(47, 129, 255, 0.96);
+  color: white;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.directory-actions .btn.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+
+.directory-actions .btn:disabled {
+  background-color: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-secondary);
+}
+
+.directory-actions .btn.btn-secondary {
+  color: var(--color-text-primary);
 }
 
 .btn {
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-page-bg);
+  border: 0;
+  background-color: rgba(255, 255, 255, 0.82);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -1755,8 +1817,7 @@ onBeforeUnmount(() => {
 }
 
 .btn:hover:not(:disabled) {
-  background-color: var(--color-surface-active);
-  border-color: var(--color-accent);
+  background-color: rgba(47, 129, 255, 0.08);
   color: var(--color-accent);
 }
 
@@ -1767,7 +1828,6 @@ onBeforeUnmount(() => {
 
 .btn-primary {
   background-color: var(--color-accent);
-  border-color: var(--color-accent);
   color: white;
 }
 
@@ -1786,29 +1846,35 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-/* 统计信息 */
+/* 统计信息：保持为紧凑的仪表盘行，避免卡片下方留下大块空白。 */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .stat-item {
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  background-color: var(--color-page-bg);
-  border-radius: 16px;
-  border: 1px solid var(--color-border);
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 10px 10px 8px;
+  background-color: rgba(255, 255, 255, 0.72);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  min-height: 92px;
+  text-align: center;
+  position: relative;
 }
 
 .stat-icon {
-  width: 40px;
-  height: 40px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 10px;
   background-color: var(--color-surface-active);
   flex-shrink: 0;
   border: 1px solid transparent;
@@ -1841,20 +1907,25 @@ onBeforeUnmount(() => {
 .stat-content {
   flex: 1;
   min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  line-height: 1.2;
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 2px;
-  line-height: 1.2;
+  margin-bottom: 0;
+  line-height: 1.15;
 }
 
 .stat-value.error-value {
@@ -1867,13 +1938,15 @@ onBeforeUnmount(() => {
 }
 
 .stat-action-button {
-  margin-top: 8px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 11px;
+  padding: 2px 5px;
+  font-size: 8px;
   line-height: 1;
   cursor: pointer;
   transition:
@@ -1938,249 +2011,84 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 
-/* 时间信息 */
-.time-info {
+/* 索引进度：保持为紧凑的卡片行，和索引统计一致。 */
+.progress-metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding: 12px;
-  background-color: var(--color-page-bg);
-  border-radius: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
-.time-item {
+.progress-metric {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.time-icon {
-  display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  margin-top: 2px;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 8px 8px 7px;
+  background-color: rgba(255, 255, 255, 0.72);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  min-height: 84px;
+  text-align: center;
 }
 
-.time-label {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.time-value {
-  font-size: 13px;
-  color: var(--color-text-primary);
-  font-weight: 500;
-  margin-top: 2px;
-}
-
-/* 状态统计 */
-.status-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.status-stat {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px;
-  background-color: var(--color-page-bg);
-  border-radius: 16px;
-  border: 1px solid var(--color-border);
-}
-
-.status-stat.success {
-  border-color: rgba(34, 197, 94, 0.18);
-}
-
-.status-stat.error {
-  border-color: rgba(185, 28, 28, 0.18);
-}
-
-.status-stat.skipped {
-  border-color: rgba(234, 179, 8, 0.18);
-}
-
-.status-stat .stat-icon {
-  width: 34px;
-  height: 34px;
+.progress-metric-icon {
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 9px;
+  background-color: var(--color-surface-active);
+  color: var(--color-accent);
   border: 1px solid transparent;
   flex-shrink: 0;
 }
 
-.status-stat.indexed .stat-icon,
-.status-stat .stat-icon.indexed {
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-  border-color: rgba(47, 129, 255, 0.14);
+.progress-metric-icon.success {
+  color: var(--color-success);
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.14);
 }
 
-.status-stat .stat-icon.scanned {
-  color: var(--color-accent-text);
-  background: rgba(47, 129, 255, 0.08);
-  border-color: rgba(47, 129, 255, 0.12);
-}
-
-.status-stat .stat-icon.error {
+.progress-metric-icon.error {
   color: var(--color-danger);
   background: var(--color-danger-soft);
   border-color: rgba(185, 28, 28, 0.14);
 }
 
-.status-stat .stat-icon.pending {
-  color: #b45309;
-  background: var(--color-amber-soft);
-  border-color: rgba(180, 83, 9, 0.14);
+.progress-metric-icon.skipped {
+  color: #64748b;
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.14);
 }
 
-.status-stat .stat-label {
-  font-size: 11px;
+.progress-metric-label {
+  font-size: 9px;
   color: var(--color-text-secondary);
-  margin-bottom: 0;
+  line-height: 1.15;
 }
 
-.status-stat .stat-value {
-  font-size: 16px;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-/* 错误圆形图 */
-.error-circle-container {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  margin: 0 auto 16px;
-}
-
-.error-circle {
-  width: 100%;
-  height: 100%;
-}
-
-.circle-bg {
-  fill: none;
-  stroke: var(--color-surface-active);
-  stroke-width: 8;
-}
-
-.circle-progress {
-  fill: none;
-  stroke: var(--color-danger);
-  stroke-width: 8;
-  stroke-dasharray: 282.7;
-  stroke-dashoffset: 282.7;
-  transform: rotate(-90deg);
-  transform-origin: 50% 50%;
-  transition: stroke-dashoffset 0.3s ease;
-}
-
-.error-text {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-}
-
-.error-count {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--color-danger);
-  line-height: 1.2;
-}
-
-.error-label {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-/* 错误类型 */
-.error-types {
-  margin-bottom: 16px;
-}
-
-.error-type-header {
-  font-size: 12px;
+.progress-metric-value {
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 10px;
+  line-height: 1.15;
 }
 
-.error-type-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.error-type-name {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  min-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.error-type-bar {
-  flex: 1;
-  height: 6px;
-  background-color: var(--color-page-bg);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.error-bar-fill {
-  height: 100%;
-  background-color: var(--color-danger);
-  transition: width 0.3s ease;
-}
-
-.error-type-count {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  min-width: 60px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.error-type-empty {
-  text-align: center;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  padding: 8px 0;
-}
-
-/* 环境信息 */
-.environment-info {
+/* 健康状态：改成紧凑的小卡片行，和索引统计保持一致的视觉密度。 */
+.health-grid--cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
-.env-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.health-metric {
+  min-height: 92px;
 }
 
-.env-label {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.env-value {
-  font-size: 12px;
-  color: var(--color-text-primary);
-  font-weight: 500;
+.health-value-truncate {
+  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2190,12 +2098,28 @@ onBeforeUnmount(() => {
 .info-card-large {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .dir-tree-toolbar {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.08), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(47, 129, 255, 0.12);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.dir-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .drop-zone {
@@ -2203,28 +2127,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border: 1px dashed var(--color-border);
+  padding: 8px 12px;
+  border: 0;
   border-radius: 14px;
   font-size: 12px;
   color: var(--color-text-secondary);
   min-width: 0;
+  background-color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .drop-zone.drop-zone-active {
-  border-color: var(--color-accent);
-  background-color: var(--color-accent-soft);
+  background-color: rgba(47, 129, 255, 0.12);
   color: var(--color-accent);
-}
-
-.dir-tree-container {
-  flex: 1;
-  min-height: 0;
-  max-height: 400px;
-  overflow: auto;
-  border-radius: 16px;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-page-bg);
+  border-color: rgba(47, 129, 255, 0.2);
 }
 
 .dir-list-empty {
@@ -2236,12 +2152,114 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
+.dir-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dir-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.03);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
+}
+
+.dir-card-row:hover {
+  background: rgba(47, 129, 255, 0.04);
+}
+
+.dir-card-row--child {
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.dir-expand-btn,
+.dir-expand-spacer {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+
+.dir-expand-btn {
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+}
+
+.dir-expand-btn:hover {
+  color: var(--color-accent);
+}
+
+.dir-folder-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(47, 129, 255, 0.1);
+  color: var(--color-accent);
+  flex: none;
+}
+
+.dir-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dir-card-main strong {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dir-card-main span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dir-card-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.dir-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .dir-list-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  background-color: var(--color-page-bg);
+  background-color: rgba(255, 255, 255, 0.72);
   border-radius: 14px;
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -2250,8 +2268,8 @@ onBeforeUnmount(() => {
 
 .refresh-list-btn {
   padding: 4px 10px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: rgba(255, 255, 255, 0.82);
+  border: 0;
   border-radius: 999px;
   color: var(--color-accent);
   font-size: 12px;
@@ -2264,16 +2282,21 @@ onBeforeUnmount(() => {
   border-color: var(--color-accent);
 }
 
+.dir-tree-toolbar .btn {
+  background-color: rgba(47, 129, 255, 0.96);
+  color: white;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
 /* 异常信息 */
 .exception-content {
   margin-bottom: 12px;
 }
 
 .exception-item {
-  background-color: var(--color-page-bg);
-  border-left: 3px solid var(--color-danger);
+  background-color: rgba(255, 255, 255, 0.72);
   padding: 12px;
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
 .exception-header {
@@ -2294,7 +2317,7 @@ onBeforeUnmount(() => {
 .exception-type-tag {
   font-size: 11px;
   color: var(--color-danger);
-  background-color: var(--color-danger-soft);
+  background-color: rgba(185, 28, 28, 0.08);
   padding: 3px 8px;
   border-radius: 999px;
 }
@@ -2331,14 +2354,13 @@ onBeforeUnmount(() => {
 
 .exception-footer {
   padding-top: 12px;
-  border-top: 1px solid var(--color-border);
 }
 
 .view-all-btn {
   width: 100%;
   padding: 8px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: rgba(255, 255, 255, 0.82);
+  border: 0;
   border-radius: 999px;
   color: var(--color-accent);
   font-size: 13px;
@@ -2355,9 +2377,6 @@ onBeforeUnmount(() => {
 @media (max-width: 1400px) {
   .panel-content {
     grid-template-columns: 1fr;
-  }
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -2376,7 +2395,7 @@ onBeforeUnmount(() => {
   .panel-scroll {
     padding: 16px;
   }
-  .control-buttons {
+  .directory-actions {
     flex-direction: column;
   }
   .btn {
@@ -2386,11 +2405,14 @@ onBeforeUnmount(() => {
   .stats-grid {
     grid-template-columns: 1fr;
   }
-  .time-info {
+  .progress-metrics {
     grid-template-columns: 1fr;
   }
-  .status-stats {
+  .health-grid--cards {
     grid-template-columns: 1fr;
+  }
+  .progress-metric {
+    min-height: 0;
   }
 }
 </style>

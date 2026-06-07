@@ -8,7 +8,7 @@ defineOptions({
   name: "AppQaPage",
 });
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
@@ -38,6 +38,7 @@ import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRen
 import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreviewBlockRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
+import { listenQaConfigUpdated } from "../utils/qaConfigEvents";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   PreviewBlockView,
@@ -96,6 +97,7 @@ const chatShouldFollowLatest = ref(true);
 const selectedSourceHydratedPreviewBlocks = ref<PreviewBlockView[]>([]);
 let selectedSourcePreviewRequestId = 0;
 let unlistenQaProgress: null | (() => void) = null;
+let unlistenQaConfigUpdated: null | (() => void) = null;
 
 const emptyMarkdownBlock: PreviewBlockView = {
   block_index: 0,
@@ -536,6 +538,13 @@ const loadQaModelProfiles = async () => {
   }
 };
 
+const refreshQaConfig = async () => {
+  // 修复：问答页被 KeepAlive 缓存后，切回页面不会自动重拉模型配置，这里统一做显式同步。
+  await loadQaSettings();
+  await loadQaModelProfiles();
+  console.info("[SeekMind] QA config refreshed");
+};
+
 const setCurrentSession = async (
   sessionId: string,
   uiState: Partial<Pick<QaUiState, "answerId" | "selectedSourceId" | "expandedMessages">> = {},
@@ -654,8 +663,7 @@ const loadInitialData = async () => {
     qaSessionFilter.value = savedUiState.sessionFilter ?? qaSessionFilter.value;
     qaQuestion.value = savedUiState.question ?? qaQuestion.value;
     qaProfileChoice.value = savedUiState.profileChoice ?? qaProfileChoice.value;
-    await loadQaSettings();
-    await loadQaModelProfiles();
+    await refreshQaConfig();
     await refreshSessions(false);
     const initialSessionId = routeSessionId.value || savedUiState.sessionId || "";
     if (initialSessionId) {
@@ -833,6 +841,7 @@ const runQa = async () => {
   qaInfoMessage.value = "";
 
   try {
+    await refreshQaConfig();
     if (!isQaConfigured(qaSettings.value)) {
       qaInfoMessage.value = t("page.appQa.notConfigured");
       qaLoading.value = false;
@@ -1122,14 +1131,23 @@ const viewQaChunks = async () => {
 
 onMounted(async () => {
   await installQaProgressListener();
+  unlistenQaConfigUpdated = listenQaConfigUpdated(() => {
+    void refreshQaConfig();
+  });
   await loadInitialData();
   await loadCollections();
+});
+
+onActivated(async () => {
+  await refreshQaConfig();
 });
 
 onBeforeUnmount(() => {
   saveQaUiState();
   unlistenQaProgress?.();
   unlistenQaProgress = null;
+  unlistenQaConfigUpdated?.();
+  unlistenQaConfigUpdated = null;
 });
 
 watch(qaMessages, () => {
@@ -1176,31 +1194,33 @@ watch(routeSessionId, async (next, previous) => {
 </script>
 
 <template>
-  <section class="m-3 flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-default bg-surface/90 shadow-card">
+  <section class="m-3 flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
     <SplitPane :panels="panels">
       <template #sidebar>
-        <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-default bg-[rgba(242,242,247,0.78)] backdrop-blur-xl">
-          <div class="border-b border-default px-4 py-3">
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-sm font-semibold text-primary">{{ t("page.appQa.sessions") }}</div>
-              <div class="mt-0.5 text-[11px] text-muted">{{ t("page.appQa.sessionDesc") }}</div>
+        <aside class="flex h-full min-h-0 flex-col overflow-hidden bg-[rgba(244,245,247,0.82)]">
+          <div class="px-4 py-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-primary">{{ t("page.appQa.sessions") }}</div>
+                <div class="mt-0.5 text-[11px] text-muted">{{ t("page.appQa.sessionDesc") }}</div>
+              </div>
               <div class="flex items-center gap-1.5">
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white shadow-sm hover:bg-accent/90"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white hover:bg-accent/90"
                   :title="t('page.appQa.createSession')"
                   @click="newSession"
                 >
                   <Plus :size="14" />
                 </button>
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/70 text-secondary hover:bg-surface-hover"
                   :title="t('page.appQa.settings')"
                   @click="router.push('/settings')"
                 >
                   <SlidersHorizontal :size="14" />
                 </button>
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/70 text-secondary hover:bg-surface-hover"
                   :title="t('common.refresh')"
                   @click="refreshSessions()"
                 >
@@ -1208,7 +1228,7 @@ watch(routeSessionId, async (next, previous) => {
                 </button>
               </div>
             </div>
-            <div class="mt-3 flex items-center gap-2 rounded-md border border-default bg-input px-3 py-2">
+            <div class="mt-3 flex items-center gap-2 rounded-full bg-[rgba(118,118,128,0.08)] px-3 py-2">
               <input
                 v-model="qaSessionFilter"
                 class="min-w-0 flex-1 bg-transparent text-xs text-primary outline-none placeholder:text-muted"
@@ -1225,22 +1245,22 @@ watch(routeSessionId, async (next, previous) => {
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto p-3">
-            <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+          <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+            <div v-if="loading" class="rounded-[18px] bg-surface/60 px-4 py-6 text-xs text-muted">
               {{ t("common.loading") }}
             </div>
-            <div v-else-if="qaSessions.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+            <div v-else-if="qaSessions.length === 0" class="rounded-[18px] bg-surface/60 px-4 py-6 text-xs text-muted">
               {{ t("page.appQa.emptySessions") }}
             </div>
-            <div v-else-if="filteredSessions.length === 0" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
+            <div v-else-if="filteredSessions.length === 0" class="rounded-[18px] bg-surface/60 px-4 py-6 text-xs text-muted">
               {{ t("page.appQa.noMatchingSessions") }}
             </div>
             <div v-else class="space-y-2">
               <div
                 v-for="session in filteredSessions"
                 :key="session.id"
-                class="w-full rounded-[14px] border px-3 py-2.5 text-left transition"
-                :class="qaSessionId === session.id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
+                class="w-full rounded-[14px] px-3 py-2.5 text-left transition"
+                :class="qaSessionId === session.id ? 'bg-[rgba(0,122,255,0.12)]' : 'bg-transparent hover:bg-surface-hover/60'"
                 @contextmenu.prevent="openSessionContextMenu(session, $event)"
               >
                 <div class="flex items-start justify-between gap-2">
@@ -1254,7 +1274,7 @@ watch(routeSessionId, async (next, previous) => {
                     <input
                       v-if="editingSessionId === session.id"
                       v-model="editingSessionTitle"
-                      class="w-full rounded-md border border-accent bg-input px-2 py-1 text-sm font-medium text-primary outline-none"
+                      class="w-full rounded-md border border-transparent bg-white/70 px-2 py-1 text-sm font-medium text-primary outline-none"
                       type="text"
                       autofocus
                       @click.stop
@@ -1276,10 +1296,8 @@ watch(routeSessionId, async (next, previous) => {
       </template>
 
       <template #center>
-        <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(245,245,247,0.9)_100%)]">
-          <div
-            class="flex items-center justify-between gap-3 border-b border-default bg-white/80 px-4 py-2"
-          >
+        <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(255,255,255,0.72)]">
+          <div class="flex items-center justify-between gap-3 px-4 py-2">
             <div class="text-xs font-medium text-dim">
               {{ currentSession ? currentSession.title : t("page.appQa.currentSessionEmpty") }}
             </div>
@@ -1291,39 +1309,30 @@ watch(routeSessionId, async (next, previous) => {
             </div>
           </div>
 
-          <div ref="qaChatScrollEl" class="relative min-h-0 flex-1 overflow-y-auto" @scroll.passive="handleChatScroll">
+          <div ref="qaChatScrollEl" class="relative min-h-0 flex-1 overflow-y-auto px-2" @scroll.passive="handleChatScroll">
             <div v-if="qaErrorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
               {{ qaErrorMessage }}
             </div>
-            <div v-else-if="qaMessages.length" class="space-y-3 p-4">
+            <div v-else-if="qaMessages.length" class="space-y-4 p-4">
               <article
                 v-for="(message, index) in qaMessages"
                 :key="message.id"
-                :class="[
-                  'relative',
-                  index < qaMessages.length - 1 ? 'pb-6' : '',
-                ]"
+                class="relative"
                 @click="selectMessage(message)"
               >
-                <div
-                  v-if="index < qaMessages.length - 1"
-                  class="absolute bottom-0 left-4 top-0 w-px bg-gradient-to-b from-accent/65 via-border to-transparent"
-                />
-                <div class="absolute left-4 top-4 z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-accent bg-surface shadow-sm" />
-
-                <div class="pl-10">
+                <div class="space-y-2">
                   <div class="flex justify-end">
-                    <div class="max-w-[86%] rounded-[18px] rounded-br-md bg-accent-soft px-4 py-3 shadow-sm">
-                      <div class="mt-1 break-words text-sm leading-7 text-primary">{{ message.question }}</div>
+                    <div class="max-w-[86%] rounded-[16px] bg-[rgba(0,122,255,0.10)] px-4 py-3">
+                      <div class="break-words text-sm leading-7 text-primary">{{ message.question }}</div>
                     </div>
                   </div>
 
-                  <div class="mt-3 flex justify-start">
+                  <div class="flex justify-start">
                     <div
                       :class="[
                         isMessagePending(message)
-                          ? 'inline-flex rounded-full border border-default bg-surface px-3 py-2 shadow-sm'
-                          : 'relative max-w-[86%] rounded-[18px] rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm',
+                          ? 'inline-flex rounded-[16px] bg-surface/70 px-3 py-2'
+                          : 'relative max-w-[86%] rounded-[16px] bg-surface/70 px-4 py-3',
                       ]"
                     >
                       <template v-if="isMessagePending(message)">
@@ -1398,14 +1407,11 @@ watch(routeSessionId, async (next, previous) => {
                       </div>
                       </template>
 
-                      <div
-                        v-if="expandedMessages[message.id]"
-                        class="mt-4 rounded-xl border border-default bg-panel/40 p-3"
-                      >
+                      <div v-if="expandedMessages[message.id]" class="mt-4 rounded-[16px] bg-white/60 p-3">
                         <div class="seekmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
-                        <div class="mt-3 overflow-x-auto rounded-lg border border-default bg-surface">
+                        <div class="mt-3 overflow-x-auto rounded-[14px] bg-white/70">
                           <table class="w-full min-w-[720px] table-fixed text-left text-xs">
-                            <thead class="border-b border-default bg-panel/60 text-[11px] uppercase tracking-wide text-muted">
+                            <thead class="bg-black/[0.02] text-[11px] uppercase tracking-wide text-muted">
                               <tr>
                                 <th class="w-16 px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnId") }}</th>
                                 <th class="w-[28%] px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnFile") }}</th>
@@ -1414,12 +1420,12 @@ watch(routeSessionId, async (next, previous) => {
                                 <th class="w-[22%] px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnReason") }}</th>
                               </tr>
                             </thead>
-                            <tbody class="divide-y divide-light">
+                            <tbody>
                               <tr
                                 v-for="source in message.sources"
                                 :key="source.source_id"
                                 class="cursor-pointer transition"
-                                :class="qaSelectedSourceId === source.source_id ? 'bg-accent-soft' : 'hover:bg-surface-hover'"
+                                :class="qaSelectedSourceId === source.source_id ? 'bg-[rgba(0,122,255,0.10)]' : 'hover:bg-surface-hover/60'"
                                 @click.stop="selectSource(source.source_id)"
                                 @contextmenu.prevent="openSourceContextMenu(source, $event)"
                               >
@@ -1448,12 +1454,12 @@ watch(routeSessionId, async (next, previous) => {
                 </div>
               </article>
             </div>
-            <div v-else class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+            <div v-else class="m-4 rounded-[18px] bg-surface/60 px-4 py-6 text-center text-xs text-muted">
               {{ t("page.appQa.enterQuestion") }}
             </div>
             <button
               v-if="qaMessages.length > 0 && !chatShouldFollowLatest"
-              class="sticky bottom-4 ml-auto mr-4 mb-4 flex items-center gap-2 rounded-full border border-default bg-surface px-3 py-2 text-xs font-medium text-secondary shadow-sm hover:bg-surface-hover"
+              class="sticky bottom-4 ml-auto mr-4 mb-4 flex items-center gap-2 rounded-full bg-white/80 px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover"
               type="button"
               @click="scrollChatToBottom(true)"
             >
@@ -1462,16 +1468,12 @@ watch(routeSessionId, async (next, previous) => {
             </button>
           </div>
 
-          <div class="px-4 py-3">
-            <div class="rounded-2xl border border-default bg-input px-3 py-2 shadow-sm">
-              <div class="mb-1.5 flex items-center justify-between gap-2 text-[11px] leading-4 text-muted">
-                <span>{{ t("page.appQa.modelLabel") }}</span>
-                <span class="truncate text-right">{{ qaSelectedProfile?.name || qaCurrentModelLabel }}</span>
-              </div>
+          <div class="bg-[rgba(252,252,254,0.96)] px-4 py-3">
+            <div class="rounded-[18px] bg-white/82 px-3 py-3">
               <div class="flex items-center gap-2">
                 <select
                   v-model="qaProfileChoice"
-                  class="min-w-0 flex-1 rounded-md border border-default bg-surface px-2 py-1.5 text-[12px] text-secondary outline-none transition hover:bg-surface-hover"
+                  class="min-w-0 flex-1 rounded-full bg-white px-3 py-2 text-[12px] text-secondary outline-none"
                 >
                   <option value="__current__">
                     {{ t("page.appQa.defaultModelOption", { model: qaCurrentModelLabel }) }}
@@ -1485,17 +1487,17 @@ watch(routeSessionId, async (next, previous) => {
                 ref="qaQuestionInput"
                 v-model="qaQuestion"
                 rows="2"
-                class="min-h-[44px] w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 text-primary outline-none placeholder:text-muted"
+                class="min-h-[44px] w-full resize-none border-0 bg-transparent px-0 py-2 text-sm leading-6 text-primary outline-none placeholder:text-muted"
                 :placeholder="t('page.appQa.placeholder')"
                 @keydown.enter.exact.prevent="runQa"
               />
               <div class="mt-1.5 flex items-end justify-between gap-3">
-                <div class="pb-0.5 text-[11px] leading-4 text-muted">
+                <div class="pb-0.5 text-[11px] leading-4 text-dim">
                   {{ t("page.appQa.sendHint") }}
                 </div>
                 <button
                   v-if="qaLoading || qaCancelling"
-                  class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-secondary hover:bg-surface-hover"
                   type="button"
                   @click="stopQa"
                 >
@@ -1503,7 +1505,7 @@ watch(routeSessionId, async (next, previous) => {
                 </button>
                 <button
                   v-else
-                  class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white shadow-sm transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-70"
                   :disabled="qaLoading || qaCancelling || !qaQuestion.trim()"
                   type="button"
                   @click="runQa"
@@ -1517,18 +1519,17 @@ watch(routeSessionId, async (next, previous) => {
       </template>
 
       <template #right>
-        <aside v-if="selectedSource" class="flex h-full min-h-0 flex-col overflow-hidden border-l border-default bg-panel">
-          <div class="border-b border-default px-4 py-3">
+        <aside v-if="selectedSource" class="flex h-full min-h-0 flex-col overflow-hidden bg-[rgba(246,247,249,0.88)]">
+          <div class="px-4 py-3">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <div class="seekmind-section-label">{{ t("page.appQa.sourceDetails") }}</div>
                 <div class="mt-1 truncate text-sm font-medium text-primary">{{ selectedSource.file_name }}</div>
                 <div class="mt-1 break-all text-xs text-muted">{{ selectedSource.path }}</div>
               </div>
               <div class="flex items-center gap-2">
                 <SeekMindBadge tone="default">{{ selectedSource.source_id }}</SeekMindBadge>
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/70 text-secondary hover:bg-surface-hover hover:text-primary"
                   type="button"
                   :title="t('common.close')"
                   @click="closeSelectedSource"
@@ -1539,10 +1540,9 @@ watch(routeSessionId, async (next, previous) => {
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-            <div class="rounded-lg border border-default bg-surface px-3 py-2.5">
+          <div class="min-h-0 flex-1 overflow-y-auto space-y-4 px-4 pb-4">
+            <div class="rounded-[18px] bg-white/84 px-3 py-3">
               <div class="flex items-center justify-between gap-3">
-                <div class="seekmind-section-label">{{ t("page.appQa.sourceMeta") }}</div>
                 <div class="flex shrink-0 items-center gap-1.5">
                   <SeekMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</SeekMindBadge>
                   <SeekMindBadge tone="default">
@@ -1550,14 +1550,13 @@ watch(routeSessionId, async (next, previous) => {
                   </SeekMindBadge>
                 </div>
               </div>
-              <div class="mt-2 truncate rounded-md bg-panel/70 px-2.5 py-1.5 text-xs leading-5 text-secondary" :title="selectedSourceCitation">
+              <div class="mt-2 truncate rounded-full bg-white/70 px-3 py-1.5 text-xs leading-5 text-secondary" :title="selectedSourceCitation">
                 {{ selectedSourceCitation || t("common.none") }}
               </div>
             </div>
 
-            <div class="rounded-lg border border-default bg-surface p-4">
-              <div class="seekmind-section-label">{{ t("page.appQa.referenceSnippet") }}</div>
-              <div v-if="loadingSelectedSourcePreview && selectedSourcePreviewBlocks.length === 0" class="mt-3 rounded-md bg-panel/70 px-3 py-3 text-sm text-muted">
+            <div class="rounded-[18px] bg-[rgba(244,246,249,0.82)] p-4">
+              <div v-if="loadingSelectedSourcePreview && selectedSourcePreviewBlocks.length === 0" class="mt-3 rounded-[14px] bg-white/70 px-3 py-3 text-sm text-muted">
                 {{ t("common.loading") }}
               </div>
               <div v-else-if="selectedSourcePreviewBlocks.length > 0" class="mt-3 space-y-2">
@@ -1567,7 +1566,7 @@ watch(routeSessionId, async (next, previous) => {
                   :block="block"
                 />
               </div>
-              <div v-else class="mt-3 whitespace-pre-wrap rounded-md border border-default bg-panel/70 px-3 py-3 text-sm leading-7 text-secondary">
+              <div v-else class="mt-3 whitespace-pre-wrap rounded-[14px] bg-white/78 px-3 py-3 text-sm leading-7 text-secondary">
                 {{ selectedSource.snippet }}
               </div>
               <p class="seekmind-item-meta mt-3">{{ selectedSource.rank_reason }}</p>
@@ -1575,7 +1574,7 @@ watch(routeSessionId, async (next, previous) => {
 
           </div>
         </aside>
-        <aside v-else class="flex h-full min-h-0 items-center justify-center border-l border-default bg-panel px-4 text-center text-xs text-muted">
+        <aside v-else class="flex h-full min-h-0 items-center justify-center bg-[rgba(246,247,249,0.88)] px-4 text-center text-xs text-muted">
           {{ qaMessages.length ? t("page.appQa.noSourceSelected") : t("page.appQa.noSourceYet") }}
         </aside>
       </template>

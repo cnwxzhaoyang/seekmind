@@ -802,21 +802,26 @@ watch(
 </script>
 
 <template>
-  <div class="m-3 flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-default bg-surface/90 text-primary shadow-card">
-    <header class="seekmind-page-topbar">
-      <div class="seekmind-page-title-area">
-        <div class="seekmind-page-title-row">
-          <span class="seekmind-page-header-icon" aria-hidden="true">
+  <div class="m-3 flex h-full min-h-0 flex-col overflow-hidden bg-transparent text-primary">
+    <!-- Keep the chunks page header compact so the desktop layout stays flat and easy to scan. -->
+    <header class="flex items-center justify-between gap-4 px-3 pb-2 pt-1">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-[10px] bg-white/72 text-accent" aria-hidden="true">
             <Layers3 :size="17" />
           </span>
-          <h1 class="seekmind-page-title">{{ t("page.chunks.title") }}</h1>
+          <div class="min-w-0">
+            <h1 class="truncate text-[16px] font-semibold leading-6 tracking-[-0.01em] text-primary">
+              {{ t("page.chunks.title") }}
+            </h1>
+            <p class="mt-0.5 truncate text-[12px] leading-5 text-muted">
+              {{ t("page.chunks.subtitle") }}
+            </p>
+          </div>
         </div>
-        <p class="seekmind-page-subtitle">
-          {{ t("page.chunks.subtitle") }}
-        </p>
       </div>
-      <div class="seekmind-page-actions text-sm text-dim">
-        <div class="hidden sm:block">
+      <div class="flex shrink-0 items-center gap-2">
+        <div class="hidden sm:block text-xs text-muted">
           {{ t("page.chunks.parserInfo") }}
           <span class="font-medium text-secondary">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
           {{ t("page.chunks.parserInfo2") }}
@@ -830,7 +835,7 @@ watch(
 
     <div
       v-if="officeNotice"
-      class="border-b border-amber-soft bg-amber-soft px-5 py-3"
+      class="mx-3 mb-2 rounded-[18px] bg-amber-soft px-4 py-3"
     >
       <div class="flex items-start gap-3">
         <AlertCircle :size="16" class="mt-0.5 shrink-0 text-warning" />
@@ -848,47 +853,29 @@ watch(
       </div>
     </div>
 
-    <div v-if="errorMessage" class="mb-4 rounded-2xl border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
+    <div v-if="errorMessage" class="mx-3 mb-2 rounded-[18px] bg-danger-soft px-4 py-3 text-sm text-danger">
       {{ errorMessage }}
     </div>
 
-  <main class="flex min-h-0 flex-1 overflow-hidden">
+    <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
       <template #center>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(245,245,247,0.88)_100%)] px-3 py-3">
-            <div class="shrink-0 mb-3 rounded-[14px] border border-default bg-surface/90 px-3 py-2.5 shadow-sm">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <FolderOpen :size="15" class="text-accent" />
-                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
-                      {{ t("page.chunks.dirSelector.label") }}
-                    </div>
-                  </div>
-                  <div class="mt-1 truncate text-sm font-medium text-primary">
-                    {{ selectedDir ? formatDirectoryLabel(selectedDir.path) : t("page.chunks.selectDir") }}
-                  </div>
-                  <div class="mt-1 text-[11px] text-muted">
-                    <span v-if="selectedDir">
-                      {{ t("page.chunks.dirSelector.stats", { docs: selectedDir.docs, chunks: selectedDir.chunks }) }}
-                    </span>
-                    <span v-else>
-                      {{ t("page.chunks.dirSelector.hint") }}
-                    </span>
-                  </div>
-                </div>
-                  <select
-                  class="min-w-[220px] max-w-[320px] rounded-[14px] border border-default bg-input px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(245,246,248,0.88)] px-3 py-3">
+            <div class="shrink-0 mb-3 rounded-[18px] bg-white/72 px-3 py-2.5">
+              <!-- Keep only the dropdown here so the directory selection doesn't repeat the path summary. -->
+              <div class="flex items-center gap-2">
+                <FolderOpen :size="15" class="shrink-0 text-accent" />
+                <select
+                  class="min-w-0 flex-1 rounded-[14px] bg-input px-3 py-2 text-sm text-primary focus:outline-none"
                   :disabled="loading || loadingDocs || dirs.length === 0"
                   :value="selectedDirPath"
-                  :title="selectedDir?.path || t('page.chunks.dirSelector.placeholder')"
                   @change="handleDirChange"
                 >
                   <option value="" disabled>
                     {{ t("page.chunks.dirSelector.placeholder") }}
                   </option>
                   <option v-for="dir in dirs" :key="dir.path" :value="dir.path">
-                    {{ formatDirectoryLabel(dir.path) }} · {{ dir.docs }} / {{ dir.chunks }}
+                    {{ formatDirectoryLabel(dir.path) }}
                   </option>
                 </select>
               </div>
@@ -896,8 +883,8 @@ watch(
 
             <div class="shrink-0 mb-3 flex items-start justify-between gap-3">
               <div>
-                <div class="seekmind-section-label">{{ t("page.chunks.section.docList") }}</div>
-                <div class="seekmind-section-subtitle mt-1">
+                <div class="text-sm font-medium text-primary">{{ t("page.chunks.section.docList") }}</div>
+                <div class="mt-1 text-[12px] text-muted">
                   {{ currentDocument ? currentDocument.file_name : selectedDir ? formatDirectoryLabel(selectedDir.path) : t("page.chunks.selectDir") }}
                 </div>
               </div>
@@ -916,58 +903,58 @@ watch(
             <div class="shrink-0 mb-3">
               <input
                 v-model="docFilter"
-                class="w-full rounded-md border border-default bg-input px-3 py-2 text-sm outline-none focus:border-accent"
+                class="w-full rounded-[14px] bg-input px-3 py-2 text-sm outline-none"
                 :placeholder="t('page.chunks.filterPlaceholder')"
               />
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
               <div v-if="loadingDocs" class="text-sm text-dim">{{ t("page.chunks.readingDocs") }}</div>
-              <div v-else-if="filteredDocuments.length === 0" class="rounded-[14px] bg-surface px-4 py-6 text-sm text-dim">
+              <div v-else-if="filteredDocuments.length === 0" class="rounded-[18px] bg-white/72 px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.docs") }}
               </div>
-              <div v-else class="space-y-2">
+              <div v-else class="space-y-1.5">
                 <div
                   v-for="doc in filteredDocuments"
                   :key="doc.id"
-                  class="w-full rounded-[14px] border px-2.5 py-2 text-left transition"
-                  :class="selectedDocPath === doc.path ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-hover'"
+                  class="w-full rounded-[10px] px-2 py-1.5 text-left transition"
+                  :class="selectedDocPath === doc.path ? 'bg-[rgba(0,122,255,0.10)]' : 'hover:bg-white/50'"
                   role="button"
                   tabindex="0"
                   @click="selectDoc(doc.path)"
                   @contextmenu.prevent="handleDocContextMenu(doc, $event)"
                 >
-                  <div class="flex items-start gap-3">
+                  <div class="flex items-start gap-2.5">
                     <SeekMindFileIcon :ext="doc.ext" />
                     <div class="min-w-0 flex-1">
                       <div class="truncate text-sm font-medium text-primary">{{ doc.file_name }}</div>
-                      <div class="mt-1 truncate text-[11px] text-dim">{{ doc.path }}</div>
-                      <div class="mt-2 flex items-center gap-2 text-[11px] text-dim">
+                      <div class="mt-0.5 truncate text-[11px] text-dim">{{ doc.path }}</div>
+                      <div class="mt-1.5 flex items-center gap-2 text-[11px] text-dim">
                         <span>{{ t("page.chunks.chunkStats", { count: doc.chunks }) }}</span>
                         <span>·</span>
                         <span>{{ doc.modified }}</span>
                       </div>
                       <div
                         v-if="refreshWarnings[doc.path]"
-                        class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                        class="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
                         :class="refreshOutcomes[doc.path] === 'python'
-                          ? 'border-emerald-soft bg-emerald-soft text-success'
-                          : 'border-amber-soft bg-amber-soft text-warning'"
+                          ? 'bg-emerald-soft text-success'
+                          : 'bg-amber-soft text-warning'"
                       >
                         {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
                       </div>
                       <div
                         v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
-                        class="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
+                        class="mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
                         :class="refreshOutcomes[doc.path] === 'python'
-                          ? 'border border-emerald-soft bg-emerald-soft text-success'
-                          : 'border border-amber-soft bg-amber-soft text-warning'"
+                          ? 'bg-emerald-soft text-success'
+                          : 'bg-amber-soft text-warning'"
                       >
                         {{ refreshOutcomeLabel(doc.path) }}
                       </div>
                       <div
                         v-if="refreshErrors[doc.path]"
-                        class="mt-2 rounded-md border border-danger-soft bg-danger-soft px-2 py-1.5 text-[11px] leading-5 text-danger"
+                        class="mt-1.5 rounded-[10px] bg-danger-soft px-2 py-1.5 text-[11px] leading-5 text-danger"
                       >
                         {{ refreshErrors[doc.path] }}
                       </div>
@@ -980,11 +967,11 @@ watch(
         </template>
 
         <template #right>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(248,248,250,0.88)] px-3 py-3 backdrop-blur-xl">
+        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(248,248,250,0.92)] px-3 py-3">
             <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
               <div>
-                <div class="seekmind-section-label">{{ t("page.chunks.section.chunkDetail") }}</div>
-                <div class="seekmind-section-subtitle mt-1">
+                <div class="text-sm font-medium text-primary">{{ t("page.chunks.section.chunkDetail") }}</div>
+                <div class="mt-1 text-[12px] text-muted">
                   {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
                 </div>
                 <div
@@ -1011,7 +998,7 @@ watch(
               <div class="flex items-center gap-2">
                 <button
                   v-if="currentDocument"
-                class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-default bg-surface/90 text-secondary hover:bg-surface-hover hover:text-primary"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/72 text-secondary hover:text-primary"
                   type="button"
                   :title="t('common.close')"
                   @click="closeCurrentDocument"
@@ -1019,7 +1006,7 @@ watch(
                   <X :size="14" />
                 </button>
                 <button
-                class="inline-flex items-center gap-2 rounded-full border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover"
+                class="inline-flex items-center gap-2 rounded-full bg-white/72 px-3 py-2 text-xs text-secondary hover:text-primary"
                   :disabled="loading || !selectedDirPath"
                   @click="void syncSelection()"
                 >
@@ -1030,7 +1017,7 @@ watch(
             </div>
 
             <div class="shrink-0 mb-3">
-              <div class="rounded-[14px] border border-default bg-panel px-4 py-3">
+              <div class="rounded-[18px] bg-white/72 px-4 py-3">
                 <div class="text-sm font-medium text-primary">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
                 <div class="mt-1 break-all text-[11px] text-dim">
                   {{ currentDocument?.path || t("page.chunks.selectDoc") }}
@@ -1071,14 +1058,14 @@ watch(
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
               <div v-if="loadingChunks" class="text-sm text-dim">{{ t("page.chunks.readingChunks") }}</div>
-              <div v-else-if="!currentDocument" class="rounded-[14px] bg-panel px-4 py-6 text-sm text-dim">
+              <div v-else-if="!currentDocument" class="rounded-[18px] bg-white/72 px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.selectDocToView") }}
               </div>
-              <div v-else-if="chunks.length === 0" class="rounded-[14px] bg-panel px-4 py-6 text-sm text-dim">
+              <div v-else-if="chunks.length === 0" class="rounded-[18px] bg-white/72 px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.chunks") }}
               </div>
               <div v-else class="space-y-3">
-                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-[14px] border border-default bg-surface p-3">
+                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-[16px] bg-white/72 p-3">
                   <div class="mb-2 flex items-center justify-between gap-2">
                     <div class="min-w-0 flex-1">
                       <div class="text-sm font-medium text-primary">{{ chunk.title_path || chunk.heading }}</div>
@@ -1091,7 +1078,7 @@ watch(
                         {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
                       </SeekMindBadge>
                       <button
-                        class="rounded-full border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
+                        class="rounded-full bg-white/72 px-2 py-1 text-[11px] text-secondary hover:text-primary"
                         @click="copyChunkCitation(chunk)"
                       >
                         {{ t("page.chunks.action.copyCitation") }}

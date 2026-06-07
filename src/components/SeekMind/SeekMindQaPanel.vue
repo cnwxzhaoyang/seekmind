@@ -10,6 +10,7 @@ import { Check, ChevronDown, MessageSquareText, RefreshCw, Save, Shield, Trash2 
 import SeekMindBadge from "./SeekMindBadge.vue";
 import { seekMindApi, formatSeekMindError } from "../../services/seekMindApi";
 import { useInfoMessage } from "../../composables/useInfoMessage";
+import { emitQaConfigUpdated } from "../../utils/qaConfigEvents";
 import type { QaConnectionTestView, QaModelProfileUpsertView, QaModelProfileView, QaSettingsView } from "../../types/SeekMind";
 
 const { t } = useI18n();
@@ -253,6 +254,7 @@ const deleteProfile = async (profile: QaModelProfileView) => {
     if (editingProfileId.value === profile.id) {
       editingProfileId.value = "";
     }
+    emitQaConfigUpdated("delete-profile");
     profileMessage.value = t("page.settings.qa.profileDeleted", { name: profile.name });
   } catch (error) {
     profileErrorMessage.value = formatSeekMindError(error, t("page.settings.qa.profileErrorDelete"));
@@ -272,6 +274,7 @@ const setDefaultProfile = async (profile: QaModelProfileView) => {
     selectedProfileId.value = saved.id;
     // 修复：默认连接即为当前启用连接，避免默认项与可用项状态不一致。
     enabled.value = true;
+    emitQaConfigUpdated("set-default-profile");
     profileMessage.value = t("page.settings.qa.profileDefaulted", { name: saved.name });
   } catch (error) {
     profileErrorMessage.value = formatSeekMindError(error, t("page.settings.qa.profileErrorDefault"));
@@ -305,6 +308,8 @@ const saveSettings = async () => {
     savedSettings.value = settings;
     applySettings(settings);
     await syncCurrentProfileToList(settings);
+    // 修复：设置页保存在 KeepAlive 场景下不会触发问答页重建，必须主动广播配置更新。
+    emitQaConfigUpdated("save-settings");
     infoMessage.value = t("page.settings.qa.saved");
   } catch (error) {
     errorMessage.value = formatSeekMindError(error, t("page.settings.qa.error.save"));
@@ -327,6 +332,7 @@ const testConnection = async () => {
     savedSettings.value = settings;
     applySettings(settings);
     await syncCurrentProfileToList(settings);
+    emitQaConfigUpdated("test-connection");
     connectionResult.value = result;
     infoMessage.value = t("page.settings.qa.connectionSaved", { message: result.message });
   } catch (error) {

@@ -8,7 +8,7 @@ defineOptions({
   name: "AppSearchPage",
 });
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -24,6 +24,7 @@ import SeekMindSearchResultGroupCard from "../components/SeekMind/SeekMindSearch
 import SplitPane from "../components/SplitPane.vue";
 import { useQuickAccessData } from "../composables/useQuickAccessData";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
+import { listenQaConfigUpdated } from "../utils/qaConfigEvents";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
 const { t } = useI18n();
@@ -83,6 +84,7 @@ const routeSyncReady = ref(false);
 let selectedContextRequestId = 0;
 let unlistenSearchDebugReport: null | (() => void) = null;
 let unlistenQaProgress: null | (() => void) = null;
+let unlistenQaConfigUpdated: null | (() => void) = null;
 const { favorites, loadQuickAccessData } = useQuickAccessData();
 const collections = ref<CollectionView[]>([]);
 const collectionPickerVisible = ref(false);
@@ -398,6 +400,12 @@ const loadQaSettings = async () => {
   }
 };
 
+const refreshQaConfig = async () => {
+  // 修复：搜索页问答模式同样处于 KeepAlive 缓存中，返回页面时要主动同步最新问答配置。
+  await loadQaSettings();
+  console.info("[SeekMind] search QA config refreshed");
+};
+
 const loadLatestQaSession = async () => {
   try {
     const sessions = await seekMindApi.listQaSessions(1);
@@ -528,7 +536,7 @@ const runQa = async () => {
   qaInfoMessage.value = "";
 
   try {
-    await loadQaSettings();
+    await refreshQaConfig();
     if (!isQaConfigured(qaSettings.value)) {
       qaAnswer.value = null;
       qaSelectedSourceId.value = "";
@@ -1121,6 +1129,9 @@ const handleResultContextMenu = (event: MouseEvent) => {
 
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalShortcut);
+  unlistenQaConfigUpdated = listenQaConfigUpdated(() => {
+    void refreshQaConfig();
+  });
   await installSearchDebugReportListener();
   await Promise.all([loadParserRuntime(), loadQuickAccessData(), loadCollections()]);
   query.value = routeSearchQuery.value;
@@ -1136,12 +1147,18 @@ onMounted(async () => {
   routeSyncReady.value = true;
 });
 
+onActivated(async () => {
+  await refreshQaConfig();
+});
+
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalShortcut);
   unlistenSearchDebugReport?.();
   unlistenSearchDebugReport = null;
   unlistenQaProgress?.();
   unlistenQaProgress = null;
+  unlistenQaConfigUpdated?.();
+  unlistenQaConfigUpdated = null;
 });
 
 watch(query, () => {

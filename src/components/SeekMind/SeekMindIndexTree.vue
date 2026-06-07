@@ -64,7 +64,9 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
       class="flex items-center gap-1.5 transition-colors"
       :class="[
         rowPadding,
-        selectedPath === row.dir.path ? 'bg-accent-soft' : 'hover:bg-surface-hover',
+        selectedPath === row.dir.path
+          ? 'bg-[rgba(0,122,255,0.12)] text-primary shadow-[inset_3px_0_0_0_rgba(0,122,255,0.9)]'
+          : 'hover:bg-[rgba(47,129,255,0.06)]',
         selectable === false ? 'cursor-default' : 'cursor-pointer select-none',
       ]"
       :style="{ paddingLeft: `${(nodePaddingBase ?? 8) + row.depth * (nodePaddingStep ?? 14)}px`, paddingRight: '12px' }"
