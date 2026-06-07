@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/07
+ * @Description SeekMind 底部日志面板，展示索引、切片和语义任务事件。
+ */
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
@@ -155,9 +160,18 @@ const installListeners = async () => {
   });
 };
 
-const clearLogs = () => { entries.value = []; };
+const clearLogs = () => {
+  entries.value = [];
+  expanded.value = false;
+};
 
-const toggleExpanded = () => { expanded.value = !expanded.value; };
+const toggleExpanded = () => {
+  if (entries.value.length === 0) {
+    expanded.value = false;
+    return;
+  }
+  expanded.value = !expanded.value;
+};
 
 const onResizeStart = (event: MouseEvent) => {
   dragging.value = true;
@@ -187,14 +201,20 @@ const onResizeEnd = () => {
 };
 
 const panelStyle = computed(() => {
+  // 修复：日志为空时避免撑出大块空白区域，仅保留紧凑状态栏。
   if (!expanded.value) return { height: `${HEIGHT_COLLAPSED}px` };
+  if (entries.value.length === 0) {
+    return { height: `${HEIGHT_COLLAPSED}px` };
+  }
   return { height: `${panelHeight.value}px` };
 });
 
 const contentStyle = computed(() => {
-  if (!expanded.value) return {};
+  if (!expanded.value || entries.value.length === 0) return {};
   return { height: `calc(100% - ${HEADER_H + DIVIDER_H}px)` };
 });
+
+const showContent = computed(() => expanded.value && entries.value.length > 0);
 
 onMounted(() => {
   void installListeners();
@@ -237,21 +257,17 @@ onBeforeUnmount(() => {
         <SeekMindBadge tone="default">{{ tantivyLabel }}</SeekMindBadge>
         <SeekMindBadge tone="default">{{ t("page.appSearch.semanticWeight", { weight: semanticWeightLabel }) }}</SeekMindBadge>
         <span class="ml-1">{{ t("logPanel.events", { count: entries.length }) }}</span>
-        <component :is="expanded ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
+        <component :is="showContent ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
       </div>
     </button>
 
-      <div v-if="expanded" class="flex flex-col" :style="contentStyle">
-      <div class="flex items-center justify-end border-t border-light px-4 py-2 text-xs text-dim shrink-0">
-        <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
-          <Trash2 :size="13" /> {{ t("logPanel.clear") }}
-        </button>
-      </div>
-      <div class="flex-1 overflow-y-auto p-2">
-        <div v-if="entries.length === 0" class="rounded-2xl bg-panel px-4 py-6 text-sm text-dim">
-          {{ t("logPanel.empty") }}
+      <div v-if="showContent" class="flex flex-col" :style="contentStyle">
+        <div class="flex items-center justify-end border-t border-light px-4 py-2 text-xs text-dim shrink-0">
+          <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
+            <Trash2 :size="13" /> {{ t("logPanel.clear") }}
+          </button>
         </div>
-        <div v-else class="space-y-2">
+        <div class="flex-1 overflow-y-auto p-2">
           <div
             v-for="entry in entries"
             :key="entry.id"
@@ -277,6 +293,5 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-    </div>
   </div>
 </template>

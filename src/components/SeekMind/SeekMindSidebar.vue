@@ -22,6 +22,11 @@ const { sidebarCollapsed, toggleSidebar } = useSidebarState();
 const { quickDirs, searchHistory, recentDocuments, favorites, loadQuickAccessData } = useQuickAccessData();
 const { visibleRows: visibleQuickDirRows, setExpanded: setQuickDirExpanded } = useIndexDirTree(quickDirs);
 const panelActionTarget = ref("");
+const sidebarStats = computed(() => [
+  { label: t("sidebar.statsDirs"), value: quickDirs.value.length },
+  { label: t("sidebar.statsRecent"), value: recentDocuments.value.length },
+  { label: t("sidebar.statsFavorites"), value: favorites.value.length },
+]);
 
 const items = computed(() => [
   { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
@@ -112,43 +117,48 @@ onMounted(() => {
 
 <template>
   <aside
-    class="flex h-full flex-col overflow-hidden border-r border-default bg-sidebar p-2 transition-[width] duration-200"
+    class="flex h-full flex-col overflow-hidden border-r border-default bg-[rgba(242,242,247,0.84)] p-2 transition-[width] duration-200 backdrop-blur-xl"
     :class="sidebarCollapsed ? 'w-[68px]' : 'w-[240px]'"
   >
-    <div class="mb-3 flex items-center justify-between gap-2 px-2 py-2">
-      <img
-        :src="brandIconUrl"
-        alt="SeekMind"
-        class="h-6 w-6 shrink-0 rounded-md object-contain shadow-card"
-      >
-      <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
-        <div class="text-base font-semibold text-primary">SeekMind</div>
+    <div class="mb-3 rounded-[16px] border border-default bg-surface/80 px-2.5 py-2 shadow-card">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex min-w-0 items-center gap-2">
+          <img
+            :src="brandIconUrl"
+            alt="SeekMind"
+            class="h-8 w-8 shrink-0 rounded-[10px] object-contain shadow-card"
+          >
+          <div v-if="!sidebarCollapsed" class="min-w-0">
+            <div class="truncate text-[14px] font-semibold leading-5 text-primary">SeekMind</div>
+            <div class="truncate text-[10px] leading-4 text-muted">{{ t("sidebar.brandSubtitle") }}</div>
+          </div>
+        </div>
+        <button
+          class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-surface-hover hover:text-primary"
+          :title="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
+          :aria-label="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
+          @click="toggleSidebar"
+        >
+          <ChevronRight v-if="sidebarCollapsed" :size="15" />
+          <ChevronLeft v-else :size="15" />
+        </button>
       </div>
-      <button
-        class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted transition hover:bg-surface-active hover:text-primary"
-        :title="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
-        :aria-label="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
-        @click="toggleSidebar"
-      >
-        <ChevronRight v-if="sidebarCollapsed" :size="15" />
-        <ChevronLeft v-else :size="15" />
-      </button>
+      <div v-if="!sidebarCollapsed" class="mt-2 flex items-center justify-between text-[10px] text-muted">
+        <span>{{ t("sidebar.recentAccess") }}</span>
+        <span>{{ t("sidebar.quickNavigation") }}</span>
+      </div>
     </div>
 
-    <nav
-      :class="sidebarCollapsed
-        ? 'space-y-1'
-        : 'grid grid-cols-2 gap-1 rounded-lg border border-default bg-surface/75 p-1 shadow-card'"
-    >
+    <nav :class="sidebarCollapsed ? 'space-y-1' : 'space-y-1.5'">
       <RouterLink
         v-for="item in items"
         :key="item.key"
         :to="item.to"
-        class="group relative flex h-9 w-full items-center rounded-md text-[13px] transition"
+        class="group relative flex h-10 w-full items-center rounded-[12px] text-[13px] transition"
         :class="[
-          sidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-2',
+          sidebarCollapsed ? 'justify-center px-2' : 'gap-2.5 px-3',
           activeKey === item.key
-            ? 'border border-accent/20 bg-accent-soft !text-accent-text font-medium shadow-none'
+            ? 'bg-[#007AFF] !text-white shadow-card'
             : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
         :title="sidebarCollapsed ? item.label : undefined"
@@ -158,15 +168,15 @@ onMounted(() => {
           :is="item.icon"
           :size="17"
           class="shrink-0"
-          :class="activeKey === item.key ? 'text-accent' : 'text-current'"
+          :class="activeKey === item.key ? 'text-white' : 'text-current'"
         />
-        <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 text-left leading-none">{{ item.label }}</span>
+        <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate text-left leading-none">{{ item.label }}</span>
       </RouterLink>
     </nav>
 
     <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden">
       <div class="grid h-full min-h-0 grid-rows-[minmax(0,1.35fr)_minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(0,0.75fr)] gap-2.5 overflow-hidden pr-1">
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-surface p-2 shadow-card">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-default bg-surface/85 p-2.5 shadow-card">
           <div class="seekmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <FolderOpen :size="13" />
             {{ t("sidebar.indexDirs") }}
@@ -193,7 +203,7 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/35 p-2">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-default bg-panel/35 p-2.5">
           <div class="seekmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <History :size="13" />
             {{ t("page.appSearch.section.recentSearch") }}
@@ -229,7 +239,7 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/35 p-2">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-default bg-panel/35 p-2.5">
           <div class="seekmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <FileText :size="13" />
             {{ t("page.appSearch.section.recentOpen") }}
@@ -265,7 +275,7 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-panel/35 p-2">
+        <section class="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-default bg-panel/35 p-2.5">
           <div class="seekmind-section-label flex items-center gap-1.5 border-b border-default px-1 pb-2">
             <Star :size="13" />
             {{ t("page.appSearch.section.favorites") }}
@@ -301,6 +311,25 @@ onMounted(() => {
           </div>
         </section>
 
+        <section class="rounded-[14px] border border-default bg-surface/85 p-3 shadow-card">
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div
+              v-for="stat in sidebarStats"
+              :key="stat.label"
+              class="rounded-lg border border-default bg-white/70 py-2"
+            >
+              <div class="text-[14px] font-semibold leading-5 text-primary">{{ stat.value }}</div>
+              <div class="text-[9px] uppercase tracking-[0.12em] text-muted">{{ stat.label }}</div>
+            </div>
+          </div>
+          <div class="mt-3 flex items-center justify-between text-[11px] text-muted">
+            <span>{{ t("sidebar.ready") }}</span>
+            <span class="inline-flex items-center gap-1">
+              <span class="h-2 w-2 rounded-full bg-success" />
+              {{ t("sidebar.statusRunning") }}
+            </span>
+          </div>
+        </section>
       </div>
     </div>
 

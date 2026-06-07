@@ -76,9 +76,9 @@ const emitContextMenu = (event: MouseEvent) => {
 </script>
 
 <template>
-  <section
-    class="cursor-pointer rounded-lg border-t border-l border-light bg-surface p-3 shadow-card transition hover:shadow-card-hover"
-    :class="isSelected ? 'bg-accent-soft' : 'hover:bg-surface-hover'"
+<section
+    class="cursor-pointer rounded-[18px] border border-transparent bg-transparent p-4 transition hover:bg-surface-hover/60"
+    :style="isSelected ? { backgroundColor: 'rgba(0, 122, 255, 0.12)' } : undefined"
     role="button"
     tabindex="0"
     @click="emitSelect(group.topResult.id, 'group-card', $event)"
@@ -86,7 +86,7 @@ const emitContextMenu = (event: MouseEvent) => {
     @keydown.space.prevent="emitSelect(group.topResult.id, 'group-card-key', $event)"
     @contextmenu.prevent="emitContextMenu"
   >
-    <div class="flex items-start gap-2.5">
+    <div class="flex items-start gap-3">
       <SeekMindFileIcon :ext="group.ext" />
       <div class="min-w-0 flex-1">
         <div class="w-full text-left">
@@ -120,7 +120,8 @@ const emitContextMenu = (event: MouseEvent) => {
           <SeekMindHighlightedText :text="group.topResult.snippet" :query="props.query" :spans="group.topResult.highlight_spans" />
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-light pt-3">
+        <!-- 修复：选中文档仅保留底色高亮，不再使用边线或 ring 强化。 -->
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-3 pt-1">
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-dim">
             <SeekMindBadge>{{ group.ext.toUpperCase() }}</SeekMindBadge>
             <span>{{ t("searchResultGroupCard.segments", { count: group.count }) }}</span>
@@ -131,7 +132,7 @@ const emitContextMenu = (event: MouseEvent) => {
           </div>
           <div class="flex items-center gap-1.5">
             <button
-              class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary transition hover:bg-surface-hover hover:text-primary"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-white/60 text-secondary transition hover:bg-surface-hover hover:text-primary"
               type="button"
               :title="props.expanded ? t('searchResultGroupCard.collapse') : t('searchResultGroupCard.expand')"
               :aria-label="props.expanded ? t('searchResultGroupCard.collapse') : t('searchResultGroupCard.expand')"
@@ -145,7 +146,7 @@ const emitContextMenu = (event: MouseEvent) => {
       </div>
     </div>
 
-    <div v-if="props.expanded" class="mt-4 border-l border-light pl-3" @click.stop>
+    <div v-if="props.expanded" class="mt-4 pl-3" @click.stop>
       <div class="mb-2 flex items-center justify-between text-[11px] text-dim">
         <div class="flex items-center gap-2">
           <span class="font-semibold uppercase tracking-[0.16em] text-secondary">片段列表</span>

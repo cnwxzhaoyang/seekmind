@@ -1427,13 +1427,17 @@ onBeforeUnmount(() => {
 }
 
 .index-status-panel {
-  background-color: var(--color-page-bg);
+  margin: 12px;
+  background-color: rgba(255, 255, 255, 0.9);
   color: var(--color-text-primary);
   min-height: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  box-shadow: var(--shadow-card);
 }
 
 /* Office 提示 */
@@ -1445,7 +1449,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   background-color: rgba(187, 128, 9, 0.15);
   border: 1px solid rgba(187, 128, 9, 0.4);
-  border-radius: 6px;
+  border-radius: 14px;
 }
 .office-notice-icon {
   color: var(--color-warning);
@@ -1476,7 +1480,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   background-color: rgba(37, 99, 235, 0.08);
   border: 1px solid rgba(37, 99, 235, 0.22);
-  border-radius: 6px;
+  border-radius: 14px;
 }
 
 .ocr-notice-warning {
@@ -1527,7 +1531,8 @@ onBeforeUnmount(() => {
   padding: 0 20px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-header-bg);
+  background-color: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
 }
 
 .header-left {
@@ -1576,7 +1581,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -1630,7 +1635,7 @@ onBeforeUnmount(() => {
   height: 36px;
   border: 1px solid var(--color-border);
   background-color: var(--color-surface);
-  border-radius: 6px;
+  border-radius: 999px;
   color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 16px;
@@ -1678,8 +1683,9 @@ onBeforeUnmount(() => {
 .card {
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 20px;
+  box-shadow: var(--shadow-sm);
 }
 
 .card-header {
@@ -1721,7 +1727,7 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   background-color: var(--color-page-bg);
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 999px;
   white-space: nowrap;
 }
 
@@ -1734,7 +1740,7 @@ onBeforeUnmount(() => {
 
 .btn {
   padding: 8px 14px;
-  border-radius: 6px;
+  border-radius: 999px;
   border: 1px solid var(--color-border);
   background-color: var(--color-page-bg);
   color: var(--color-text-primary);
@@ -1792,7 +1798,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 12px;
   background-color: var(--color-page-bg);
-  border-radius: 12px;
+  border-radius: 16px;
   border: 1px solid var(--color-border);
 }
 
@@ -1802,7 +1808,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 12px;
   background-color: var(--color-surface-active);
   flex-shrink: 0;
   border: 1px solid transparent;
@@ -1940,7 +1946,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   padding: 12px;
   background-color: var(--color-page-bg);
-  border-radius: 6px;
+  border-radius: 16px;
 }
 
 .time-item {
@@ -1980,7 +1986,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 10px;
   background-color: var(--color-page-bg);
-  border-radius: 12px;
+  border-radius: 16px;
   border: 1px solid var(--color-border);
 }
 
@@ -2002,7 +2008,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid transparent;
   flex-shrink: 0;
 }
@@ -2199,7 +2205,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 6px 12px;
   border: 1px dashed var(--color-border);
-  border-radius: 6px;
+  border-radius: 14px;
   font-size: 12px;
   color: var(--color-text-secondary);
   min-width: 0;
@@ -2216,7 +2222,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   max-height: 400px;
   overflow: auto;
-  border-radius: 6px;
+  border-radius: 16px;
   border: 1px solid var(--color-border);
   background-color: var(--color-page-bg);
 }
@@ -2236,7 +2242,7 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 10px 12px;
   background-color: var(--color-page-bg);
-  border-radius: 6px;
+  border-radius: 14px;
   font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 12px;
@@ -2246,7 +2252,7 @@ onBeforeUnmount(() => {
   padding: 4px 10px;
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: 999px;
   color: var(--color-accent);
   font-size: 12px;
   cursor: pointer;
@@ -2267,7 +2273,7 @@ onBeforeUnmount(() => {
   background-color: var(--color-page-bg);
   border-left: 3px solid var(--color-danger);
   padding: 12px;
-  border-radius: 4px;
+  border-radius: 14px;
 }
 
 .exception-header {
@@ -2290,7 +2296,7 @@ onBeforeUnmount(() => {
   color: var(--color-danger);
   background-color: var(--color-danger-soft);
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 999px;
 }
 
 .exception-time {
@@ -2333,7 +2339,7 @@ onBeforeUnmount(() => {
   padding: 8px;
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 999px;
   color: var(--color-accent);
   font-size: 13px;
   cursor: pointer;

@@ -1176,30 +1176,31 @@ watch(routeSessionId, async (next, previous) => {
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-panel/70">
+  <section class="m-3 flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-default bg-surface/90 shadow-card">
     <SplitPane :panels="panels">
       <template #sidebar>
-        <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-default bg-sidebar">
+        <aside class="flex h-full min-h-0 flex-col overflow-hidden border-r border-default bg-[rgba(242,242,247,0.78)] backdrop-blur-xl">
           <div class="border-b border-default px-4 py-3">
             <div class="flex items-center justify-between gap-2">
-              <div class="seekmind-section-label">{{ t("page.appQa.sessions") }}</div>
+              <div class="text-sm font-semibold text-primary">{{ t("page.appQa.sessions") }}</div>
+              <div class="mt-0.5 text-[11px] text-muted">{{ t("page.appQa.sessionDesc") }}</div>
               <div class="flex items-center gap-1.5">
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-accent text-white shadow-sm hover:bg-accent/90"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white shadow-sm hover:bg-accent/90"
                   :title="t('page.appQa.createSession')"
                   @click="newSession"
                 >
                   <Plus :size="14" />
                 </button>
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-default bg-surface text-secondary hover:bg-surface-hover"
                   :title="t('page.appQa.settings')"
                   @click="router.push('/settings')"
                 >
                   <SlidersHorizontal :size="14" />
                 </button>
                 <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-default bg-surface text-secondary hover:bg-surface-hover"
                   :title="t('common.refresh')"
                   @click="refreshSessions()"
                 >
@@ -1238,7 +1239,7 @@ watch(routeSessionId, async (next, previous) => {
               <div
                 v-for="session in filteredSessions"
                 :key="session.id"
-                class="w-full rounded-lg border px-3 py-2 text-left transition"
+                class="w-full rounded-[14px] border px-3 py-2.5 text-left transition"
                 :class="qaSessionId === session.id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
                 @contextmenu.prevent="openSessionContextMenu(session, $event)"
               >
@@ -1275,9 +1276,9 @@ watch(routeSessionId, async (next, previous) => {
       </template>
 
       <template #center>
-        <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-panel/70">
+        <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(245,245,247,0.9)_100%)]">
           <div
-            class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2"
+            class="flex items-center justify-between gap-3 border-b border-default bg-white/80 px-4 py-2"
           >
             <div class="text-xs font-medium text-dim">
               {{ currentSession ? currentSession.title : t("page.appQa.currentSessionEmpty") }}
@@ -1312,7 +1313,7 @@ watch(routeSessionId, async (next, previous) => {
 
                 <div class="pl-10">
                   <div class="flex justify-end">
-                    <div class="max-w-[86%] rounded-2xl rounded-br-md bg-accent-soft px-4 py-3 shadow-sm">
+                    <div class="max-w-[86%] rounded-[18px] rounded-br-md bg-accent-soft px-4 py-3 shadow-sm">
                       <div class="mt-1 break-words text-sm leading-7 text-primary">{{ message.question }}</div>
                     </div>
                   </div>
@@ -1322,7 +1323,7 @@ watch(routeSessionId, async (next, previous) => {
                       :class="[
                         isMessagePending(message)
                           ? 'inline-flex rounded-full border border-default bg-surface px-3 py-2 shadow-sm'
-                          : 'relative max-w-[86%] rounded-2xl rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm',
+                          : 'relative max-w-[86%] rounded-[18px] rounded-bl-md border border-default bg-surface px-4 py-3 shadow-sm',
                       ]"
                     >
                       <template v-if="isMessagePending(message)">
@@ -1404,7 +1405,7 @@ watch(routeSessionId, async (next, previous) => {
                         <div class="seekmind-section-label">{{ t("page.appQa.sourceSummary") }}</div>
                         <div class="mt-3 overflow-x-auto rounded-lg border border-default bg-surface">
                           <table class="w-full min-w-[720px] table-fixed text-left text-xs">
-                            <thead class="border-b border-default bg-panel/70 text-[11px] uppercase tracking-wide text-muted">
+                            <thead class="border-b border-default bg-panel/60 text-[11px] uppercase tracking-wide text-muted">
                               <tr>
                                 <th class="w-16 px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnId") }}</th>
                                 <th class="w-[28%] px-3 py-2 font-medium">{{ t("page.appQa.sourceColumnFile") }}</th>

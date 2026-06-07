@@ -738,7 +738,7 @@ onActivated(async () => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-panel text-primary">
+  <div class="m-3 flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-default bg-surface/90 text-primary shadow-card">
     <header class="seekmind-page-topbar">
       <div class="seekmind-page-title-area">
         <div class="seekmind-page-title-row">
@@ -751,7 +751,7 @@ onActivated(async () => {
       </div>
       <div class="seekmind-page-actions">
         <button
-          class="inline-flex items-center gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+          class="inline-flex items-center gap-2 rounded-full border border-default bg-surface/90 px-4 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
           type="button"
           :disabled="collectionsLoading"
           @click="loadCollections(false)"
@@ -760,7 +760,7 @@ onActivated(async () => {
           {{ t("page.collections.resync") }}
         </button>
         <button
-          class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-strong"
+          class="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong"
           type="button"
           :disabled="!selectedCollection"
           @click="selectedCollection && void exportCollectionMarkdown(selectedCollection)"
@@ -780,7 +780,7 @@ onActivated(async () => {
 
     <SplitPane class="min-h-0 flex-1" :panels="splitPanels">
       <template #left>
-        <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-r border-default bg-sidebar/30">
+        <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-r border-default bg-[rgba(242,242,247,0.78)] backdrop-blur-xl">
           <div class="px-4 py-3">
             <div class="flex items-center justify-between gap-2">
               <div>
@@ -788,7 +788,7 @@ onActivated(async () => {
                 <div class="mt-1 text-xs text-muted">{{ t("page.collections.editorDesc") }}</div>
               </div>
               <button
-                class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-muted transition hover:border-accent hover:text-primary"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-default bg-surface/90 text-muted transition hover:border-accent hover:text-primary"
                 type="button"
                 :title="t('page.collections.newCollection')"
                 @click="startNewCollection"
@@ -799,19 +799,19 @@ onActivated(async () => {
             <div class="mt-2 space-y-2">
               <input
                 v-model="collectionName"
-                class="w-full rounded-md border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                class="w-full rounded-[14px] border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 type="text"
                 :placeholder="t('page.collections.namePlaceholder')"
               >
               <textarea
                 v-model="collectionDescription"
-                class="min-h-[64px] w-full resize-none rounded-md border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                class="min-h-[64px] w-full resize-none rounded-[14px] border border-default bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 :placeholder="t('page.collections.descriptionPlaceholder')"
               />
             </div>
             <div class="mt-2 flex items-center gap-2">
               <button
-                class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+                class="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 :disabled="collectionSaving || !collectionName.trim()"
                 @click="saveCollection"
@@ -820,7 +820,7 @@ onActivated(async () => {
                 {{ selectedCollectionId ? t("page.collections.saveChanges") : t("page.collections.create") }}
               </button>
               <button
-                class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
+                class="inline-flex items-center gap-2 rounded-full border border-default bg-surface px-4 py-2 text-sm text-secondary transition hover:border-accent hover:text-primary"
                 type="button"
                 @click="startNewCollection"
               >
@@ -834,7 +834,7 @@ onActivated(async () => {
               <Search class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" :size="15" />
               <input
                 v-model="collectionFilter"
-                class="w-full rounded-md border border-default bg-surface py-2 pl-9 pr-3 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                class="w-full rounded-[14px] border border-default bg-surface py-2 pl-9 pr-3 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 type="text"
                 :placeholder="t('page.collections.filterPlaceholder')"
               >
@@ -853,12 +853,12 @@ onActivated(async () => {
               <button
                 v-for="item in recentViews"
                 :key="`${item.target_type}:${item.target_id}`"
-                class="flex w-full items-start justify-between gap-3 rounded-md border border-default bg-surface px-3 py-2 text-left transition hover:bg-accent-soft"
+                class="flex w-full items-start justify-between gap-3 rounded-[14px] border border-default bg-surface px-3 py-2 text-left transition hover:bg-accent-soft"
                 type="button"
                 @click="openRecentView(item)"
               >
                 <div class="flex min-w-0 items-start gap-2">
-                  <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-panel text-accent">
+                  <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-panel text-accent">
                     <component :is="recentViewTypeIcon(item)" :size="14" />
                   </span>
                   <div class="min-w-0">
@@ -885,7 +885,7 @@ onActivated(async () => {
               <div
                 v-for="collection in filteredCollections"
                 :key="collection.id"
-                class="rounded-md border border-default bg-surface px-3 py-2.5 transition"
+                class="rounded-[14px] border border-default bg-surface px-3 py-2.5 transition"
                 :class="selectedCollectionId === collection.id ? 'bg-accent-soft shadow-card' : 'hover:bg-surface-hover'"
                 @click="selectCollection(collection)"
                 @contextmenu.prevent="openCollectionMenu(collection, $event)"
@@ -907,7 +907,7 @@ onActivated(async () => {
       </template>
 
       <template #middle>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel">
+        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(245,245,247,0.88)_100%)]">
           <div class="seekmind-section-header seekmind-section-header--balanced">
             <span class="card-icon seekmind-page-header-icon"><Layers3 :size="17" /></span>
             <div class="min-w-0">
@@ -1041,7 +1041,7 @@ onActivated(async () => {
       </template>
 
       <template v-if="showDetailPanel" #right>
-        <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-default bg-panel/80">
+        <aside class="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-default bg-[rgba(248,248,250,0.88)] backdrop-blur-xl">
           <div class="seekmind-section-header seekmind-section-header--balanced">
             <span class="card-icon seekmind-page-header-icon"><BookMarked :size="17" /></span>
             <div class="min-w-0 flex-1">
@@ -1050,7 +1050,7 @@ onActivated(async () => {
             </div>
             <button
               v-if="selectedItem"
-              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-default bg-surface/90 text-secondary hover:bg-surface-hover hover:text-primary"
               type="button"
               :title="t('common.close')"
               @click="closeSelectedItem"
@@ -1108,13 +1108,13 @@ onActivated(async () => {
                 <div class="mt-2 flex items-center gap-2">
                   <input
                     v-model="itemTagName"
-                    class="min-w-0 flex-1 rounded-md border border-default bg-panel px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                    class="min-w-0 flex-1 rounded-[14px] border border-default bg-panel px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                     type="text"
                     :placeholder="t('page.collections.tagPlaceholder')"
                     @keydown.enter.prevent="addItemTag"
                   >
                   <button
-                    class="inline-flex items-center gap-1.5 rounded-md border border-default bg-surface px-2.5 py-1.5 text-xs text-secondary transition hover:border-accent hover:text-primary"
+                    class="inline-flex items-center gap-1.5 rounded-full border border-default bg-surface px-2.5 py-1.5 text-xs text-secondary transition hover:border-accent hover:text-primary"
                     type="button"
                     :disabled="!itemTagName.trim()"
                     @click="addItemTag"
@@ -1136,12 +1136,12 @@ onActivated(async () => {
                 <div class="seekmind-content-block-title">{{ t("page.collections.note") }}</div>
                 <textarea
                   v-model="itemNoteDraft"
-                  class="min-h-[160px] w-full resize-y rounded-lg border border-default bg-panel px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                  class="min-h-[160px] w-full resize-y rounded-[14px] border border-default bg-panel px-3 py-2 text-sm text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   :placeholder="t('page.collections.notePlaceholder')"
                 />
                 <div class="mt-3 flex items-center gap-2">
                   <button
-                    class="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+                    class="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     :disabled="itemSaving"
                     @click="saveItemNote"

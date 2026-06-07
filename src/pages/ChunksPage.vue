@@ -802,7 +802,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
+  <div class="m-3 flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-default bg-surface/90 text-primary shadow-card">
     <header class="seekmind-page-topbar">
       <div class="seekmind-page-title-area">
         <div class="seekmind-page-title-row">
@@ -855,8 +855,8 @@ watch(
   <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
       <template #center>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/60 px-3 py-3">
-            <div class="shrink-0 mb-3 rounded-md border border-default bg-surface px-3 py-2.5">
+        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(245,245,247,0.88)_100%)] px-3 py-3">
+            <div class="shrink-0 mb-3 rounded-[14px] border border-default bg-surface/90 px-3 py-2.5 shadow-sm">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
@@ -878,7 +878,7 @@ watch(
                   </div>
                 </div>
                   <select
-                  class="min-w-[220px] max-w-[320px] rounded-md border border-default bg-input px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+                  class="min-w-[220px] max-w-[320px] rounded-[14px] border border-default bg-input px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
                   :disabled="loading || loadingDocs || dirs.length === 0"
                   :value="selectedDirPath"
                   :title="selectedDir?.path || t('page.chunks.dirSelector.placeholder')"
@@ -923,14 +923,14 @@ watch(
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
               <div v-if="loadingDocs" class="text-sm text-dim">{{ t("page.chunks.readingDocs") }}</div>
-              <div v-else-if="filteredDocuments.length === 0" class="rounded-md bg-surface px-4 py-6 text-sm text-dim">
+              <div v-else-if="filteredDocuments.length === 0" class="rounded-[14px] bg-surface px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.docs") }}
               </div>
               <div v-else class="space-y-2">
                 <div
                   v-for="doc in filteredDocuments"
                   :key="doc.id"
-                  class="w-full rounded-md border px-2.5 py-2 text-left transition"
+                  class="w-full rounded-[14px] border px-2.5 py-2 text-left transition"
                   :class="selectedDocPath === doc.path ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-hover'"
                   role="button"
                   tabindex="0"
@@ -980,7 +980,7 @@ watch(
         </template>
 
         <template #right>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel px-3 py-3">
+        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(248,248,250,0.88)] px-3 py-3 backdrop-blur-xl">
             <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
               <div>
                 <div class="seekmind-section-label">{{ t("page.chunks.section.chunkDetail") }}</div>
@@ -1011,7 +1011,7 @@ watch(
               <div class="flex items-center gap-2">
                 <button
                   v-if="currentDocument"
-                  class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-default bg-surface/90 text-secondary hover:bg-surface-hover hover:text-primary"
                   type="button"
                   :title="t('common.close')"
                   @click="closeCurrentDocument"
@@ -1019,7 +1019,7 @@ watch(
                   <X :size="14" />
                 </button>
                 <button
-                  class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover"
+                class="inline-flex items-center gap-2 rounded-full border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover"
                   :disabled="loading || !selectedDirPath"
                   @click="void syncSelection()"
                 >
@@ -1030,7 +1030,7 @@ watch(
             </div>
 
             <div class="shrink-0 mb-3">
-              <div class="rounded-md border border-default bg-panel px-4 py-3">
+              <div class="rounded-[14px] border border-default bg-panel px-4 py-3">
                 <div class="text-sm font-medium text-primary">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
                 <div class="mt-1 break-all text-[11px] text-dim">
                   {{ currentDocument?.path || t("page.chunks.selectDoc") }}
@@ -1071,14 +1071,14 @@ watch(
 
             <div class="min-h-0 flex-1 overflow-y-auto pr-1">
               <div v-if="loadingChunks" class="text-sm text-dim">{{ t("page.chunks.readingChunks") }}</div>
-              <div v-else-if="!currentDocument" class="rounded-md bg-panel px-4 py-6 text-sm text-dim">
+              <div v-else-if="!currentDocument" class="rounded-[14px] bg-panel px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.selectDocToView") }}
               </div>
-              <div v-else-if="chunks.length === 0" class="rounded-md bg-panel px-4 py-6 text-sm text-dim">
+              <div v-else-if="chunks.length === 0" class="rounded-[14px] bg-panel px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.chunks") }}
               </div>
               <div v-else class="space-y-3">
-                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-md border border-default bg-surface p-3">
+                <div v-for="chunk in chunks" :key="chunk.id" class="rounded-[14px] border border-default bg-surface p-3">
                   <div class="mb-2 flex items-center justify-between gap-2">
                     <div class="min-w-0 flex-1">
                       <div class="text-sm font-medium text-primary">{{ chunk.title_path || chunk.heading }}</div>
@@ -1091,7 +1091,7 @@ watch(
                         {{ chunk.page ? t("page.chunks.page", { page: chunk.page }) : t("page.chunks.paragraph", { para: chunk.paragraph ?? 0 }) }}
                       </SeekMindBadge>
                       <button
-                        class="rounded-md border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
+                        class="rounded-full border border-default bg-surface px-2 py-1 text-[11px] text-secondary hover:bg-surface-hover"
                         @click="copyChunkCitation(chunk)"
                       >
                         {{ t("page.chunks.action.copyCitation") }}

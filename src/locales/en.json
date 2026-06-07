@@ -77,7 +77,21 @@
     "status": "Index Status",
     "settings": "Settings",
     "expand": "Expand Sidebar",
-    "collapse": "Collapse Sidebar"
+    "collapse": "Collapse Sidebar",
+    "brandSubtitle": "Local Knowledge Hub",
+    "recentAccess": "Recent Access",
+    "quickNavigation": "Quick Navigation",
+    "statsDirs": "Dirs",
+    "statsRecent": "Recent",
+    "statsFavorites": "Favorites",
+    "ready": "Ready",
+    "statusRunning": "Index service running"
+  },
+
+  "shell": {
+    "commandPalette": "Command Palette",
+    "notifications": "Notifications",
+    "quickAdd": "New Collection"
   },
 
   "page": {

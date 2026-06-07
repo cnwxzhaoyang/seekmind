@@ -1234,31 +1234,16 @@ watch(showDebugPanel, async (visible) => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-page text-primary">
-    <main class="flex min-h-0 flex-1 overflow-hidden">
+  <div class="flex h-full min-h-0 flex-col bg-transparent text-primary">
+    <main class="flex min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2">
       <SplitPane :panels="splitPanels">
         <template #center>
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel/70">
-            <div class="border-b border-default bg-surface px-4 py-3 space-y-3">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="seekmind-section-label">{{ qaMode ? t("page.appSearch.qa.title") : t("page.appSearch.title") }}</div>
-                  <div class="seekmind-item-meta mt-1">
-                    {{ qaMode ? t("page.appSearch.qa.subtitle") : t("page.appSearch.subtitle") }}
-                  </div>
-                </div>
-                <RouterLink
-                  to="/qa"
-                  class="inline-flex items-center gap-2 rounded-md border border-default bg-panel px-3 py-1.5 text-xs font-medium text-secondary transition hover:bg-surface-hover hover:text-primary"
-                >
-                  <MessageSquareText :size="14" />
-                  {{ t("sidebar.qa") }}
-                </RouterLink>
-              </div>
-
+          <!-- 修复：搜索面板改为扁平化结构，减少卡片边框和分割线层级。 -->
+          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
+            <div class="space-y-3 px-4 pt-2 pb-3">
               <form
                 v-if="!qaMode"
-                class="mx-auto flex h-9 w-full max-w-none items-center gap-2 rounded-md border border-default bg-input px-3 transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft"
+                class="mx-auto flex h-10 w-full max-w-none items-center gap-2 rounded-full bg-[rgba(118,118,128,0.08)] px-4 transition focus-within:bg-white/70 focus-within:ring-2 focus-within:ring-accent/20"
                 @submit.prevent="runSearch"
               >
                 <Search :size="15" class="shrink-0 text-muted" />
@@ -1268,25 +1253,25 @@ watch(showDebugPanel, async (visible) => {
                   :placeholder="t('page.appSearch.placeholder')"
                   class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
                 />
-                <span class="hidden text-xs text-muted sm:inline">Cmd+K</span>
+                <span class="hidden rounded-full border border-default bg-white/70 px-2 py-0.5 text-[11px] text-muted sm:inline">Cmd+K</span>
               </form>
 
-              <form v-else class="space-y-3" @submit.prevent="runQa">
+              <form v-else class="space-y-2" @submit.prevent="runQa">
                 <textarea
                   v-model="qaQuestion"
                   rows="3"
-                  class="w-full rounded-md border border-default bg-input px-3 py-2.5 text-sm text-primary outline-none transition focus:border-accent focus:bg-surface"
+                  class="w-full rounded-[18px] bg-[rgba(118,118,128,0.08)] px-4 py-2.5 text-sm text-primary outline-none transition focus:bg-white/70 focus:ring-2 focus:ring-accent/20"
                   :placeholder="t('page.appSearch.qa.placeholder')"
                 />
-                <div class="flex items-center justify-between gap-3">
-                  <div class="text-xs text-dim">
+                <div class="flex items-center justify-end gap-2">
+                  <div v-if="qaSessionTitle" class="mr-auto text-xs text-dim">
                     {{ isQaConfigured(qaSettings) ? t("page.appSearch.qa.ready") : t("page.appSearch.qa.notConfigured") }}
-                    <span v-if="qaSessionTitle" class="ml-2 text-muted">· {{ qaSessionTitle }}</span>
+                    <span class="ml-2 text-muted">· {{ qaSessionTitle }}</span>
                   </div>
                   <div class="flex items-center gap-2">
                     <button
                       v-if="qaMessages.length"
-                      class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+                      class="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
                       type="button"
                       :disabled="qaLoading || qaCancelling"
                       @click="newQaSession"
@@ -1295,14 +1280,14 @@ watch(showDebugPanel, async (visible) => {
                     </button>
                     <button
                       v-if="qaLoading || qaCancelling"
-                      class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
+                      class="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover"
                       type="button"
                       @click="stopQa"
                     >
                       {{ qaCancelling ? t("page.appSearch.qa.stopping") : t("page.appSearch.qa.stop") }}
                     </button>
                     <button
-                      class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      class="inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
                       :disabled="qaLoading || qaCancelling"
                       type="submit"
                     >
@@ -1334,12 +1319,12 @@ watch(showDebugPanel, async (visible) => {
               </div>
             </div>
 
-            <div v-if="!qaMode" class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
+            <div v-if="!qaMode" class="flex items-center justify-between gap-3 px-4 py-1.5">
               <div class="text-xs font-medium text-dim">
                 {{ t("page.appSearch.stats.foundDocs", { count: groupedResults.length, total: results.length }) }}
               </div>
               <button
-                class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent-text hover:bg-accent-soft"
+                class="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-accent-text hover:bg-accent-soft"
                 :class="showResultFilterPanel ? 'bg-accent-soft' : ''"
                 @click="toggleResultFilterPanel"
               >
@@ -1350,17 +1335,17 @@ watch(showDebugPanel, async (visible) => {
                 </SeekMindBadge>
               </button>
             </div>
-            <div v-if="!qaMode && showResultFilterPanel" class="border-b border-default bg-panel px-4 py-3">
+            <div v-if="!qaMode && showResultFilterPanel" class="px-4 pb-2">
               <div class="flex flex-wrap items-center gap-2">
                 <button
-                  class="rounded-md border px-2.5 py-1.5 text-xs transition"
+                  class="rounded-full border px-2.5 py-1.5 text-xs transition"
                   :class="resultFilterMode === 'all' ? 'border-accent bg-accent-soft text-primary' : 'border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary'"
                   @click="setResultFilterMode('all')"
                 >
                   {{ t("page.appSearch.filterMode.all") }}
                 </button>
                 <button
-                  class="rounded-md border px-2.5 py-1.5 text-xs transition"
+                  class="rounded-full border px-2.5 py-1.5 text-xs transition"
                   :class="resultFilterMode === 'favorites' ? 'border-accent bg-accent-soft text-primary' : 'border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary'"
                   @click="setResultFilterMode('favorites')"
                 >
@@ -1371,22 +1356,8 @@ watch(showDebugPanel, async (visible) => {
                 </div>
               </div>
             </div>
-            <div v-else class="flex items-center justify-between gap-3 border-b border-default bg-surface px-4 py-2">
-              <div class="text-xs font-medium text-dim">
-                {{ qaAnswer ? t("page.appSearch.qa.resultCount", { count: qaAnswer.sources.length }) : t("page.appSearch.qa.waiting") }}
-              </div>
-              <div class="flex items-center gap-2 text-xs text-dim">
-                <SeekMindBadge :tone="qaStateTone">
-                  {{ qaStateLabel }}
-                </SeekMindBadge>
-                <SeekMindBadge tone="default">
-                  {{ isQaConfigured(qaSettings) ? t("page.appSearch.qa.enabled") : t("page.appSearch.qa.disabled") }}
-                </SeekMindBadge>
-              </div>
-            </div>
-
             <div class="min-h-0 flex-1 overflow-y-auto">
-              <div v-if="!qaMode && showDebugPanel" class="border-b border-default bg-panel px-4 py-3 text-xs text-secondary">
+            <div v-if="!qaMode && showDebugPanel" class="px-4 py-3 text-xs text-secondary">
                 <div class="flex items-center justify-between gap-3">
                   <div>
                   <div class="seekmind-section-label">{{ t("page.appSearch.debug.title") }}</div>
@@ -1434,11 +1405,11 @@ watch(showDebugPanel, async (visible) => {
               </div>
 
               <template v-if="!qaMode">
-                <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-transparent bg-transparent px-4 py-6 text-center text-xs text-muted">
                   {{ t("page.appSearch.noResults") }}
                 </div>
 
-                <div class="space-y-3 pr-2 pb-4">
+                <div class="space-y-2 pr-2 pb-4">
                   <SeekMindSearchResultGroupCard
                     v-for="group in groupedResults"
                     :key="group.path"
@@ -1456,20 +1427,20 @@ watch(showDebugPanel, async (visible) => {
               </template>
 
               <template v-else>
-                <div v-if="qaErrorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
+                <div v-if="qaErrorMessage" class="m-4 rounded-md border border-transparent bg-danger-soft px-4 py-3 text-sm text-danger">
                   {{ qaErrorMessage }}
                 </div>
-                <div v-if="qaInfoMessage" class="m-4 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-3 text-sm text-success">
+                <div v-if="qaInfoMessage" class="m-4 rounded-md border border-transparent bg-emerald-soft px-4 py-3 text-sm text-success">
                   {{ qaInfoMessage }}
                 </div>
-                <div v-if="qaLoading && qaMessages.length === 0" class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                <div v-if="qaLoading && qaMessages.length === 0" class="m-4 rounded-md border border-transparent bg-transparent px-4 py-6 text-center text-xs text-muted">
                   {{ t("page.appSearch.qa.loading") }}
                 </div>
                 <div v-else-if="qaMessages.length" class="space-y-3 p-4">
                   <div
                     v-for="message in qaMessages"
                     :key="message.id"
-                    class="rounded-lg border border-default bg-surface p-4"
+                    class="rounded-lg border border-transparent bg-surface/70 p-4"
                     :class="qaAnswer?.id === message.id ? 'ring-1 ring-accent-soft' : ''"
                     @click="selectQaMessage(message)"
                   >
@@ -1502,8 +1473,8 @@ watch(showDebugPanel, async (visible) => {
                     <div
                       v-for="source in qaAnswer.sources"
                       :key="source.source_id"
-                      class="cursor-pointer rounded-lg border px-3 py-3 transition"
-                      :class="qaSelectedSourceId === source.source_id ? 'border-accent bg-accent-soft' : 'border-default bg-surface hover:border-accent'"
+                      class="cursor-pointer rounded-lg border border-transparent px-3 py-3 transition"
+                      :class="qaSelectedSourceId === source.source_id ? 'bg-accent-soft ring-1 ring-accent/20' : 'bg-surface/70 hover:bg-surface-hover'"
                       @click="selectQaSource(source.source_id)"
                     >
                       <div class="flex items-start justify-between gap-3">
@@ -1528,7 +1499,7 @@ watch(showDebugPanel, async (visible) => {
                     </div>
                   </div>
                 </div>
-                <div v-else class="m-4 rounded-md border border-dashed border-default bg-surface px-4 py-6 text-center text-xs text-muted">
+                <div v-else class="m-4 rounded-md border border-transparent bg-transparent px-4 py-6 text-center text-xs text-muted">
                   {{ t("page.appSearch.qa.enterQuestion") }}
                 </div>
               </template>

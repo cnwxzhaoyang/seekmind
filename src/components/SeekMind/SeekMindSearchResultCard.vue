@@ -69,22 +69,23 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
 
 <template>
   <div
-    class="w-full cursor-pointer rounded-lg border p-2.5 text-left transition"
+    class="w-full cursor-pointer rounded-[16px] border border-transparent bg-transparent p-3 text-left transition hover:bg-surface-hover/60"
     :class="[
       props.nested
         ? props.selected
-          ? 'border-transparent bg-accent-soft'
-          : 'border-transparent bg-transparent hover:bg-surface-hover/50'
-        : 'border-default bg-surface hover:border-accent',
-      !props.nested && props.selected ? 'bg-accent-soft' : '',
+          ? ''
+          : 'bg-transparent hover:bg-surface-hover/40'
+        : '',
+      !props.nested && props.selected ? '' : '',
     ]"
+    :style="props.selected ? { backgroundColor: 'rgba(0, 122, 255, 0.12)' } : undefined"
     role="button"
     tabindex="0"
     @click="emitSelect($event)"
     @keydown.enter.prevent="emitSelect($event)"
     @keydown.space.prevent="emitSelect($event)"
   >
-    <div class="flex gap-2.5">
+    <div class="flex gap-3">
       <SeekMindFileIcon :ext="item.ext" />
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-2">

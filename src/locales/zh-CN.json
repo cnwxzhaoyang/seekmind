@@ -78,7 +78,21 @@
     "settings": "设置",
     "indexDirs": "索引目录",
     "expand": "展开侧栏",
-    "collapse": "收起侧栏"
+    "collapse": "收起侧栏",
+    "brandSubtitle": "本地知识中枢",
+    "recentAccess": "最近访问",
+    "quickNavigation": "快捷导航",
+    "statsDirs": "目录",
+    "statsRecent": "最近",
+    "statsFavorites": "收藏",
+    "ready": "就绪",
+    "statusRunning": "索引服务运行中"
+  },
+
+  "shell": {
+    "commandPalette": "命令面板",
+    "notifications": "通知中心",
+    "quickAdd": "新建集合"
   },
 
   "page": {
