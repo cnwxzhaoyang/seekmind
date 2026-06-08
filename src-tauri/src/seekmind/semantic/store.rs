@@ -18,6 +18,7 @@ type SemanticProgressEmitter =
     Arc<dyn Fn(crate::seekmind::models::SemanticRebuildProgressView) + Send + Sync>;
 
 const SEMANTIC_SOURCE_REBUILD: &str = "rebuild";
+const CURRENT_VECTOR_INDEX_SCHEMA_VERSION: i64 = 1;
 
 fn emit_semantic_progress(
     emitter: Option<&SemanticProgressEmitter>,
@@ -86,6 +87,7 @@ struct VectorIndexMetaRow {
     last_indexed_at: i64,
     last_error: String,
     status: String,
+    schema_version: i64,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -988,7 +990,7 @@ async fn load_default_model(database: &Database) -> Result<EmbeddingModelView, S
 async fn load_vector_meta(database: &Database) -> Result<VectorIndexMetaRow, String> {
     let row = sqlx::query_as::<_, VectorIndexMetaRow>(
         r#"
-        SELECT model_id, chunk_count, last_indexed_at, last_error, status
+        SELECT model_id, chunk_count, last_indexed_at, last_error, status, schema_version
         FROM vector_index_meta
         WHERE id = 1
         "#,
@@ -1003,6 +1005,7 @@ async fn load_vector_meta(database: &Database) -> Result<VectorIndexMetaRow, Str
         last_indexed_at: 0,
         last_error: String::new(),
         status: "idle".to_string(),
+        schema_version: CURRENT_VECTOR_INDEX_SCHEMA_VERSION,
     }))
 }
 

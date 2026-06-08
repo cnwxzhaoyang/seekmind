@@ -145,9 +145,20 @@ impl Database {
             .await
             .map_err(|error| error.to_string())?;
         database
+            .ensure_vector_index_meta_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
             .ensure_vector_index_meta_row()
             .await
             .map_err(|error| error.to_string())?;
+        if database
+            .ensure_vector_index_schema_version()
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            eprintln!("[SeekMind] vector index schema migration completed");
+        }
         database
             .ensure_history_tables()
             .await

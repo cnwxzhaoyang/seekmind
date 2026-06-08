@@ -6,11 +6,14 @@
 
 use uuid::Uuid;
 
+use crate::seekmind::semantic::store::clear_all_embeddings;
 use crate::seekmind::storage::types::IndexSettings;
 
 use super::util::{current_unix_ts, default_exclude_dirs, scalar_count_no_bind};
 use super::{default_network_proxy_settings, default_qa_settings, Database};
 use sqlx::Row;
+
+const CURRENT_VECTOR_INDEX_SCHEMA_VERSION: i64 = 1;
 
 impl Database {
     pub(crate) async fn init_schema(&self) -> Result<(), sqlx::Error> {
@@ -204,7 +207,8 @@ impl Database {
                 chunk_count INTEGER NOT NULL DEFAULT 0,
                 last_indexed_at INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'idle'
+                status TEXT NOT NULL DEFAULT 'idle',
+                schema_version INTEGER NOT NULL DEFAULT 0
             )
             "#,
             r#"
@@ -542,14 +546,81 @@ impl Database {
         if count == 0 {
             sqlx::query(
                 r#"
-                INSERT INTO vector_index_meta (id, model_id, chunk_count, last_indexed_at, last_error, status)
-                VALUES (1, 'default-local-embedding', 0, 0, '', 'idle')
+                INSERT INTO vector_index_meta (id, model_id, chunk_count, last_indexed_at, last_error, status, schema_version)
+                VALUES (1, 'default-local-embedding', 0, 0, '', 'idle', ?)
                 "#,
             )
+            .bind(CURRENT_VECTOR_INDEX_SCHEMA_VERSION)
             .execute(&self.pool)
             .await?;
         }
         Ok(())
+    }
+
+    pub(crate) async fn ensure_vector_index_meta_columns(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(vector_index_meta)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        if !columns.contains("schema_version") {
+            sqlx::query(
+                "ALTER TABLE vector_index_meta ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 0",
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn ensure_vector_index_schema_version(&self) -> Result<bool, sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT schema_version, model_id
+            FROM vector_index_meta
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            self.ensure_vector_index_meta_row().await?;
+            return Ok(false);
+        };
+
+        let schema_version: i64 = row.try_get("schema_version")?;
+        if schema_version >= CURRENT_VECTOR_INDEX_SCHEMA_VERSION {
+            return Ok(false);
+        }
+
+        let model_id: String = row.try_get("model_id")?;
+        eprintln!(
+            "[SeekMind] vector index schema migration model_id={} from={} to={}",
+            model_id, schema_version, CURRENT_VECTOR_INDEX_SCHEMA_VERSION
+        );
+        clear_all_embeddings(self).await.map_err(sqlx::Error::Protocol)?;
+        sqlx::query(
+            r#"
+            UPDATE vector_index_meta
+            SET schema_version = ?,
+                chunk_count = 0,
+                last_indexed_at = 0,
+                last_error = '语义索引版本已升级，需要重建',
+                status = 'needs_rebuild'
+            WHERE id = 1
+            "#,
+        )
+        .bind(CURRENT_VECTOR_INDEX_SCHEMA_VERSION)
+        .execute(&self.pool)
+        .await?;
+        Ok(true)
     }
 
     pub(crate) async fn ensure_current_task_columns(&self) -> Result<(), sqlx::Error> {

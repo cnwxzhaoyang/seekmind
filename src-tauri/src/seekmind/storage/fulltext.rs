@@ -16,6 +16,8 @@ use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, Term};
 use crate::seekmind::search::{normalize_query, normalize_search_text};
 use crate::seekmind::storage::types::{ChunkRecord, ExtractedDocument};
 
+const CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Clone)]
 pub struct SearchHit {
     pub chunk_id: String,
@@ -40,11 +42,15 @@ impl SearchIndex {
 
     fn open_or_init_with_mode(read_only: bool) -> Result<Self, String> {
         let index_dir = fulltext_index_dir();
+        let current_version = CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION.to_string();
         eprintln!(
             "[SeekMind] Tantivy index dir: {} read_only={read_only}",
             index_dir.display()
         );
         ensure_index_dir_ready(&index_dir)?;
+        if !read_only {
+            ensure_index_schema_version(&index_dir)?;
+        }
 
         let schema = build_schema();
         let index = match Index::open_in_dir(&index_dir) {
@@ -81,12 +87,24 @@ impl SearchIndex {
 
         let fields = SearchFields::from_schema(&index.schema());
 
-        Ok(Self {
+        let search_index = Self {
             index,
             reader,
             writer,
             fields,
-        })
+        };
+
+        if !read_only {
+            // 修复：全文索引 schema 升级后需要写入版本标记，避免下次启动误读旧索引目录。
+            write_index_schema_version_marker(&index_dir)?;
+            eprintln!(
+                "[SeekMind] fulltext index schema version marked {} at {}",
+                current_version,
+                index_dir.display()
+            );
+        }
+
+        Ok(search_index)
     }
 
     pub fn doc_count(&self) -> u64 {
@@ -353,4 +371,45 @@ fn ensure_index_dir_ready(index_dir: &PathBuf) -> Result<(), String> {
     }
 
     std::fs::create_dir_all(index_dir).map_err(|error| error.to_string())
+}
+
+fn ensure_index_schema_version(index_dir: &PathBuf) -> Result<(), String> {
+    let marker_path = index_schema_version_marker_path(index_dir);
+    let current_version = CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION.to_string();
+    let previous_version = std::fs::read_to_string(&marker_path)
+        .ok()
+        .map(|value| value.trim().to_string());
+
+    if previous_version.as_deref() == Some(current_version.as_str()) {
+        return Ok(());
+    }
+
+    let has_existing_entries = index_dir
+        .read_dir()
+        .map_err(|error| error.to_string())?
+        .next()
+        .is_some();
+
+    if has_existing_entries {
+        // 修复：首次引入全文索引 schema 版本标记时，老目录可能没有 marker，需要按旧版本强制重建。
+        eprintln!(
+            "[SeekMind] fulltext index schema migration dir={} from={:?} to={}",
+            index_dir.display(),
+            previous_version,
+            CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION
+        );
+        std::fs::remove_dir_all(index_dir).map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn index_schema_version_marker_path(index_dir: &PathBuf) -> PathBuf {
+    index_dir.join("schema-version.txt")
+}
+
+fn write_index_schema_version_marker(index_dir: &PathBuf) -> Result<(), String> {
+    let marker_path = index_schema_version_marker_path(index_dir);
+    std::fs::write(marker_path, CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION.to_string())
+        .map_err(|error| error.to_string())
 }
