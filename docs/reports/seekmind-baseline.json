@@ -1,0 +1,92 @@
+{
+  "generated_at": "2026-06-08T09:02:29.018801+00:00",
+  "sqlite_path": "/Users/zhaoyang/Library/Application Support/SeekMindDev/seekmind.sqlite",
+  "query_limit": 20,
+  "repeat": 1,
+  "max_rss_mb": 49.296875,
+  "open_database_ms": 27,
+  "load_index_status_ms": 0,
+  "load_parser_runtime_ms": 383,
+  "load_semantic_status_ms": 951,
+  "parser_runtime": {
+    "active": "python",
+    "python_available": true,
+    "pdf_ocr_available": true,
+    "office_available": true,
+    "chinese_ocr_available": true
+  },
+  "semantic_status": {
+    "enabled_model": "BAAI/bge-small-zh-v1.5",
+    "model_available": true,
+    "needs_rebuild": true,
+    "sqlite_chunks": 995,
+    "embedded_chunks": 0
+  },
+  "index_status": {
+    "indexed_docs": 25,
+    "indexed_chunks": 995,
+    "scanned_docs": 25,
+    "failed_files": 0,
+    "pdf_ocr_tasks": 0
+  },
+  "queries": [
+    {
+      "query": "设计",
+      "hit_count": 20,
+      "best_ms": 70.60725,
+      "avg_ms": 70.60725,
+      "worst_ms": 70.60725,
+      "samples_ms": [
+        70.60725
+      ]
+    },
+    {
+      "query": "系统",
+      "hit_count": 20,
+      "best_ms": 62.169166,
+      "avg_ms": 62.169166,
+      "worst_ms": 62.169166,
+      "samples_ms": [
+        62.169166
+      ]
+    },
+    {
+      "query": "WBS",
+      "hit_count": 20,
+      "best_ms": 75.578083,
+      "avg_ms": 75.578083,
+      "worst_ms": 75.578083,
+      "samples_ms": [
+        75.578083
+      ]
+    },
+    {
+      "query": "测试",
+      "hit_count": 20,
+      "best_ms": 18.914958,
+      "avg_ms": 18.914958,
+      "worst_ms": 18.914958,
+      "samples_ms": [
+        18.914958
+      ]
+    },
+    {
+      "query": "集成",
+      "hit_count": 20,
+      "best_ms": 63.306417,
+      "avg_ms": 63.306417,
+      "worst_ms": 63.306417,
+      "samples_ms": [
+        63.306417
+      ]
+    }
+  ],
+  "latency_ms": {
+    "min_ms": 18.914958,
+    "avg_ms": 58.1151748,
+    "p50_ms": 63.306417,
+    "p95_ms": 75.578083,
+    "p99_ms": 75.578083,
+    "max_ms": 75.578083
+  }
+}

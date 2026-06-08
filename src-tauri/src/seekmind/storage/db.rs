@@ -69,8 +69,19 @@ struct DirectoryAggregate {
 
 impl Database {
     pub async fn open_or_init() -> Result<Self, String> {
+        Self::open_or_init_with_options(false).await
+    }
+
+    pub async fn open_or_init_read_only_index() -> Result<Self, String> {
+        Self::open_or_init_with_options(true).await
+    }
+
+    async fn open_or_init_with_options(read_only_index: bool) -> Result<Self, String> {
         let path = sqlite_database_path();
-        eprintln!("[SeekMind] SQLite database path: {}", path.display());
+        eprintln!(
+            "[SeekMind] SQLite database path: {} read_only_index={read_only_index}",
+            path.display()
+        );
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -87,7 +98,11 @@ impl Database {
             .await
             .map_err(|error| error.to_string())?;
 
-        let search_index = Arc::new(SearchIndex::open_or_init()?);
+        let search_index = Arc::new(if read_only_index {
+            SearchIndex::open_or_init_read_only()?
+        } else {
+            SearchIndex::open_or_init()?
+        });
         let database = Self {
             pool,
             search_index,
@@ -175,8 +190,6 @@ impl Database {
 
         Ok(database)
     }
-
-
 }
 
 fn default_qa_settings() -> QaSettings {

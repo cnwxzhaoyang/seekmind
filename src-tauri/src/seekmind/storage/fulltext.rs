@@ -1,7 +1,10 @@
-#![allow(dead_code)]
-
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/03
+ * @Description SeekMind Tantivy 全文索引存储与检索实现，支持只读模式供基线工具复用。
+ */
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use dirs::{cache_dir, data_dir};
 use tantivy::query::QueryParser;
@@ -22,14 +25,25 @@ pub struct SearchHit {
 pub struct SearchIndex {
     index: Index,
     reader: IndexReader,
-    writer: Mutex<IndexWriter>,
+    writer: Option<Mutex<IndexWriter>>,
     fields: SearchFields,
 }
 
 impl SearchIndex {
     pub fn open_or_init() -> Result<Self, String> {
+        Self::open_or_init_with_mode(false)
+    }
+
+    pub fn open_or_init_read_only() -> Result<Self, String> {
+        Self::open_or_init_with_mode(true)
+    }
+
+    fn open_or_init_with_mode(read_only: bool) -> Result<Self, String> {
         let index_dir = fulltext_index_dir();
-        eprintln!("[SeekMind] Tantivy index dir: {}", index_dir.display());
+        eprintln!(
+            "[SeekMind] Tantivy index dir: {} read_only={read_only}",
+            index_dir.display()
+        );
         ensure_index_dir_ready(&index_dir)?;
 
         let schema = build_schema();
@@ -54,16 +68,23 @@ impl SearchIndex {
             .try_into()
             .map_err(|error| error.to_string())?;
 
-        let writer = index
-            .writer(50_000_000)
-            .map_err(|error| error.to_string())?;
+        // 修复：性能基线工具需要在主应用仍持有写锁时打开全文索引，否则会因为 LockBusy 无法执行基线采样。
+        let writer = if read_only {
+            None
+        } else {
+            Some(Mutex::new(
+                index
+                    .writer(50_000_000)
+                    .map_err(|error| error.to_string())?,
+            ))
+        };
 
         let fields = SearchFields::from_schema(&index.schema());
 
         Ok(Self {
             index,
             reader,
-            writer: Mutex::new(writer),
+            writer,
             fields,
         })
     }
@@ -72,8 +93,16 @@ impl SearchIndex {
         self.reader.searcher().num_docs()
     }
 
+    fn writer(&self) -> Result<MutexGuard<'_, IndexWriter>, String> {
+        self.writer
+            .as_ref()
+            .ok_or_else(|| "Tantivy index is opened in read-only mode".to_string())?
+            .lock()
+            .map_err(|error| error.to_string())
+    }
+
     pub fn clear_all(&self) -> Result<(), String> {
-        let mut writer = self.writer.lock().map_err(|error| error.to_string())?;
+        let mut writer = self.writer()?;
         writer
             .delete_all_documents()
             .map_err(|error| error.to_string())?;
@@ -83,7 +112,7 @@ impl SearchIndex {
     }
 
     pub fn delete_directory(&self, dir_path: &str) -> Result<(), String> {
-        let mut writer = self.writer.lock().map_err(|error| error.to_string())?;
+        let mut writer = self.writer()?;
         writer.delete_term(Term::from_field_text(self.fields.dir_path, dir_path));
         writer.commit().map_err(|error| error.to_string())?;
         self.reader.reload().map_err(|error| error.to_string())?;
@@ -91,7 +120,7 @@ impl SearchIndex {
     }
 
     pub fn delete_document(&self, path: &str) -> Result<(), String> {
-        let mut writer = self.writer.lock().map_err(|error| error.to_string())?;
+        let mut writer = self.writer()?;
         writer.delete_term(Term::from_field_text(self.fields.path_exact, path));
         writer.commit().map_err(|error| error.to_string())?;
         self.reader.reload().map_err(|error| error.to_string())?;
@@ -104,7 +133,7 @@ impl SearchIndex {
         document: &ExtractedDocument,
         chunks: &[ChunkRecord],
     ) -> Result<(), String> {
-        let mut writer = self.writer.lock().map_err(|error| error.to_string())?;
+        let mut writer = self.writer()?;
 
         for (index, chunk) in chunks.iter().enumerate() {
             let chunk_id = format!("{document_id}:{index}");
@@ -282,6 +311,13 @@ pub fn fulltext_index_dir() -> PathBuf {
 
 #[cfg(debug_assertions)]
 fn default_fulltext_index_dir() -> PathBuf {
+    if let Ok(root) = std::env::var("SEEKMIND_CACHE_ROOT") {
+        let root = root.trim();
+        if !root.is_empty() {
+            return PathBuf::from(root).join("tantivy");
+        }
+    }
+
     let base = cache_dir()
         .or_else(data_dir)
         .unwrap_or_else(|| PathBuf::from("."));

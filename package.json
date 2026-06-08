@@ -15,6 +15,8 @@
     "tauri:build:macos:sidecar": "bash scripts/build-parser-sidecar.sh && APPLE_SIGNING_IDENTITY=- tauri build",
     "semantic:warmup": "SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" python3 parser/seekmind_parser/__main__.py warmup-embedding BAAI/bge-small-zh-v1.5",
     "semantic:warmup:mirror": "SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" HF_ENDPOINT=https://hf-mirror.com python3 parser/seekmind_parser/__main__.py warmup-embedding BAAI/bge-small-zh-v1.5",
+    "benchmark:baseline": "cargo run --manifest-path src-tauri/Cargo.toml --bin seekmind-benchmark --",
+    "benchmark:stress": "cargo run --manifest-path src-tauri/Cargo.toml --bin seekmind-stress --",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

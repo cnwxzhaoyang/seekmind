@@ -4,7 +4,7 @@
  * @Description SeekMind Tauri application entry point and public helper wrappers.
  */
 
-mod seekmind;
+pub mod seekmind;
 
 use std::fs;
 

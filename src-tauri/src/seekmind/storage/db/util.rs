@@ -12,6 +12,13 @@ use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 
 fn database_path() -> PathBuf {
+    if let Ok(root) = std::env::var("SEEKMIND_DATA_ROOT") {
+        let root = root.trim();
+        if !root.is_empty() {
+            return PathBuf::from(root).join("seekmind.sqlite");
+        }
+    }
+
     let base = data_dir().unwrap_or_else(|| PathBuf::from("."));
     #[cfg(debug_assertions)]
     {

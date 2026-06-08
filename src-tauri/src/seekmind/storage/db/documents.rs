@@ -184,6 +184,14 @@ impl Database {
         raw_asset_path: &str,
         resolved_asset_path: &str,
     ) {
+        // 修复：预览图片路径日志在基线压测和常规搜索下会刷屏，默认关闭，只在显式 trace 时输出。
+        let trace_enabled = std::env::var("SEEKMIND_TRACE_PREVIEW_ASSET")
+            .ok()
+            .map(|value| value.trim() == "1")
+            .unwrap_or(false);
+        if !trace_enabled {
+            return;
+        }
         let exists = if resolved_asset_path.starts_with("http://")
             || resolved_asset_path.starts_with("https://")
             || resolved_asset_path.starts_with("data:")
