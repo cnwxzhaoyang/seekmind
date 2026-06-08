@@ -1115,9 +1115,14 @@ onBeforeUnmount(() => {
   justify-content: center;
   flex-shrink: 0;
   border-radius: 6px;
-  background: rgba(47, 129, 255, 0.1);
   color: var(--color-accent);
-  border: 1px solid rgba(47, 129, 255, 0.1);
+}
+
+/* 设置页卡头只保留纯图标，不继承全局渐变底壳。 */
+.settings-section-icon.seekmind-primary-icon {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
 }
 
 .settings-section-title {

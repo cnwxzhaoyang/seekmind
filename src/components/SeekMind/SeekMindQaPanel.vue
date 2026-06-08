@@ -659,9 +659,14 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(47, 129, 255, 0.1);
-  border: 1px solid rgba(47, 129, 255, 0.1);
   color: var(--color-accent);
+}
+
+/* 设置面板卡头使用纯图标，避免全局图标壳遮挡图形。 */
+.settings-card-icon.seekmind-primary-icon {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
 }
 
 .settings-card-title {

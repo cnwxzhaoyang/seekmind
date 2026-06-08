@@ -15,7 +15,8 @@ useTheme();
   <div class="flex h-screen w-full flex-col overflow-hidden bg-page text-primary">
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <SeekMindSidebar />
-      <div class="flex min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.78)_0%,rgba(245,245,247,0.92)_100%)]">
+      <!-- 深色主题下工作区背景必须跟随主题 token，避免遗留浅色渐变。 -->
+      <div class="seekmind-workspace-shell flex min-w-0 flex-1 flex-col overflow-hidden">
         <div class="flex-1 min-h-0 overflow-hidden">
           <RouterView v-slot="{ Component }">
             <KeepAlive include="AppSearchPage,AppQaPage,AppCollectionsPage,ChunksPage,StatusPage,SettingsPage,LibraryPage">

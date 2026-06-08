@@ -2373,6 +2373,117 @@ onBeforeUnmount(() => {
   border-color: var(--color-accent);
 }
 
+html.dark .index-status-panel {
+  color: var(--color-text-primary);
+}
+
+html.dark .index-status-panel .office-notice-banner,
+html.dark .index-status-panel .ocr-notice-banner {
+  background-color: rgba(47, 129, 255, 0.12);
+  border: 1px solid rgba(88, 166, 255, 0.16);
+}
+
+html.dark .index-status-panel .ocr-notice-warning,
+html.dark .index-status-panel .office-notice-banner {
+  background-color: rgba(187, 128, 9, 0.12);
+  border-color: rgba(234, 179, 8, 0.16);
+}
+
+html.dark .index-status-panel .card {
+  background-color: rgba(22, 27, 34, 0.92);
+  border-color: rgba(48, 54, 61, 0.95);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+html.dark .index-status-panel .card-icon {
+  background: rgba(47, 129, 255, 0.18);
+}
+
+html.dark .index-status-panel .file-count,
+html.dark .index-status-panel .exception-count {
+  background-color: rgba(110, 118, 129, 0.16);
+}
+
+html.dark .index-status-panel .directory-actions .btn.btn-ghost,
+html.dark .index-status-panel .refresh-btn,
+html.dark .index-status-panel .drop-zone,
+html.dark .index-status-panel .dir-card-row,
+html.dark .index-status-panel .stat-item,
+html.dark .index-status-panel .progress-metric,
+html.dark .index-status-panel .dir-list-footer,
+html.dark .index-status-panel .refresh-list-btn,
+html.dark .index-status-panel .exception-item,
+html.dark .index-status-panel .view-all-btn {
+  background-color: rgba(13, 17, 23, 0.92);
+  border-color: rgba(48, 54, 61, 0.92);
+  color: var(--color-text-primary);
+}
+
+html.dark .index-status-panel .directory-actions .btn.btn-primary {
+  background-color: rgba(47, 129, 255, 0.96);
+  color: white;
+}
+
+html.dark .index-status-panel .directory-actions .btn:disabled {
+  background-color: rgba(33, 38, 45, 0.9);
+  color: var(--color-text-secondary);
+}
+
+html.dark .index-status-panel .stat-item,
+html.dark .index-status-panel .progress-metric,
+html.dark .index-status-panel .dir-card-row,
+html.dark .index-status-panel .exception-item,
+html.dark .index-status-panel .view-all-btn {
+  box-shadow: none;
+}
+
+html.dark .index-status-panel .dir-card-row:hover {
+  background: rgba(47, 129, 255, 0.08);
+}
+
+html.dark .index-status-panel .dir-card-row--child {
+  background: rgba(13, 17, 23, 0.82);
+}
+
+html.dark .index-status-panel .dir-folder-icon,
+html.dark .index-status-panel .stat-icon,
+html.dark .index-status-panel .progress-metric-icon {
+  background-color: rgba(47, 129, 255, 0.16);
+}
+
+html.dark .index-status-panel .stat-icon.error,
+html.dark .index-status-panel .progress-metric-icon.error {
+  background-color: rgba(248, 81, 73, 0.16);
+}
+
+html.dark .index-status-panel .stat-icon.pending,
+html.dark .index-status-panel .progress-metric-icon.skipped {
+  background-color: rgba(210, 153, 34, 0.16);
+}
+
+html.dark .index-status-panel .progress-bar {
+  background-color: rgba(48, 54, 61, 0.92);
+}
+
+html.dark .index-status-panel .progress-fill {
+  background: linear-gradient(90deg, #58a6ff, #2f81ff);
+}
+
+html.dark .index-status-panel .dir-list-empty,
+html.dark .index-status-panel .exception-empty,
+html.dark .index-status-panel .exception-time,
+html.dark .index-status-panel .dir-card-main span,
+html.dark .index-status-panel .dir-card-meta,
+html.dark .index-status-panel .ocr-notice-desc,
+html.dark .index-status-panel .ocr-notice-hint,
+html.dark .index-status-panel .ocr-notice-langs,
+html.dark .index-status-panel .office-notice-desc,
+html.dark .index-status-panel .office-notice-hint,
+html.dark .index-status-panel .header-description,
+html.dark .index-status-panel .last-update {
+  color: var(--color-text-secondary);
+}
+
 /* 响应式 */
 @media (max-width: 1400px) {
   .panel-content {
