@@ -526,7 +526,7 @@ onBeforeUnmount(() => {
             <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon seekmind-primary-icon">
+                  <span class="settings-section-icon settings-section-icon--plain">
                     <SlidersHorizontal :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -590,7 +590,7 @@ onBeforeUnmount(() => {
             <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon seekmind-primary-icon">
+                  <span class="settings-section-icon settings-section-icon--plain">
                     <Sparkles :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -720,7 +720,7 @@ onBeforeUnmount(() => {
             <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon seekmind-primary-icon">
+                  <span class="settings-section-icon settings-section-icon--plain">
                     <Languages :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -808,7 +808,7 @@ onBeforeUnmount(() => {
           <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon seekmind-primary-icon">
+                  <span class="settings-section-icon settings-section-icon--plain">
                     <Globe :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -884,7 +884,7 @@ onBeforeUnmount(() => {
           <section class="rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
-                  <span class="settings-section-icon seekmind-primary-icon">
+                  <span class="settings-section-icon settings-section-icon--plain">
                     <Shield :size="18" />
                   </span>
                   <div class="min-w-0">
@@ -1118,11 +1118,11 @@ onBeforeUnmount(() => {
   color: var(--color-accent);
 }
 
-/* 设置页卡头只保留纯图标，不继承全局渐变底壳。 */
-.settings-section-icon.seekmind-primary-icon {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 0 !important;
+/* 修复：设置页右侧卡头图标不复用全局蓝色图标壳，避免浅色主题下视觉发糊。 */
+.settings-section-icon--plain {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .settings-section-title {

@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
   <section class="settings-card-shell">
     <div class="settings-card-head">
       <div class="settings-card-head-left">
-        <span class="settings-card-icon seekmind-primary-icon">
+        <span class="settings-card-icon settings-card-icon--plain">
           <Sparkles :size="18" />
         </span>
         <div class="min-w-0">
@@ -228,12 +228,12 @@ onBeforeUnmount(() => {
         {{ t("semantic.loading") }}
       </div>
 
-      <div v-else-if="semanticStatus" class="space-y-4 text-sm">
+      <div v-else-if="semanticStatus" class="space-y-3 text-sm">
         <label class="block">
-          <div class="mb-2 seekmind-section-label">{{ t("semantic.defaultModel") }}</div>
+          <div class="mb-1.5 seekmind-section-label">{{ t("semantic.defaultModel") }}</div>
           <select
             v-model="selectedEmbeddingModelId"
-            class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+            class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
           >
             <option v-for="model in embeddingModels" :key="model.id" :value="model.id">
               {{ model.name }} · {{ model.provider }} · {{ t("semantic.dimension", { dim: model.dimension }) }}
@@ -241,7 +241,7 @@ onBeforeUnmount(() => {
           </select>
         </label>
 
-      <div v-if="semanticRebuildProgress" class="rounded-lg border border-default bg-panel px-4 py-4">
+      <div v-if="semanticRebuildProgress" class="rounded-lg border border-default bg-panel px-4 py-3.5">
         <div class="flex items-center justify-between gap-3">
           <div>
             <div class="seekmind-section-label">{{ t("semantic.rebuildProgress") }}</div>
@@ -285,12 +285,12 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div class="rounded-lg bg-panel px-4 py-3">
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="rounded-lg bg-panel px-4 py-2.5">
           <div class="seekmind-item-meta">{{ t("semantic.embeddedShort") }}</div>
           <div class="mt-1 seekmind-metric-value text-primary">{{ semanticStatus.embedded_chunks }}</div>
         </div>
-        <div class="rounded-lg bg-panel px-4 py-3">
+        <div class="rounded-lg bg-panel px-4 py-2.5">
           <div class="seekmind-item-meta">{{ t("semantic.pendingRebuild") }}</div>
           <div class="mt-1 seekmind-metric-value text-primary">
             {{ semanticStatus.needs_rebuild ? t("semantic.yes") : t("semantic.no") }}
@@ -298,7 +298,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="rounded-lg bg-panel px-4 py-3 text-sm text-secondary">
+      <div class="rounded-lg bg-panel px-4 py-2.5 text-sm text-secondary">
         <div>{{ t("semantic.model", { name: semanticStatus.model.name }) }}</div>
         <div class="mt-1">{{ t("semantic.provider", { provider: semanticStatus.model.provider, dim: semanticStatus.model.dimension }) }}</div>
         <div class="mt-1">{{ t("semantic.availability", { status: semanticStatus.model.available ? t("semantic.yes") : t("semantic.no") }) }}</div>
@@ -419,7 +419,6 @@ onBeforeUnmount(() => {
 .settings-card-icon {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -427,11 +426,11 @@ onBeforeUnmount(() => {
   color: var(--color-accent);
 }
 
-/* 设置面板卡头使用纯图标，避免全局图标壳遮挡图形。 */
-.settings-card-icon.seekmind-primary-icon {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 0 !important;
+/* 修复：设置页卡头图标不再复用全局蓝色图标壳，避免浅色主题下把图形吃掉。 */
+.settings-card-icon--plain {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .settings-card-title {
@@ -443,7 +442,7 @@ onBeforeUnmount(() => {
 }
 
 .settings-card-body {
-  padding: 12px 14px 14px;
+  padding: 10px 14px 12px;
 }
 
 html:not(.dark) .settings-card-shell {

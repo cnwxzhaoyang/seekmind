@@ -371,7 +371,7 @@ onMounted(async () => {
   <section class="settings-card-shell">
     <div class="settings-card-head">
       <div class="settings-card-head-left">
-        <span class="settings-card-icon seekmind-primary-icon">
+        <span class="settings-card-icon settings-card-icon--plain">
           <MessageSquareText :size="18" />
         </span>
         <div class="min-w-0">
@@ -394,10 +394,10 @@ onMounted(async () => {
         {{ t("common.loading") }}
       </div>
 
-      <div v-else class="space-y-3">
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
-          <div class="space-y-3">
-            <div class="grid gap-3 xl:grid-cols-2">
+      <div v-else class="space-y-2.5">
+        <div class="grid gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
+          <div class="space-y-2.5">
+            <div class="grid gap-2.5 xl:grid-cols-2">
               <label class="block">
                 <div class="mb-1.5 seekmind-section-label">{{ t("page.settings.qa.provider") }}</div>
                 <div class="relative">
@@ -430,7 +430,7 @@ onMounted(async () => {
               </label>
             </div>
 
-            <div class="grid gap-3 xl:grid-cols-2">
+            <div class="grid gap-2.5 xl:grid-cols-2">
               <label class="block">
                 <div class="mb-1.5 seekmind-section-label">{{ t("page.settings.qa.baseUrl") }}</div>
                 <input
@@ -451,7 +451,7 @@ onMounted(async () => {
               </label>
             </div>
 
-            <div class="grid gap-3 xl:grid-cols-2">
+            <div class="grid gap-2.5 xl:grid-cols-2">
               <label class="block">
                 <div class="mb-1.5 flex items-center justify-between seekmind-section-label">
                   <span>{{ t("page.settings.qa.temperature") }}</span>
@@ -472,7 +472,7 @@ onMounted(async () => {
               </label>
             </div>
 
-            <div class="grid gap-3 xl:grid-cols-3">
+            <div class="grid gap-2.5 xl:grid-cols-3">
               <label class="block">
                 <div class="mb-1.5 seekmind-section-label">{{ t("page.settings.qa.contextLimit") }}</div>
                 <input
@@ -550,7 +550,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="space-y-4">
+          <div class="space-y-3">
             <div class="rounded-lg border border-default bg-panel px-3 py-3">
               <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
@@ -654,7 +654,6 @@ onMounted(async () => {
 .settings-card-icon {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -662,11 +661,11 @@ onMounted(async () => {
   color: var(--color-accent);
 }
 
-/* 设置面板卡头使用纯图标，避免全局图标壳遮挡图形。 */
-.settings-card-icon.seekmind-primary-icon {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 0 !important;
+/* 修复：设置页卡头图标不再复用全局蓝色图标壳，避免浅色主题下把图形吃掉。 */
+.settings-card-icon--plain {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .settings-card-title {
@@ -678,7 +677,7 @@ onMounted(async () => {
 }
 
 .settings-card-body {
-  padding: 12px 14px 14px;
+  padding: 10px 14px 12px;
 }
 
 .settings-empty-state {

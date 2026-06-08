@@ -585,6 +585,7 @@
         "progress": "索引进度",
         "errorSummary": "错误摘要",
         "healthStatus": "健康状态",
+        "formatSupport": "格式支持状态",
         "healthStatusDesc": "无错误时不再占用大面积空间，仅展示整体健康度。",
         "indexInfo": "索引信息",
         "latestException": "最新异常",
@@ -663,6 +664,54 @@
         "errorType": "错误类型",
         "pythonVersion": "Python 版本",
         "timeout": "超时设置"
+      },
+      "formatSupport": {
+        "states": {
+          "completed": "已完成",
+          "partial": "部分完成",
+          "pending": "未完成"
+        },
+        "items": {
+          "text": {
+            "title": "文本与代码",
+            "formats": "txt / md / html / csv / json / xml / yaml / log / rs / ts / js / py",
+            "hint": "基础文本、标记语言和常见代码文件会直接进入本地索引。"
+          },
+          "docx": {
+            "title": "DOCX 文档",
+            "formats": "docx",
+            "hint": "Word Open XML 文档走内置解析链，不依赖 Office 转换器。"
+          },
+          "office": {
+            "title": "Office 扩展格式",
+            "formats": "doc / ppt / pptx / xlsx / rtf",
+            "hint": "当前运行时可用的 Office 转换链路会用于这些格式。",
+            "readyHint": "Office 转换器已就绪，这组格式可以直接参与索引。",
+            "partialHint": "代码链路已接入，但当前运行时未检测到可用的 Office 转换器。"
+          },
+          "epub": {
+            "title": "电子书",
+            "formats": "epub",
+            "hint": "EPUB 会按章节顺序抽取正文并写入索引。"
+          },
+          "pdf": {
+            "title": "PDF 文本解析",
+            "formats": "pdf",
+            "readyHint": "Python 解析链路已启用，文本型 PDF 可直接解析入索引。",
+            "pendingHint": "当前未启用可用的 Python PDF 解析链路，文本型 PDF 仍依赖后续补齐。"
+          },
+          "pdfOcr": {
+            "title": "扫描版 PDF OCR",
+            "formats": "扫描件 PDF",
+            "pendingHint": "当前未检测到可用 OCR 运行时，扫描件 PDF 还不能自动识别。"
+          },
+          "imageOcr": {
+            "title": "图片文字识别",
+            "formats": "png / jpg / jpeg / webp / bmp / gif / tif / tiff / heic",
+            "readyHint": "当前可用 OCR 语言：{languages}",
+            "pendingHint": "当前未检测到可用的 Vision OCR 语言包，图片文字识别不可用。"
+          }
+        }
       },
       "indexInfo": {
         "dirName": "目录名",

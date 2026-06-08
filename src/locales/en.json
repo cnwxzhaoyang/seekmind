@@ -588,6 +588,7 @@
         "progress": "Index Progress",
         "errorSummary": "Error Summary",
         "healthStatus": "Health Status",
+        "formatSupport": "Format Support",
         "healthStatusDesc": "When there are no errors, this card stays compact and only shows the overall health.",
         "indexInfo": "Index Info",
         "latestException": "Latest Exception",
@@ -666,6 +667,54 @@
         "errorType": "Error Type",
         "pythonVersion": "Python Version",
         "timeout": "Timeout"
+      },
+      "formatSupport": {
+        "states": {
+          "completed": "Completed",
+          "partial": "Partial",
+          "pending": "Pending"
+        },
+        "items": {
+          "text": {
+            "title": "Text & Code",
+            "formats": "txt / md / html / csv / json / xml / yaml / log / rs / ts / js / py",
+            "hint": "Plain text, markup, and common code files are indexed directly."
+          },
+          "docx": {
+            "title": "DOCX",
+            "formats": "docx",
+            "hint": "Word Open XML files use the built-in extraction path and do not require an Office converter."
+          },
+          "office": {
+            "title": "Office Extended Formats",
+            "formats": "doc / ppt / pptx / xlsx / rtf",
+            "hint": "These formats use the Office conversion pipeline when the runtime is available.",
+            "readyHint": "The Office converter is ready, so these formats can be indexed directly.",
+            "partialHint": "The code path exists, but no working Office converter was detected in the current runtime."
+          },
+          "epub": {
+            "title": "Ebooks",
+            "formats": "epub",
+            "hint": "EPUB content is extracted chapter by chapter in reading order."
+          },
+          "pdf": {
+            "title": "PDF Text Parsing",
+            "formats": "pdf",
+            "readyHint": "The Python parser pipeline is enabled, so text PDFs can be parsed into the index.",
+            "pendingHint": "No usable Python PDF parser is enabled right now, so text PDFs still depend on follow-up work."
+          },
+          "pdfOcr": {
+            "title": "Scanned PDF OCR",
+            "formats": "scanned PDF",
+            "pendingHint": "No OCR runtime was detected, so scanned PDFs cannot be recognized automatically yet."
+          },
+          "imageOcr": {
+            "title": "Image OCR",
+            "formats": "png / jpg / jpeg / webp / bmp / gif / tif / tiff / heic",
+            "readyHint": "Available OCR languages: {languages}",
+            "pendingHint": "No Vision OCR languages were detected, so image OCR is unavailable."
+          }
+        }
       },
       "indexInfo": {
         "dirName": "Directory",

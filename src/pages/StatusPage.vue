@@ -241,6 +241,94 @@ const chineseOcrNotice = computed(() => {
   };
 });
 
+const pythonParserReady = computed(
+  () => Boolean(parserRuntime.value?.enabled && parserRuntime.value?.available),
+);
+
+const officeConverterReady = computed(
+  () => Boolean(parserRuntime.value?.office_available),
+);
+
+const imageOcrReady = computed(
+  () => Boolean(parserRuntime.value?.vision_ocr_languages?.length),
+);
+
+// 修复：阶段 7 的格式覆盖需要在状态页直观看到，否则用户只能读文档，无法判断当前运行时到底支持到哪一步。
+const formatSupportItems = computed(() => [
+  {
+    key: "text",
+    title: t("page.status.formatSupport.items.text.title"),
+    formats: t("page.status.formatSupport.items.text.formats"),
+    hint: t("page.status.formatSupport.items.text.hint"),
+    state: "completed",
+    stateLabel: t("page.status.formatSupport.states.completed"),
+  },
+  {
+    key: "docx",
+    title: t("page.status.formatSupport.items.docx.title"),
+    formats: t("page.status.formatSupport.items.docx.formats"),
+    hint: t("page.status.formatSupport.items.docx.hint"),
+    state: "completed",
+    stateLabel: t("page.status.formatSupport.states.completed"),
+  },
+  {
+    key: "office",
+    title: t("page.status.formatSupport.items.office.title"),
+    formats: t("page.status.formatSupport.items.office.formats"),
+    hint: officeConverterReady.value
+      ? parserRuntime.value?.office_message || t("page.status.formatSupport.items.office.readyHint")
+      : parserRuntime.value?.office_message || t("page.status.formatSupport.items.office.partialHint"),
+    state: officeConverterReady.value ? "completed" : "partial",
+    stateLabel: officeConverterReady.value
+      ? t("page.status.formatSupport.states.completed")
+      : t("page.status.formatSupport.states.partial"),
+  },
+  {
+    key: "epub",
+    title: t("page.status.formatSupport.items.epub.title"),
+    formats: t("page.status.formatSupport.items.epub.formats"),
+    hint: t("page.status.formatSupport.items.epub.hint"),
+    state: "completed",
+    stateLabel: t("page.status.formatSupport.states.completed"),
+  },
+  {
+    key: "pdf",
+    title: t("page.status.formatSupport.items.pdf.title"),
+    formats: t("page.status.formatSupport.items.pdf.formats"),
+    hint: pythonParserReady.value
+      ? t("page.status.formatSupport.items.pdf.readyHint")
+      : t("page.status.formatSupport.items.pdf.pendingHint"),
+    state: pythonParserReady.value ? "completed" : "pending",
+    stateLabel: pythonParserReady.value
+      ? t("page.status.formatSupport.states.completed")
+      : t("page.status.formatSupport.states.pending"),
+  },
+  {
+    key: "pdfOcr",
+    title: t("page.status.formatSupport.items.pdfOcr.title"),
+    formats: t("page.status.formatSupport.items.pdfOcr.formats"),
+    hint: parserRuntime.value?.pdf_ocr_message || t("page.status.formatSupport.items.pdfOcr.pendingHint"),
+    state: parserRuntime.value?.pdf_ocr_available ? "completed" : "pending",
+    stateLabel: parserRuntime.value?.pdf_ocr_available
+      ? t("page.status.formatSupport.states.completed")
+      : t("page.status.formatSupport.states.pending"),
+  },
+  {
+    key: "imageOcr",
+    title: t("page.status.formatSupport.items.imageOcr.title"),
+    formats: t("page.status.formatSupport.items.imageOcr.formats"),
+    hint: imageOcrReady.value
+      ? t("page.status.formatSupport.items.imageOcr.readyHint", {
+          languages: ocrLanguagesPreview.value,
+        })
+      : t("page.status.formatSupport.items.imageOcr.pendingHint"),
+    state: imageOcrReady.value ? "completed" : "pending",
+    stateLabel: imageOcrReady.value
+      ? t("page.status.formatSupport.states.completed")
+      : t("page.status.formatSupport.states.pending"),
+  },
+]);
+
 const lastUpdateTime = ref(new Date().toLocaleString());
 
 // Teleport 到 body 的菜单使用全局 CSS 变量，无需额外处理
@@ -1372,6 +1460,39 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon seekmind-page-header-icon"><FileText :size="18" /></span>
+              <div class="card-head-copy">
+                <h2>{{ t("page.status.section.formatSupport") }}</h2>
+              </div>
+            </div>
+
+            <div class="format-support-list">
+              <div
+                v-for="item in formatSupportItems"
+                :key="item.key"
+                class="format-support-item"
+              >
+                <div class="format-support-main">
+                  <div class="format-support-title-row">
+                    <strong>{{ item.title }}</strong>
+                    <span class="format-support-formats">{{ item.formats }}</span>
+                  </div>
+                  <div class="format-support-hint">
+                    {{ item.hint }}
+                  </div>
+                </div>
+                <span
+                  class="format-support-badge"
+                  :class="`format-support-badge--${item.state}`"
+                >
+                  {{ item.stateLabel }}
+                </span>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </main>
@@ -2094,6 +2215,85 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.format-support-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.format-support-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.format-support-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.format-support-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.format-support-title-row strong {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.format-support-formats {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
+.format-support-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  word-break: break-word;
+}
+
+.format-support-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.format-support-badge--completed {
+  background-color: rgba(34, 197, 94, 0.12);
+  color: var(--color-success);
+}
+
+.format-support-badge--partial {
+  background-color: rgba(234, 179, 8, 0.14);
+  color: #b45309;
+}
+
+.format-support-badge--pending {
+  background-color: rgba(148, 163, 184, 0.16);
+  color: var(--color-text-secondary);
+}
+
 /* 目录树 */
 .info-card-large {
   display: flex;
@@ -2410,6 +2610,7 @@ html.dark .index-status-panel .drop-zone,
 html.dark .index-status-panel .dir-card-row,
 html.dark .index-status-panel .stat-item,
 html.dark .index-status-panel .progress-metric,
+html.dark .index-status-panel .format-support-item,
 html.dark .index-status-panel .dir-list-footer,
 html.dark .index-status-panel .refresh-list-btn,
 html.dark .index-status-panel .exception-item,
