@@ -376,7 +376,6 @@ onMounted(async () => {
         </span>
         <div class="min-w-0">
           <div class="settings-card-title">{{ t("page.settings.qa.title") }}</div>
-          <div class="settings-card-desc">{{ t("page.settings.qa.desc") }}</div>
         </div>
       </div>
       <SeekMindBadge tone="success">{{ t("page.settings.qa.enabled") }}</SeekMindBadge>
@@ -641,43 +640,40 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 18px 16px;
+  padding: 9px 14px 8px;
   border-bottom: 1px solid var(--color-border);
 }
 
 .settings-card-head-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 
 .settings-card-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: white;
+  background: rgba(47, 129, 255, 0.1);
+  border: 1px solid rgba(47, 129, 255, 0.1);
+  color: var(--color-accent);
 }
 
 .settings-card-title {
-  font-size: 17px;
-  font-weight: 850;
-  letter-spacing: -0.02em;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
   color: var(--color-text-primary);
 }
 
-.settings-card-desc {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-
 .settings-card-body {
-  padding: 16px 18px 18px;
+  padding: 12px 14px 14px;
 }
 
 .settings-empty-state {
@@ -732,11 +728,11 @@ html:not(.dark) .qa-connection-list-empty {
 
 @media (max-width: 768px) {
   .settings-card-head {
-    padding: 16px;
+    padding: 8px 12px 7px;
   }
 
   .settings-card-body {
-    padding: 14px 16px 16px;
+    padding: 10px 12px 12px;
   }
 }
 </style>

@@ -296,7 +296,18 @@ button {
   box-shadow: 0 12px 26px rgba(47, 129, 255, 0.12);
 }
 
+/* 兼容小写命名，设置页卡头当前使用的是这个类名。 */
+.seekmind-primary-icon {
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.82), rgba(18, 103, 232, 0.66));
+  box-shadow: 0 12px 26px rgba(47, 129, 255, 0.12);
+}
+
 html:not(.dark) .SeekMind-primary-icon {
+  background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(18, 103, 232, 0.78));
+  box-shadow: 0 12px 26px rgba(47, 129, 255, 0.18);
+}
+
+html:not(.dark) .seekmind-primary-icon {
   background: linear-gradient(135deg, rgba(47, 129, 255, 0.95), rgba(18, 103, 232, 0.78));
   box-shadow: 0 12px 26px rgba(47, 129, 255, 0.18);
 }

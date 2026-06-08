@@ -531,7 +531,6 @@ onBeforeUnmount(() => {
                   </span>
                   <div class="min-w-0">
                     <div class="settings-section-title">{{ t("page.settings.section.rules") }}</div>
-                    <div class="settings-section-desc">{{ t("page.settings.rulesDesc") }}</div>
                   </div>
                 </div>
                 <SeekMindBadge tone="default">{{ t("status.localEffective") }}</SeekMindBadge>
@@ -596,7 +595,6 @@ onBeforeUnmount(() => {
                   </span>
                   <div class="min-w-0">
                     <div class="settings-section-title">{{ t("page.settings.semantic.title") }}</div>
-                    <div class="settings-section-desc">{{ t("page.settings.semantic.desc") }}</div>
                   </div>
                 </div>
                 <SeekMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</SeekMindBadge>
@@ -727,7 +725,6 @@ onBeforeUnmount(() => {
                   </span>
                   <div class="min-w-0">
                     <div class="settings-section-title">{{ t("page.settings.section.appearance") }}</div>
-                    <div class="settings-section-desc">{{ t("page.settings.language") }} / {{ t("page.settings.theme") }}</div>
                   </div>
                 </div>
                 <SeekMindBadge tone="default">{{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}</SeekMindBadge>
@@ -809,18 +806,17 @@ onBeforeUnmount(() => {
           </div>
 
           <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-            <div class="settings-section-head">
-              <div class="settings-section-head-left">
-                <span class="settings-section-icon seekmind-primary-icon">
-                  <Globe :size="18" />
-                </span>
-                <div class="min-w-0">
-                  <div class="settings-section-title">{{ t("page.settings.network.title") }}</div>
-                  <div class="settings-section-desc">{{ t("page.settings.network.desc") }}</div>
+              <div class="settings-section-head">
+                <div class="settings-section-head-left">
+                  <span class="settings-section-icon seekmind-primary-icon">
+                    <Globe :size="18" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="settings-section-title">{{ t("page.settings.network.title") }}</div>
+                  </div>
                 </div>
-              </div>
-              <SeekMindBadge :tone="networkProxyEnabled ? 'success' : 'default'">
-                {{ networkProxyEnabled ? t("page.settings.network.enabled") : t("page.settings.network.disabled") }}
+                <SeekMindBadge :tone="networkProxyEnabled ? 'success' : 'default'">
+                  {{ networkProxyEnabled ? t("page.settings.network.enabled") : t("page.settings.network.disabled") }}
               </SeekMindBadge>
             </div>
 
@@ -886,18 +882,17 @@ onBeforeUnmount(() => {
           </section>
 
           <section class="rounded-lg border border-default bg-surface">
-            <div class="settings-section-head">
-              <div class="settings-section-head-left">
-                <span class="settings-section-icon seekmind-primary-icon">
-                  <Shield :size="18" />
-                </span>
-                <div class="min-w-0">
-                  <div class="settings-section-title">{{ t("page.settings.section.privacy") }}</div>
-                  <div class="settings-section-desc">{{ t("page.settings.privacy.desc") }}</div>
+              <div class="settings-section-head">
+                <div class="settings-section-head-left">
+                  <span class="settings-section-icon seekmind-primary-icon">
+                    <Shield :size="18" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="settings-section-title">{{ t("page.settings.section.privacy") }}</div>
+                  </div>
                 </div>
+                <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
               </div>
-              <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
-            </div>
             <div class="space-y-2 p-4 text-sm text-secondary">
               <p>{{ t("page.settings.privacy.localFirst") }}</p>
               <p>{{ t("page.settings.privacy.localFirstDesc") }}</p>
@@ -912,10 +907,6 @@ onBeforeUnmount(() => {
                 <div class="flex items-center gap-2 seekmind-section-label text-danger">
                   <Trash2 :size="15" />
                   {{ t("page.settings.section.danger") }}
-                </div>
-                <div class="seekmind-item-meta mt-1 text-secondary">{{ t("page.settings.danger.desc") }}</div>
-                <div class="seekmind-item-meta mt-2 leading-5 text-secondary">
-                  {{ t("page.settings.danger.detail") }}
                 </div>
               </div>
               <SeekMindBadge tone="warning">{{ t("page.settings.btn.clear") }}</SeekMindBadge>
@@ -1105,46 +1096,43 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px 14px;
+  padding: 2px 12px 2px;
   border-bottom: 1px solid var(--color-border);
 }
 
 .settings-section-head-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 
 .settings-section-icon {
-  width: 44px;
-  height: 44px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: 14px;
-  color: white;
+  border-radius: 6px;
+  background: rgba(47, 129, 255, 0.1);
+  color: var(--color-accent);
+  border: 1px solid rgba(47, 129, 255, 0.1);
 }
 
 .settings-section-title {
-  font-size: 17px;
-  font-weight: 850;
-  letter-spacing: -0.02em;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
   color: var(--color-text-primary);
-}
-
-.settings-section-desc {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
 }
 
 .settings-section-head-danger {
   align-items: flex-start;
   background: rgba(255, 101, 101, 0.04);
   border-bottom-color: transparent;
-  border-radius: 16px 16px 0 0;
+  border-radius: 14px 14px 0 0;
 }
 
 .settings-prototype-sidebar .space-y-2.p-4,
@@ -1212,6 +1200,12 @@ onBeforeUnmount(() => {
 .settings-prototype-main .rounded-lg.border.border-default.bg-panel,
 .settings-prototype-main .rounded-md.border.border-default.bg-panel {
   background: rgba(15, 23, 42, 0.54) !important;
+}
+
+/* 右侧内容区首个内容块的顶部留白再减一档。 */
+.settings-prototype-main .space-y-5.p-4,
+.settings-prototype-main .space-y-2.p-4 {
+  padding: 10px 14px 12px !important;
 }
 
 .settings-prototype-main .rounded-md.border.border-danger-soft.bg-danger-soft,
@@ -1370,10 +1364,6 @@ html:not(.dark) .settings-section-head {
 
 html:not(.dark) .settings-section-title {
   color: #0f172a;
-}
-
-html:not(.dark) .settings-section-desc {
-  color: #64748b;
 }
 
 html:not(.dark) .settings-section-head-danger {
