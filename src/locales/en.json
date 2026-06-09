@@ -947,6 +947,7 @@
     },
     "empty": "No logs yet. Events appear automatically after running index, chunk, or semantic tasks.",
     "clear": "Clear",
+    "export": "Export Logs",
     "events": "{count} events",
     "scope": {
       "index": "Index",

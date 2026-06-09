@@ -18,6 +18,18 @@ export interface ImportedPathView {
   is_virtual: boolean;
 }
 
+export interface AppRuntimeInfoView {
+  app_name: string;
+  app_version: string;
+  build_mode: string;
+  target_os: string;
+  target_arch: string;
+  data_dir: string;
+  cache_dir: string;
+  sqlite_path: string;
+  tantivy_dir: string;
+}
+
 export interface ImportPathsView {
   added_dirs: string[];
   imported_files: ImportedPathView[];

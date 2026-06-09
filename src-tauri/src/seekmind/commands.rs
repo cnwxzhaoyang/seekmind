@@ -15,6 +15,7 @@ use super::storage::{indexer, scanner, Database};
 use crate::seekmind::vision_ocr::bundled_vision_ocr_binary;
 use crate::seekmind::vision_ocr::has_chinese_vision_language;
 use crate::seekmind::semantic::store as semantic_store;
+use crate::seekmind::storage::{db::sqlite_database_path, fulltext::fulltext_index_dir};
 use std::collections::HashSet;
 use std::env;
 use std::path::Path;
@@ -24,6 +25,7 @@ use std::sync::OnceLock;
 use tauri::Emitter;
 
 const VIRTUAL_IMPORT_DIR: &str = "virtual://临时导入";
+const APP_NAME: &str = "SeekMind";
 
 fn base64_encode(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -134,6 +136,42 @@ fn classify_failure(reason: &str, path: &str) -> (String, String) {
 
 fn normalize_import_path(path: &str) -> String {
     path.trim().trim_end_matches('/').to_string()
+}
+
+#[tauri::command]
+pub async fn get_app_runtime_info() -> Result<super::models::AppRuntimeInfoView, String> {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .display()
+        .to_string();
+    let cache_dir = dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .display()
+        .to_string();
+    let sqlite_path = sqlite_database_path().display().to_string();
+    let tantivy_dir = fulltext_index_dir().display().to_string();
+    let build_mode = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+
+    let payload = super::models::AppRuntimeInfoView {
+        app_name: APP_NAME.to_string(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        build_mode: build_mode.to_string(),
+        target_os: std::env::consts::OS.to_string(),
+        target_arch: std::env::consts::ARCH.to_string(),
+        data_dir,
+        cache_dir,
+        sqlite_path,
+        tantivy_dir,
+    };
+    eprintln!(
+        "[SeekMind] app runtime info version={} build={} os={} arch={}",
+        payload.app_version, payload.build_mode, payload.target_os, payload.target_arch
+    );
+    Ok(payload)
 }
 
 fn parent_dir_path(path: &Path) -> String {

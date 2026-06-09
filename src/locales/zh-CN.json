@@ -949,6 +949,7 @@
     },
     "empty": "暂无日志，执行索引、切片或语义任务后会自动显示事件。",
     "clear": "清空",
+    "export": "导出日志",
     "events": "{count} 条事件",
     "details": {
       "fullIndex": "全量索引",

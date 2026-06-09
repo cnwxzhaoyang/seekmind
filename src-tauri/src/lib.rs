@@ -11,6 +11,7 @@ use std::fs;
 #[cfg(debug_assertions)]
 use tauri::Manager;
 use tauri_plugin_dialog::init as dialog_init;
+use tauri_plugin_fs::init as fs_init;
 use tauri_plugin_opener::init as opener_init;
 
 pub fn reset_local_storage() -> Result<(), String> {
@@ -57,6 +58,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(database)
         .plugin(dialog_init())
+        .plugin(fs_init())
         .plugin(opener_init())
         .setup(move |_app| {
             let database = repair_database.clone();
@@ -76,6 +78,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             crate::seekmind::commands::list_index_dirs,
+            crate::seekmind::commands::get_app_runtime_info,
             crate::seekmind::commands::search_documents,
             crate::seekmind::commands::get_search_debug_report,
             crate::seekmind::commands::request_search_debug_report,

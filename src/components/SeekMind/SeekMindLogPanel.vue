@@ -7,10 +7,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronDown, ChevronUp, NotebookText, FileText, Database, Sparkles, Trash2 } from "lucide-vue-next";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { ChevronDown, ChevronUp, Database, Download, FileText, NotebookText, Sparkles, Trash2 } from "lucide-vue-next";
 import SeekMindBadge from "./SeekMindBadge.vue";
 import { seekMindApi } from "../../services/seekMindApi";
 import type {
+  AppRuntimeInfoView,
   DocumentRefreshProgressView,
   IndexRefreshProgressView,
   IndexSettingsView,
@@ -48,8 +51,10 @@ const panelHeight = ref(loadSavedHeight());
 const dragging = ref(false);
 const dragStartY = ref(0);
 const dragStartHeight = ref(0);
+const exporting = ref(false);
 const indexStatus = ref<IndexStatusView | null>(null);
 const indexSettings = ref<IndexSettingsView | null>(null);
+const appRuntime = ref<AppRuntimeInfoView | null>(null);
 const maxEntries = 120;
 let unlistenIndex: null | (() => void) = null;
 let unlistenDocument: null | (() => void) = null;
@@ -97,12 +102,15 @@ const formatTime = (timestamp: string) => {
 };
 
 const loadMetrics = async () => {
-  const [status, settings] = await Promise.all([
+  // 修复：日志导出依赖运行摘要，但面板初始化不能因为单个元数据接口失败而中断。
+  const [status, settings, runtime] = await Promise.allSettled([
     seekMindApi.getIndexStatus(),
     seekMindApi.getIndexSettings(),
+    seekMindApi.getAppRuntimeInfo(),
   ]);
-  indexStatus.value = status;
-  indexSettings.value = settings;
+  if (status.status === "fulfilled") indexStatus.value = status.value;
+  if (settings.status === "fulfilled") indexSettings.value = settings.value;
+  if (runtime.status === "fulfilled") appRuntime.value = runtime.value;
 };
 
 const semanticWeightLabel = computed(() => Math.round((indexSettings.value?.semantic_weight ?? 0.25) * 100));
@@ -163,6 +171,111 @@ const installListeners = async () => {
 const clearLogs = () => {
   entries.value = [];
   expanded.value = false;
+};
+
+const formatExportTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp);
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+};
+
+const formatExportFilename = () => {
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  return `seekmind-logs-${stamp}.md`;
+};
+
+const buildExportContent = () => {
+  const generatedAt = new Date().toISOString();
+  const runtime = appRuntime.value;
+  const status = indexStatus.value;
+  const settings = indexSettings.value;
+
+  const lines: string[] = [
+    "# SeekMind 日志导出",
+    "",
+    `- 生成时间: ${generatedAt}`,
+  ];
+
+  if (runtime) {
+    lines.push(`- 应用: ${runtime.app_name} ${runtime.app_version}`);
+    lines.push(`- 构建模式: ${runtime.build_mode}`);
+    lines.push(`- 平台: ${runtime.target_os} / ${runtime.target_arch}`);
+    lines.push(`- 数据目录: ${runtime.data_dir}`);
+    lines.push(`- 缓存目录: ${runtime.cache_dir}`);
+    lines.push(`- SQLite: ${runtime.sqlite_path}`);
+    lines.push(`- 全文索引: ${runtime.tantivy_dir}`);
+  }
+
+  lines.push("");
+  lines.push("## 当前运行摘要");
+  lines.push(`- 日志事件数: ${entries.value.length}`);
+  lines.push(`- ${sqliteLabel.value}`);
+  lines.push(`- ${tantivyLabel.value}`);
+  lines.push(`- ${t("page.appSearch.semanticWeight", { weight: semanticWeightLabel.value })}`);
+
+  if (status) {
+    lines.push(`- 已索引文档: ${status.indexed_docs}`);
+    lines.push(`- 已索引切片: ${status.indexed_chunks}`);
+    lines.push(`- 扫描文档: ${status.scanned_docs}`);
+    lines.push(`- PDF OCR 任务: ${status.pdf_ocr_tasks}`);
+    lines.push(`- 失败文件: ${status.failed_files}`);
+    if (status.current_task) {
+      lines.push(`- 当前任务: ${status.current_task.label} · ${status.current_task.state}`);
+      lines.push(`- 当前目录: ${status.current_task.current_dir || "-"}`);
+      lines.push(`- 当前文件: ${status.current_task.current_file || "-"}`);
+    }
+  }
+
+  if (settings) {
+    lines.push(`- 语义搜索: ${settings.semantic_search_enabled ? "启用" : "关闭"}`);
+    lines.push(`- 语义权重: ${Math.round(settings.semantic_weight * 100)}%`);
+    lines.push(`- 语义阈值: ${Math.round(settings.semantic_threshold * 100)}%`);
+  }
+
+  lines.push("");
+  lines.push("## 日志事件");
+  if (entries.value.length === 0) {
+    lines.push("- 暂无日志事件");
+  } else {
+    entries.value
+      .slice()
+      .reverse()
+      .forEach((entry) => {
+        lines.push(`### [${formatExportTimestamp(entry.timestamp)}] ${t(scopeMeta[entry.scope].label)} / ${entry.title}`);
+        lines.push(`- 级别: ${entry.level}`);
+        lines.push(`- 消息: ${entry.message}`);
+        lines.push(`- 详情: ${entry.details}`);
+        if (entry.warning) {
+          lines.push(`- 警告: ${entry.warning}`);
+        }
+        lines.push("");
+      });
+  }
+
+  return `${lines.join("\n").trim()}\n`;
+};
+
+const exportLogs = async () => {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    const filePath = await save({
+      defaultPath: formatExportFilename(),
+      filters: [
+        { name: "Markdown", extensions: ["md"] },
+        { name: "Text", extensions: ["txt"] },
+      ],
+    });
+    if (!filePath) return;
+
+    const content = buildExportContent();
+    await writeTextFile(filePath, content);
+    console.info(`[SeekMind] log export saved to ${filePath}`);
+  } catch (error) {
+    console.error("[SeekMind] log export failed", error);
+  } finally {
+    exporting.value = false;
+  }
 };
 
 const toggleExpanded = () => {
@@ -243,9 +356,13 @@ onBeforeUnmount(() => {
       @mousedown.prevent="onResizeStart"
     />
 
-    <button
+    <div
       class="flex h-7 w-full items-center justify-between gap-3 px-3 text-left"
+      role="button"
+      tabindex="0"
       @click="toggleExpanded"
+      @keydown.enter.prevent="toggleExpanded"
+      @keydown.space.prevent="toggleExpanded"
     >
       <div class="flex items-center gap-2">
         <NotebookText class="text-dim" :size="14" />
@@ -257,9 +374,13 @@ onBeforeUnmount(() => {
         <SeekMindBadge tone="default">{{ tantivyLabel }}</SeekMindBadge>
         <SeekMindBadge tone="default">{{ t("page.appSearch.semanticWeight", { weight: semanticWeightLabel }) }}</SeekMindBadge>
         <span class="ml-1">{{ t("logPanel.events", { count: entries.length }) }}</span>
+        <button class="inline-flex items-center gap-1 hover:text-secondary" :disabled="exporting" @click.stop="exportLogs">
+          <Download :size="14" />
+          <span class="hidden sm:inline">{{ t("logPanel.export") }}</span>
+        </button>
         <component :is="showContent ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
       </div>
-    </button>
+    </div>
 
       <div v-if="showContent" class="flex flex-col" :style="contentStyle">
         <div class="flex items-center justify-end border-t border-light px-4 py-2 text-xs text-dim shrink-0">

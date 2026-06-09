@@ -6,6 +6,7 @@ import type {
   CollectionItemView,
   CollectionPatchInput,
   CollectionView,
+  AppRuntimeInfoView,
   FavoriteView,
   QaAnswerView,
   QaAskStartView,
@@ -95,6 +96,7 @@ export const seekMindApi = {
     invoke<FavoriteView[]>("list_favorites", { limit }),
   removeFavorite: (target: string) =>
     invoke<void>("remove_favorite", { target }),
+  getAppRuntimeInfo: () => invoke<AppRuntimeInfoView>("get_app_runtime_info"),
   listCollections: () => invoke<CollectionView[]>("list_collections"),
   createCollection: (name: string, description = "") =>
     invoke<CollectionView>("create_collection", { name, description }),

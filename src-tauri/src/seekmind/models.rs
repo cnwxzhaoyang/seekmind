@@ -32,6 +32,19 @@ pub struct ImportPathsView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct AppRuntimeInfoView {
+    pub app_name: String,
+    pub app_version: String,
+    pub build_mode: String,
+    pub target_os: String,
+    pub target_arch: String,
+    pub data_dir: String,
+    pub cache_dir: String,
+    pub sqlite_path: String,
+    pub tantivy_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct HighlightSpan {
     pub start: usize,
     pub end: usize,
