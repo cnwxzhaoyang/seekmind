@@ -4,11 +4,6 @@
 use std::env;
 
 fn main() {
-    let reset_storage = env::args().any(|arg| arg == "--reset-local-storage");
-    if reset_storage {
-        seekmind_lib::reset_local_storage().expect("failed to reset local SeekMind storage");
-        env::set_var("SEEKMIND_SKIP_BOOTSTRAP_INDEX", "1");
-    }
-
+    let _ = env::var("SEEKMIND_FORCE_FIRST_LAUNCH");
     seekmind_lib::run()
 }

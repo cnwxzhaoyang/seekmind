@@ -79,6 +79,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             crate::seekmind::commands::list_index_dirs,
             crate::seekmind::commands::get_app_runtime_info,
+            crate::seekmind::commands::check_app_update,
             crate::seekmind::commands::search_documents,
             crate::seekmind::commands::get_search_debug_report,
             crate::seekmind::commands::request_search_debug_report,

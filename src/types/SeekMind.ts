@@ -24,10 +24,26 @@ export interface AppRuntimeInfoView {
   build_mode: string;
   target_os: string;
   target_arch: string;
+  force_first_launch: boolean;
+  update_manifest_url: string;
   data_dir: string;
   cache_dir: string;
   sqlite_path: string;
   tantivy_dir: string;
+}
+
+export interface UpdateCheckView {
+  current_version: string;
+  latest_version: string | null;
+  release_name: string | null;
+  release_notes: string | null;
+  download_url: string | null;
+  manifest_url: string;
+  is_update_available: boolean;
+  status: string;
+  message: string;
+  target_os: string;
+  target_arch: string;
 }
 
 export interface ImportPathsView {

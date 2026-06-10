@@ -879,6 +879,7 @@
         "rules": "索引规则",
         "instructions": "操作说明",
         "appearance": "界面",
+        "update": "自动更新",
         "privacy": "隐私说明",
         "danger": "危险操作"
       },
@@ -910,6 +911,36 @@
         "localFirstDesc": "文档只在当前 Mac 上解析和索引，不上传云端。",
         "remoteModel": "启用远端模型时，SeekMind 会把选中的文档片段发送到你配置的模型服务。",
         "localOnlyHint": "你可以把它理解为默认离线工作模式：搜索、切片和索引都只在本机完成。"
+      },
+      "update": {
+        "title": "自动更新",
+        "hint": "检查版本并打开下载页",
+        "sourceLabel": "更新源",
+        "sourceHint": "支持自定义 JSON 更新源，也支持 Tauri updater manifest。",
+        "sourcePlaceholder": "例如 https://updates.example.com/latest.json",
+        "runtimeSourceHint": "优先使用运行时预设的更新源。",
+        "manifestHint": "填入发布站点返回的更新清单地址。",
+        "autoCheckLabel": "启动时自动检查",
+        "autoCheckHint": "应用启动后会主动检查更新源。",
+        "autoCheckEnabled": "已启用",
+        "currentVersion": "当前版本",
+        "latestVersion": "最新版本",
+        "runtimeInfo": "运行环境",
+        "sourceStatus": "更新源",
+        "notes": "更新说明",
+        "check": "检查更新",
+        "checking": "检查中...",
+        "openDownload": "打开下载页",
+        "available": "发现新版本",
+        "upToDate": "已是最新版本",
+        "disabled": "未配置更新源",
+        "noSource": "请先配置更新源",
+        "noSourceDetail": "未配置更新源时，应用不会自动检查版本。你可以在此填写线上更新清单地址，或通过环境变量 SEEKMIND_UPDATE_MANIFEST_URL 预置。",
+        "error": {
+          "loadRuntime": "读取运行信息失败",
+          "check": "检查更新失败",
+          "openDownload": "打开下载页失败"
+        }
       },
       "placeholder": {
         "dirs": "node_modules, .git, target",
@@ -958,6 +989,21 @@
       "dir": "目录：{path}",
       "fallback": "回退"
     }
+  },
+  "onboarding": {
+    "title": "首次使用引导",
+    "desc": "先添加索引目录，再让 SeekMind 自动完成索引、搜索和问答准备。",
+    "close": "关闭引导",
+    "dismiss": "我知道了",
+    "goStatus": "去索引状态",
+    "tip": "你可以随时在索引状态页继续添加目录和查看进度。",
+    "stepLabel": "步骤 {index}",
+    "step1Title": "添加索引目录",
+    "step1Desc": "把本地文档目录加入索引范围。",
+    "step2Title": "等待首次索引",
+    "step2Desc": "系统会自动抽取文本、切片并建立索引。",
+    "step3Title": "开始搜索与问答",
+    "step3Desc": "索引完成后即可搜索、收藏和生成问答。"
   },
 
   "semantic": {

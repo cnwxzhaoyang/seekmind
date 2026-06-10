@@ -38,10 +38,27 @@ pub struct AppRuntimeInfoView {
     pub build_mode: String,
     pub target_os: String,
     pub target_arch: String,
+    pub force_first_launch: bool,
+    pub update_manifest_url: String,
     pub data_dir: String,
     pub cache_dir: String,
     pub sqlite_path: String,
     pub tantivy_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateCheckView {
+    pub current_version: String,
+    pub latest_version: Option<String>,
+    pub release_name: Option<String>,
+    pub release_notes: Option<String>,
+    pub download_url: Option<String>,
+    pub manifest_url: String,
+    pub is_update_available: bool,
+    pub status: String,
+    pub message: String,
+    pub target_os: String,
+    pub target_arch: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -882,6 +882,7 @@
         "rules": "Index Rules",
         "instructions": "Instructions",
         "appearance": "Appearance",
+        "update": "Auto Update",
         "privacy": "Privacy",
         "danger": "Danger Zone"
       },
@@ -913,6 +914,36 @@
         "localFirstDesc": "Documents are parsed and indexed locally on your Mac. Nothing is uploaded to the cloud.",
         "remoteModel": "When a remote model is enabled, SeekMind will send the selected document snippets to the configured model service.",
         "localOnlyHint": "In practice, search, chunking, and indexing all happen on this machine by default."
+      },
+      "update": {
+        "title": "Auto Update",
+        "hint": "Check versions and open the download page",
+        "sourceLabel": "Update Source",
+        "sourceHint": "Supports custom JSON update sources and Tauri updater manifests.",
+        "sourcePlaceholder": "For example: https://updates.example.com/latest.json",
+        "runtimeSourceHint": "Using the runtime preset update source first.",
+        "manifestHint": "Enter the update manifest URL returned by your release site.",
+        "autoCheckLabel": "Check on startup",
+        "autoCheckHint": "The app will proactively check the update source after launch.",
+        "autoCheckEnabled": "Enabled",
+        "currentVersion": "Current Version",
+        "latestVersion": "Latest Version",
+        "runtimeInfo": "Runtime",
+        "sourceStatus": "Update Source",
+        "notes": "Release Notes",
+        "check": "Check for Updates",
+        "checking": "Checking...",
+        "openDownload": "Open Download Page",
+        "available": "New version found",
+        "upToDate": "Already up to date",
+        "disabled": "No update source configured",
+        "noSource": "Please configure an update source first",
+        "noSourceDetail": "When no source is configured, the app will not check for updates automatically. You can enter the manifest URL here or preset it with the SEEKMIND_UPDATE_MANIFEST_URL environment variable.",
+        "error": {
+          "loadRuntime": "Failed to load runtime info",
+          "check": "Failed to check for updates",
+          "openDownload": "Failed to open the download page"
+        }
       },
       "placeholder": {
         "dirs": "node_modules, .git, target",
@@ -961,6 +992,21 @@
       "dir": "Dir: {path}",
       "fallback": "fallback"
     }
+  },
+  "onboarding": {
+    "title": "First-time Guide",
+    "desc": "Add an index directory first, then let SeekMind prepare indexing, search, and Q&A automatically.",
+    "close": "Close guide",
+    "dismiss": "Got it",
+    "goStatus": "Open Index Status",
+    "tip": "You can always return to the Index Status page to add more directories and check progress.",
+    "stepLabel": "Step {index}",
+    "step1Title": "Add an index directory",
+    "step1Desc": "Add a local document folder to the index scope.",
+    "step2Title": "Wait for the first index",
+    "step2Desc": "SeekMind will extract text, chunk content, and build search indexes.",
+    "step3Title": "Start search and Q&A",
+    "step3Desc": "Once indexing is done, you can search, favorite, and ask questions."
   },
 
   "semantic": {

@@ -12,6 +12,7 @@ import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
 import SeekMindConfirmDialog from "../components/SeekMind/SeekMindConfirmDialog.vue";
 import SeekMindQaPanel from "../components/SeekMind/SeekMindQaPanel.vue";
 import SeekMindSemanticPanel from "../components/SeekMind/SeekMindSemanticPanel.vue";
+import SeekMindUpdatePanel from "../components/SeekMind/SeekMindUpdatePanel.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
 import { setLocale as setI18nLocale } from "../i18n";
@@ -294,6 +295,12 @@ const settingsNavItems = computed(() => [
     label: t("page.settings.section.appearance"),
     hint: `${t("page.settings.language")} / ${t("page.settings.theme")}`,
     icon: Languages,
+  },
+  {
+    id: "settings-update",
+    label: t("page.settings.update.title"),
+    hint: t("page.settings.update.hint"),
+    icon: RefreshCw,
   },
   {
     id: "settings-network",
@@ -804,6 +811,8 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </div>
+
+          <SeekMindUpdatePanel />
 
           <section id="settings-network" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">

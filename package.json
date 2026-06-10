@@ -11,6 +11,7 @@
     "tauri:dev:trace": "SeekMind_USE_PY_PARSER=1 SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" SeekMind_TRACE_INDEXER=1 tauri dev",
     "tauri:dev:fresh": "SeekMind_USE_PY_PARSER=1 SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" tauri dev -- --reset-local-storage",
     "tauri:dev:fresh:trace": "SeekMind_USE_PY_PARSER=1 SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" SeekMind_TRACE_INDEXER=1 tauri dev -- --reset-local-storage",
+    "tauri:dev:first-launch": "SeekMind_USE_PY_PARSER=1 SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" SEEKMIND_FORCE_FIRST_LAUNCH=1 tauri dev",
     "tauri:build:macos:adhoc": "APPLE_SIGNING_IDENTITY=- tauri build",
     "tauri:build:macos:sidecar": "bash scripts/build-parser-sidecar.sh && APPLE_SIGNING_IDENTITY=- tauri build",
     "semantic:warmup": "SeekMind_FASTEMBED_CACHE_DIR=\"$PWD/.SeekMind-cache/fastembed\" SeekMind_PARSER_SCRIPT=\"$PWD/parser/seekmind_parser/__main__.py\" python3 parser/seekmind_parser/__main__.py warmup-embedding BAAI/bge-small-zh-v1.5",

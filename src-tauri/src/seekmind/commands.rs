@@ -16,12 +16,16 @@ use crate::seekmind::vision_ocr::bundled_vision_ocr_binary;
 use crate::seekmind::vision_ocr::has_chinese_vision_language;
 use crate::seekmind::semantic::store as semantic_store;
 use crate::seekmind::storage::{db::sqlite_database_path, fulltext::fulltext_index_dir};
+use serde::Deserialize;
 use std::collections::HashSet;
+use std::collections::HashMap;
+use std::cmp::Ordering;
 use std::env;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::Duration;
 use tauri::Emitter;
 
 const VIRTUAL_IMPORT_DIR: &str = "virtual://临时导入";
@@ -162,6 +166,11 @@ pub async fn get_app_runtime_info() -> Result<super::models::AppRuntimeInfoView,
         build_mode: build_mode.to_string(),
         target_os: std::env::consts::OS.to_string(),
         target_arch: std::env::consts::ARCH.to_string(),
+        force_first_launch: std::env::var("SEEKMIND_FORCE_FIRST_LAUNCH")
+            .ok()
+            .as_deref()
+            == Some("1"),
+        update_manifest_url: std::env::var("SEEKMIND_UPDATE_MANIFEST_URL").unwrap_or_default(),
         data_dir,
         cache_dir,
         sqlite_path,
@@ -172,6 +181,215 @@ pub async fn get_app_runtime_info() -> Result<super::models::AppRuntimeInfoView,
         payload.app_version, payload.build_mode, payload.target_os, payload.target_arch
     );
     Ok(payload)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateManifestPlatform {
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    signature: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateManifestPayload {
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default, alias = "latestVersion")]
+    latest_version: Option<String>,
+    #[serde(default, alias = "releaseNotes")]
+    release_notes: Option<String>,
+    #[serde(default, alias = "downloadUrl")]
+    download_url: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    platforms: Option<HashMap<String, UpdateManifestPlatform>>,
+}
+
+fn normalize_version(input: &str) -> Option<Vec<u64>> {
+    let trimmed = input.trim().trim_start_matches('v');
+    let mut parts = Vec::new();
+
+    for segment in trimmed.split('.') {
+        let digits: String = segment.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            return None;
+        }
+        parts.push(digits.parse::<u64>().ok()?);
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts)
+    }
+}
+
+fn compare_versions(left: &str, right: &str) -> Option<Ordering> {
+    let mut left_parts = normalize_version(left)?;
+    let mut right_parts = normalize_version(right)?;
+    let max_len = left_parts.len().max(right_parts.len());
+    left_parts.resize(max_len, 0);
+    right_parts.resize(max_len, 0);
+    Some(left_parts.cmp(&right_parts))
+}
+
+fn manifest_platform_key(target_os: &str, target_arch: &str) -> String {
+    format!("{target_os}-{target_arch}")
+}
+
+fn pick_download_url(manifest: &UpdateManifestPayload, target_os: &str, target_arch: &str) -> Option<String> {
+    if let Some(url) = manifest.download_url.clone().or_else(|| manifest.url.clone()) {
+        return Some(url);
+    }
+
+    let platforms = manifest.platforms.as_ref()?;
+    let candidates = [
+        manifest_platform_key(target_os, target_arch),
+        format!("{target_os}_{target_arch}"),
+        target_os.to_string(),
+    ];
+
+    for key in candidates {
+        if let Some(platform) = platforms.get(&key) {
+            if let Some(url) = platform.url.clone() {
+                return Some(url);
+            }
+        }
+    }
+
+    platforms.values().find_map(|platform| platform.url.clone())
+}
+
+#[tauri::command]
+pub async fn check_app_update(
+    app: tauri::AppHandle,
+    manifest_url: Option<String>,
+) -> Result<super::models::UpdateCheckView, String> {
+    let runtime_manifest_url = std::env::var("SEEKMIND_UPDATE_MANIFEST_URL").unwrap_or_default();
+    let manifest_url = manifest_url
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+        .if_empty(runtime_manifest_url);
+
+    let current_version = app.package_info().version.to_string();
+    let target_os = std::env::consts::OS.to_string();
+    let target_arch = std::env::consts::ARCH.to_string();
+
+    if manifest_url.trim().is_empty() {
+        eprintln!("[SeekMind] update check skipped: manifest url is empty");
+        return Ok(super::models::UpdateCheckView {
+            current_version,
+            latest_version: None,
+            release_name: None,
+            release_notes: None,
+            download_url: None,
+            manifest_url: String::new(),
+            is_update_available: false,
+            status: "disabled".to_string(),
+            message: "未配置更新源".to_string(),
+            target_os,
+            target_arch,
+        });
+    }
+
+    eprintln!(
+        "[SeekMind] update check start manifest_url={} current_version={} target={}-{}",
+        manifest_url, current_version, target_os, target_arch
+    );
+
+    let manifest_url_for_request = manifest_url.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<super::models::UpdateCheckView, String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|error| format!("初始化更新检查客户端失败：{error}"))?;
+        let response = client
+            .get(&manifest_url_for_request)
+            .send()
+            .map_err(|error| format!("请求更新源失败：{error}"))?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "更新源返回异常：HTTP {}",
+                response.status()
+            ));
+        }
+
+        let manifest: UpdateManifestPayload = response
+            .json()
+            .map_err(|error| format!("解析更新源失败：{error}"))?;
+        let latest_version = manifest
+            .latest_version
+            .clone()
+            .or(manifest.version.clone())
+            .ok_or_else(|| "更新源未返回版本号".to_string())?;
+        let release_notes = manifest
+            .release_notes
+            .clone()
+            .or(manifest.notes.clone())
+            .or(manifest.body.clone());
+        let release_name = manifest.name.clone();
+        let download_url = pick_download_url(&manifest, &target_os, &target_arch);
+        let is_update_available = matches!(
+            compare_versions(&current_version, &latest_version),
+            Some(Ordering::Less)
+        );
+        let status = if is_update_available {
+            "available"
+        } else {
+            "up_to_date"
+        };
+        let message = if is_update_available {
+            format!("发现新版本：{latest_version}")
+        } else {
+            format!("当前已是最新版本：{current_version}")
+        };
+
+        Ok(super::models::UpdateCheckView {
+            current_version,
+            latest_version: Some(latest_version),
+            release_name,
+            release_notes,
+            download_url,
+            manifest_url: manifest_url_for_request,
+            is_update_available,
+            status: status.to_string(),
+            message,
+            target_os,
+            target_arch,
+        })
+    })
+    .await
+    .map_err(|error| format!("更新检查任务执行失败：{error}"))?;
+
+    let payload = result?;
+    eprintln!(
+        "[SeekMind] update check done status={} available={} latest={:?}",
+        payload.status, payload.is_update_available, payload.latest_version
+    );
+    Ok(payload)
+}
+
+trait IfEmpty {
+    fn if_empty(self, fallback: String) -> String;
+}
+
+impl IfEmpty for String {
+    fn if_empty(self, fallback: String) -> String {
+        if self.trim().is_empty() {
+            fallback
+        } else {
+            self
+        }
+    }
 }
 
 fn parent_dir_path(path: &Path) -> String {

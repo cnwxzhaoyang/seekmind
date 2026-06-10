@@ -31,6 +31,7 @@ import type {
   SearchHistoryView,
   SearchDebugView,
   SearchResultView,
+  UpdateCheckView,
   TagPatchInput,
   TagView,
   SemanticRebuildStartView,
@@ -97,6 +98,8 @@ export const seekMindApi = {
   removeFavorite: (target: string) =>
     invoke<void>("remove_favorite", { target }),
   getAppRuntimeInfo: () => invoke<AppRuntimeInfoView>("get_app_runtime_info"),
+  checkAppUpdate: (manifestUrl = "") =>
+    invoke<UpdateCheckView>("check_app_update", { manifest_url: manifestUrl }),
   listCollections: () => invoke<CollectionView[]>("list_collections"),
   createCollection: (name: string, description = "") =>
     invoke<CollectionView>("create_collection", { name, description }),
