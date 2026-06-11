@@ -22,9 +22,10 @@ import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
+import { formatSeekMindDateOnly } from "../utils/dateFormat";
 import type { CollectionItemView, CollectionView, TagView } from "../types/SeekMind";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const collections = ref<CollectionView[]>([]);
 const collectionTags = ref<TagView[]>([]);
 const itemTags = ref<TagView[]>([]);
@@ -813,7 +814,7 @@ onActivated(async () => {
                   </div>
                   <SeekMindBadge tone="default">{{ collection.item_count }}</SeekMindBadge>
                 </div>
-                <div class="mt-1.5 text-[11px] text-dim">{{ collection.updated_at }}</div>
+                <div class="mt-1.5 text-[11px] text-dim">{{ formatSeekMindDateOnly(collection.updated_at, locale.value) }}</div>
               </div>
             </div>
           </div>
@@ -937,7 +938,7 @@ onActivated(async () => {
                       {{ item.snippet || t("page.collections.noSnippet") }}
                     </div>
                     <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-dim">
-                      <span>{{ item.created_at }}</span>
+                      <span>{{ formatSeekMindDateOnly(item.created_at, locale.value) }}</span>
                       <span v-if="item.note">·</span>
                       <span v-if="item.note">{{ t("page.collections.hasNote") }}</span>
                     </div>
@@ -982,8 +983,8 @@ onActivated(async () => {
                 <SeekMindBadge :tone="itemTypeTone(selectedItem)">{{ itemTypeLabel(selectedItem) }}</SeekMindBadge>
               </div>
               <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs leading-5 text-muted">
-                <div>{{ t("page.collections.createdAt") }}：{{ selectedItem.created_at }}</div>
-                <div>{{ t("page.collections.updatedAt") }}：{{ selectedItem.updated_at }}</div>
+                <div>{{ t("page.collections.createdAt") }}：{{ formatSeekMindDateOnly(selectedItem.created_at, locale.value) }}</div>
+                <div>{{ t("page.collections.updatedAt") }}：{{ formatSeekMindDateOnly(selectedItem.updated_at, locale.value) }}</div>
                 <div class="break-all">{{ t("page.collections.collectionId") }}：{{ selectedItem.collection_id }}</div>
                 <div class="break-all">{{ t("page.collections.sourceMeta") }}：{{ selectedItem.source_meta_json || t("common.none") }}</div>
               </div>

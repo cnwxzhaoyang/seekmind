@@ -11,10 +11,11 @@ import { BookMarked, ChevronLeft, Database, FileText, History, Layers3, MessageS
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
 import { seekMindApi } from "../../services/seekMindApi";
+import { formatSeekMindDateOnly } from "../../utils/dateFormat";
 import { listenQuickAccessUpdated } from "../../utils/quickAccessEvents";
 import brandIconUrl from "../../assets/app_icon_64x64.png";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const { sidebarCollapsed, toggleSidebar } = useSidebarState();
@@ -198,7 +199,7 @@ onBeforeUnmount(() => {
                   @click="openSearchQuery(item.query)"
                 >
                   <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.query }}</div>
-                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.last_hit_at }}</div>
+                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ formatSeekMindDateOnly(item.last_hit_at, locale.value) }}</div>
                 </button>
                 <button
                   class="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
