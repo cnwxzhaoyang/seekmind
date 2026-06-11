@@ -101,7 +101,10 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
             >
               <Heart :size="14" :class="props.favorited ? 'fill-danger text-danger' : ''" />
             </button>
-            <div class="text-[11px] font-medium text-dim">{{ Math.round(item.score * 100) }}%</div>
+            <!-- 修复：这里展示的是可叠加的相关度分，不是 0~100% 的百分比。 -->
+            <div class="text-[11px] font-medium text-dim">
+              {{ t("searchResultCard.matchScore", { score: item.score.toFixed(2) }) }}
+            </div>
           </div>
         </div>
         <div class="mt-1 truncate text-[11px] text-muted">{{ item.path }}</div>

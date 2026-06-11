@@ -14,6 +14,8 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { BookMarked, ClipboardCopy, Eye, FileDown, FileText, Files, FolderPlus, Layers3, MessageSquareText, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindDetailPanel from "../components/SeekMind/SeekMindDetailPanel.vue";
+import SeekMindDetailSection from "../components/SeekMind/SeekMindDetailSection.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
@@ -914,7 +916,7 @@ onActivated(async () => {
       </template>
 
       <template #middle>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(255,255,255,0.78)]">
+        <section class="seekmind-pane-center flex min-h-0 flex-1 flex-col overflow-hidden">
           <div class="flex items-start gap-3 px-4 pb-2 pt-3">
             <span class="card-icon seekmind-page-header-icon"><Layers3 :size="17" /></span>
             <div class="min-w-0 flex-1">
@@ -1048,98 +1050,93 @@ onActivated(async () => {
       </template>
 
       <template v-if="showDetailPanel" #right>
-        <aside class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(246,247,249,0.9)]">
-          <div class="flex items-start gap-3 px-4 pb-2 pt-3">
-            <span class="card-icon seekmind-page-header-icon"><BookMarked :size="17" /></span>
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-primary">{{ t("page.collections.detailTitle") }}</div>
-              <div class="mt-0.5 text-[12px] text-muted">{{ t("page.collections.detailDesc") }}</div>
-            </div>
-            <button
-              v-if="selectedItem"
-              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/72 text-secondary hover:bg-white/90 hover:text-primary"
-              type="button"
-              :title="t('common.close')"
-              @click="closeSelectedItem"
-            >
-              <X :size="14" />
-            </button>
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-1">
-            <div v-if="!selectedItem" class="rounded-[18px] bg-white/72 px-4 py-8 text-center text-xs text-muted">
-              {{ t("page.collections.noItemSelected") }}
-            </div>
-            <div v-else class="space-y-2">
-              <div class="seekmind-content-block seekmind-content-block--super-tight-top bg-white/72">
-                <div class="flex items-start gap-3">
-                  <span class="card-icon seekmind-page-header-icon">
-                    <component :is="itemTypeIcon(selectedItem)" :size="17" />
-                  </span>
-                  <div class="min-w-0">
-                    <div class="text-base font-semibold text-primary">{{ selectedItem.title }}</div>
-                    <div class="mt-1 break-all text-xs text-muted">{{ selectedItem.path || t("common.none") }}</div>
-                  </div>
-                  <SeekMindBadge :tone="itemTypeTone(selectedItem)">{{ itemTypeLabel(selectedItem) }}</SeekMindBadge>
+        <aside class="seekmind-pane-detail flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SeekMindDetailPanel v-if="selectedItem">
+            <template #header>
+              <div class="flex items-start gap-3">
+                <span class="card-icon seekmind-page-header-icon"><BookMarked :size="17" /></span>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-semibold text-primary">{{ t("page.collections.detailTitle") }}</div>
+                  <div class="mt-0.5 text-[12px] text-muted">{{ t("page.collections.detailDesc") }}</div>
                 </div>
-                <div v-if="selectedItem.title_path" class="mt-2 text-sm leading-6 text-primary">
-                  <div class="text-[11px] uppercase tracking-[0.16em] text-dim">
-                    {{ t("page.collections.location") }}
-                  </div>
-                  <div class="mt-1 break-all text-sm leading-6 text-secondary">{{ selectedItem.title_path }}</div>
-                </div>
+                <button
+                  class="seekmind-close-button shrink-0"
+                  type="button"
+                  :title="t('common.close')"
+                  @click="closeSelectedItem"
+                >
+                  <X :size="13" stroke-width="2.25" />
+                </button>
               </div>
+            </template>
 
-              <div class="seekmind-content-block bg-white/68">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="text-[11px] font-medium text-dim">{{ t("page.collections.tags") }}</div>
-                  <div class="text-[10px] text-muted">{{ itemTags.length }}</div>
+            <SeekMindDetailSection :title="t('common.overview')" :subtitle="selectedItem.path || t('common.none')">
+              <div class="flex items-start gap-3">
+                <span class="card-icon seekmind-page-header-icon">
+                  <component :is="itemTypeIcon(selectedItem)" :size="17" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <div class="text-base font-semibold text-primary">{{ selectedItem.title }}</div>
+                  <div v-if="selectedItem.title_path" class="mt-1 break-all text-sm leading-6 text-secondary">{{ selectedItem.title_path }}</div>
                 </div>
-                <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  <div
-                    v-for="tag in itemTags"
-                    :key="tag.id"
-                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/72 px-2 py-0.5 text-[11px] text-secondary"
-                  >
-                    <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
-                    <button
-                      class="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition hover:bg-danger-soft hover:text-danger"
-                      type="button"
-                      :title="t('page.collections.removeTag')"
-                      @click.stop="removeItemTag(tag)"
-                    >
-                      <Trash2 :size="10" />
-                    </button>
-                  </div>
-                  <span v-if="itemTags.length === 0" class="text-[11px] text-muted">{{ t("page.collections.noTags") }}</span>
-                </div>
-                <div class="mt-2 flex items-center gap-2">
-                  <input
-                    v-model="itemTagName"
-                    class="min-w-0 flex-1 rounded-[14px] bg-white/72 px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none"
-                    type="text"
-                    :placeholder="t('page.collections.tagPlaceholder')"
-                    @keydown.enter.prevent="addItemTag"
-                  >
+                <SeekMindBadge :tone="itemTypeTone(selectedItem)">{{ itemTypeLabel(selectedItem) }}</SeekMindBadge>
+              </div>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs leading-5 text-muted">
+                <div>{{ t("page.collections.createdAt") }}：{{ selectedItem.created_at }}</div>
+                <div>{{ t("page.collections.updatedAt") }}：{{ selectedItem.updated_at }}</div>
+                <div class="break-all">{{ t("page.collections.collectionId") }}：{{ selectedItem.collection_id }}</div>
+                <div class="break-all">{{ t("page.collections.sourceMeta") }}：{{ selectedItem.source_meta_json || t("common.none") }}</div>
+              </div>
+            </SeekMindDetailSection>
+
+            <SeekMindDetailSection :title="t('common.originalText')">
+              <div class="whitespace-pre-wrap text-sm leading-7 text-primary">
+                {{ selectedItem.snippet || t("page.collections.noSnippet") }}
+              </div>
+            </SeekMindDetailSection>
+
+            <SeekMindDetailSection :title="t('common.context')">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-[11px] font-medium text-dim">{{ t("page.collections.tags") }}</div>
+                <div class="text-[10px] text-muted">{{ itemTags.length }}</div>
+              </div>
+              <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
+                <div
+                  v-for="tag in itemTags"
+                  :key="tag.id"
+                  class="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/72 px-2 py-0.5 text-[11px] text-secondary"
+                >
+                  <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
                   <button
-                    class="inline-flex items-center gap-1.5 rounded-full bg-white/72 px-2.5 py-1.5 text-xs text-secondary transition hover:text-primary"
+                    class="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted transition hover:bg-danger-soft hover:text-danger"
                     type="button"
-                    :disabled="!itemTagName.trim()"
-                    @click="addItemTag"
+                    :title="t('page.collections.removeTag')"
+                    @click.stop="removeItemTag(tag)"
                   >
-                    <Plus :size="13" />
-                    {{ t("page.collections.addTag") }}
+                    <Trash2 :size="10" />
                   </button>
                 </div>
+                <span v-if="itemTags.length === 0" class="text-[11px] text-muted">{{ t("page.collections.noTags") }}</span>
               </div>
-
-              <div class="seekmind-content-block bg-white/64">
-                <div class="mb-2 text-[11px] font-medium text-dim">{{ t("page.collections.snippet") }}</div>
-                <div class="whitespace-pre-wrap text-sm leading-7 text-primary">
-                  {{ selectedItem.snippet || t("page.collections.noSnippet") }}
-                </div>
+              <div class="mt-2 flex items-center gap-2">
+                <input
+                  v-model="itemTagName"
+                  class="min-w-0 flex-1 rounded-[14px] bg-white/72 px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none"
+                  type="text"
+                  :placeholder="t('page.collections.tagPlaceholder')"
+                  @keydown.enter.prevent="addItemTag"
+                >
+                <button
+                  class="inline-flex items-center gap-1.5 rounded-full bg-white/72 px-2.5 py-1.5 text-xs text-secondary transition hover:text-primary"
+                  type="button"
+                  :disabled="!itemTagName.trim()"
+                  @click="addItemTag"
+                >
+                  <Plus :size="13" />
+                  {{ t("page.collections.addTag") }}
+                </button>
               </div>
-
-              <div class="seekmind-content-block bg-white/58">
+              <div class="mt-3">
                 <div class="mb-2 text-[11px] font-medium text-dim">{{ t("page.collections.note") }}</div>
                 <textarea
                   v-model="itemNoteDraft"
@@ -1158,16 +1155,10 @@ onActivated(async () => {
                   </button>
                 </div>
               </div>
-
-              <div class="seekmind-content-block">
-                <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs leading-5 text-muted">
-                  <div>{{ t("page.collections.createdAt") }}：{{ selectedItem.created_at }}</div>
-                  <div>{{ t("page.collections.updatedAt") }}：{{ selectedItem.updated_at }}</div>
-                  <div class="break-all">{{ t("page.collections.collectionId") }}：{{ selectedItem.collection_id }}</div>
-                  <div class="break-all">{{ t("page.collections.sourceMeta") }}：{{ selectedItem.source_meta_json || t("common.none") }}</div>
-                </div>
-              </div>
-            </div>
+            </SeekMindDetailSection>
+          </SeekMindDetailPanel>
+          <div v-else class="flex min-h-0 flex-1 items-center justify-center px-4 text-center text-xs text-muted">
+            {{ t("page.collections.noItemSelected") }}
           </div>
         </aside>
       </template>

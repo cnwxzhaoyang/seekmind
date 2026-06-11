@@ -319,6 +319,61 @@ button {
   letter-spacing: 0.08em;
 }
 
+/* 统一右侧详情的关闭按钮风格，尽量贴近桌面端系统原生圆形控制按钮。 */
+.seekmind-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: rgba(118, 118, 128, 0.1);
+  color: var(--color-text-secondary);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.seekmind-close-button:hover {
+  background: rgba(255, 59, 48, 0.14);
+  color: #b42318;
+}
+
+.seekmind-close-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+/* 统一左右分栏的主内容底色，避免结果区和详情区混在同一层级上。 */
+.seekmind-pane-center {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 252, 254, 0.94)),
+    var(--color-surface);
+}
+
+.seekmind-pane-detail {
+  background:
+    linear-gradient(180deg, rgba(241, 245, 249, 0.98), rgba(226, 232, 240, 0.94)),
+    var(--color-panel-bg);
+  border-left: 1px solid var(--color-border);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.45);
+}
+
+html.dark .seekmind-pane-center {
+  background:
+    linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(16, 21, 29, 0.94)),
+    var(--color-surface);
+}
+
+html.dark .seekmind-pane-detail {
+  background:
+    linear-gradient(180deg, rgba(13, 17, 23, 0.99), rgba(20, 26, 36, 0.96)),
+    var(--color-panel-bg);
+  border-left-color: var(--color-border);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
 .SeekMind-section-label {
   margin: 0;
   font-size: 15px;

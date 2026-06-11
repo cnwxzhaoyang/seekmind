@@ -4,13 +4,14 @@
  * @CreatedDate 2026/06/02
  * @Description SeekMind 侧边栏，承载全局导航、快捷访问与品牌入口。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { BookMarked, ChevronLeft, ChevronRight, Database, FileText, History, Layers3, MessageSquareText, Search, Settings, Star, Trash2 } from "lucide-vue-next";
+import { BookMarked, ChevronLeft, Database, FileText, History, Layers3, MessageSquareText, Search, Settings, Star, Trash2 } from "lucide-vue-next";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
 import { seekMindApi } from "../../services/seekMindApi";
+import { listenQuickAccessUpdated } from "../../utils/quickAccessEvents";
 import brandIconUrl from "../../assets/app_icon_64x64.png";
 
 const { t } = useI18n();
@@ -19,6 +20,7 @@ const router = useRouter();
 const { sidebarCollapsed, toggleSidebar } = useSidebarState();
 const { quickDirs, searchHistory, recentDocuments, favorites, loadQuickAccessData } = useQuickAccessData();
 const panelActionTarget = ref("");
+let unlistenQuickAccessUpdated: null | (() => void) = null;
 const sidebarStats = computed(() => [
   { label: t("sidebar.statsDirs"), value: quickDirs.value.length },
   { label: t("sidebar.statsRecent"), value: recentDocuments.value.length },
@@ -92,6 +94,14 @@ const removeFavorite = async (target: string) => {
 
 onMounted(() => {
   void loadQuickAccessData();
+  unlistenQuickAccessUpdated = listenQuickAccessUpdated(() => {
+    void loadQuickAccessData();
+  });
+});
+
+onBeforeUnmount(() => {
+  unlistenQuickAccessUpdated?.();
+  unlistenQuickAccessUpdated = null;
 });
 </script>
 
@@ -101,8 +111,22 @@ onMounted(() => {
     :class="sidebarCollapsed ? 'w-[68px]' : 'w-[240px]'"
   >
     <div class="mb-3 rounded-[16px] border border-default bg-surface/80 px-2.5 py-2 shadow-card">
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex min-w-0 items-center gap-2">
+      <div :class="sidebarCollapsed ? 'flex items-center justify-center' : 'flex items-center justify-between gap-2'">
+        <button
+          v-if="sidebarCollapsed"
+          class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
+          type="button"
+          :title="t('sidebar.expand')"
+          :aria-label="t('sidebar.expand')"
+          @click="toggleSidebar"
+        >
+          <img
+            :src="brandIconUrl"
+            alt="SeekMind"
+            class="h-9 w-9 shrink-0 rounded-[10px] object-contain shadow-card"
+          >
+        </button>
+        <div v-else class="flex min-w-0 items-center gap-2">
           <img
             :src="brandIconUrl"
             alt="SeekMind"
@@ -114,18 +138,14 @@ onMounted(() => {
           </div>
         </div>
         <button
+          v-if="!sidebarCollapsed"
           class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-surface-hover hover:text-primary"
-          :title="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
-          :aria-label="sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
+          :title="t('sidebar.collapse')"
+          :aria-label="t('sidebar.collapse')"
           @click="toggleSidebar"
         >
-          <ChevronRight v-if="sidebarCollapsed" :size="15" />
-          <ChevronLeft v-else :size="15" />
+          <ChevronLeft :size="15" />
         </button>
-      </div>
-      <div v-if="!sidebarCollapsed" class="mt-2 flex items-center justify-between text-[10px] text-muted">
-        <span>{{ t("sidebar.recentAccess") }}</span>
-        <span>{{ t("sidebar.quickNavigation") }}</span>
       </div>
     </div>
 
@@ -154,31 +174,31 @@ onMounted(() => {
       </RouterLink>
     </nav>
 
-    <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden">
-      <!-- 侧栏内容区压缩密度，保持功能完整但降低卡片存在感。 -->
-      <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.66fr)_minmax(0,0.66fr)_minmax(0,0.66fr)_minmax(0,0.72fr)] gap-2 overflow-hidden pr-1">
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-default bg-panel/35 p-2">
-          <div class="seekmind-section-label flex items-center gap-1 border-b border-default px-0.5 pb-1.5">
+    <div v-if="!sidebarCollapsed" class="mt-1 min-h-0 flex-1 overflow-hidden">
+      <!-- 侧栏内容区压缩密度，改成扁平分区，避免每块都像独立卡片。 -->
+      <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.56fr)] gap-2 overflow-hidden pr-1">
+        <section class="flex min-h-0 flex-col overflow-hidden">
+          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[11px] font-medium text-primary">
             <History :size="12" />
             {{ t("page.appSearch.section.recentSearch") }}
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-1.5">
-            <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-2.5 py-2.5 text-[10px] text-muted">
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
               {{ t("page.appSearch.section.noHistory") }}
             </div>
-            <div v-else class="space-y-0.5">
+            <div v-else class="space-y-1">
               <div
                 v-for="item in searchHistory"
                 :key="item.query"
                 class="group flex items-center gap-1"
               >
                 <button
-                  class="min-w-0 flex-1 rounded-md px-1.5 py-[3px] text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
+                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[12px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
                   :title="item.query"
                   @click="openSearchQuery(item.query)"
                 >
-                  <div class="truncate text-[10px] font-medium leading-4 text-primary">{{ item.query }}</div>
-                  <div class="mt-0.5 truncate text-[9px] leading-4 text-muted">{{ item.last_hit_at }}</div>
+                  <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.query }}</div>
+                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.last_hit_at }}</div>
                 </button>
                 <button
                   class="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
@@ -193,28 +213,28 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-default bg-panel/35 p-2">
-          <div class="seekmind-section-label flex items-center gap-1 border-b border-default px-0.5 pb-1.5">
+        <section class="flex min-h-0 flex-col overflow-hidden">
+          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[11px] font-medium text-primary">
             <FileText :size="12" />
             {{ t("page.appSearch.section.recentOpen") }}
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-1.5">
-            <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-2.5 py-2.5 text-[10px] text-muted">
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
               {{ t("page.appSearch.section.noRecent") }}
             </div>
-            <div v-else class="space-y-0.5">
+            <div v-else class="space-y-1">
               <div
                 v-for="item in recentDocuments"
                 :key="item.path"
                 class="group flex items-start gap-1"
               >
                 <button
-                  class="min-w-0 flex-1 rounded-md px-1.5 py-[3px] text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
+                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[12px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
                   :title="t('page.appSearch.section.recentOpenTip', { title: item.title, path: item.path })"
                   @click="openRecentDocument(item.path)"
                 >
-                  <div class="truncate text-[10px] font-medium leading-4 text-primary">{{ item.title }}</div>
-                  <div class="mt-0.5 truncate text-[9px] leading-4 text-muted">{{ item.path }}</div>
+                  <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.title }}</div>
+                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
                 </button>
                 <button
                   class="mt-0.5 inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
@@ -229,28 +249,28 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-default bg-panel/35 p-2">
-          <div class="seekmind-section-label flex items-center gap-1 border-b border-default px-0.5 pb-1.5">
+        <section class="flex min-h-0 flex-col overflow-hidden">
+          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[11px] font-medium text-primary">
             <Star :size="12" />
             {{ t("page.appSearch.section.favorites") }}
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-1.5">
-            <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-2.5 py-2.5 text-[10px] text-muted">
+          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+            <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
               {{ t("page.appSearch.section.noFavorites") }}
             </div>
-            <div v-else class="space-y-0.5">
+            <div v-else class="space-y-1">
               <div
                 v-for="item in favoriteResults"
                 :key="item.target"
                 class="group flex items-start gap-1"
               >
                 <button
-                  class="min-w-0 flex-1 rounded-md px-1.5 py-[3px] text-left text-[10px] leading-4 text-secondary transition hover:bg-panel hover:text-primary"
+                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[12px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
                   :title="t('page.appSearch.section.favoriteTip', { title: item.title, path: item.path })"
                   @click="openFavoriteDocument(item.path)"
                 >
-                  <div class="truncate text-[10px] font-medium leading-4 text-primary">{{ item.title }}</div>
-                  <div class="mt-0.5 truncate text-[9px] leading-4 text-muted">{{ item.path }}</div>
+                  <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.title }}</div>
+                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
                 </button>
                 <button
                   class="mt-0.5 inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
@@ -265,25 +285,30 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="rounded-[12px] border border-default bg-surface/85 p-2.5 shadow-card">
-          <div class="grid grid-cols-3 gap-2 text-center">
-            <div
-              v-for="stat in sidebarStats"
-              :key="stat.label"
-              class="rounded-lg border border-default bg-panel py-1.5"
-            >
-              <div class="text-[13px] font-semibold leading-4 text-primary">{{ stat.value }}</div>
-              <div class="text-[8px] uppercase tracking-[0.12em] text-muted">{{ stat.label }}</div>
+        <div class="mt-auto border-t border-default pt-2">
+          <div class="flex items-center justify-between gap-2 text-[11px] text-muted">
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="inline-flex items-center gap-1">
+                <span class="h-1.5 w-1.5 rounded-full bg-success" />
+                {{ t("sidebar.statusRunning") }}
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center gap-1 rounded-full bg-surface/70 px-2 py-0.5">
+                {{ sidebarStats[0].value }}
+                <span class="text-muted">{{ sidebarStats[0].label }}</span>
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-surface/70 px-2 py-0.5">
+                {{ sidebarStats[1].value }}
+                <span class="text-muted">{{ sidebarStats[1].label }}</span>
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-surface/70 px-2 py-0.5">
+                {{ sidebarStats[2].value }}
+                <span class="text-muted">{{ sidebarStats[2].label }}</span>
+              </span>
             </div>
           </div>
-          <div class="mt-2.5 flex items-center justify-between text-[10px] text-muted">
-            <span>{{ t("sidebar.ready") }}</span>
-            <span class="inline-flex items-center gap-1">
-              <span class="h-1.5 w-1.5 rounded-full bg-success" />
-              {{ t("sidebar.statusRunning") }}
-            </span>
-          </div>
-        </section>
+        </div>
       </div>
     </div>
 

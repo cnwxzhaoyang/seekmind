@@ -15,6 +15,10 @@
     "rebuild": "重建",
     "reindex": "重新索引",
     "close": "关闭",
+    "overview": "概览",
+    "originalText": "原文",
+    "context": "上下文",
+    "matchReason": "命中原因",
     "openFile": "打开文件",
     "viewChunks": "查看切片",
     "open": "打开",
@@ -443,6 +447,9 @@
         "indexDirs": "索引目录",
         "docList": "文档列表",
         "chunkDetail": "切片详情"
+      },
+      "detail": {
+        "imagePreview": "图片预览"
       },
       "selectDir": "请选择一个索引目录",
       "selectDoc": "请选择一个文档",
@@ -1076,6 +1083,7 @@
     "scoreTitle": "标题 {score}",
     "scoreFilename": "文件名 {score}",
     "scorePreference": "偏好 {score}",
+    "matchScore": "相关度 {score}",
     "rankChange": "名次 {original} -> {final}（变化 {delta}）"
   },
 
@@ -1085,7 +1093,8 @@
     "openFirst": "打开首段",
     "docGroup": "文档聚合",
     "hitSnippets": "命中片段 {count} 个",
-    "totalScore": "总分 {score}%",
+    "matchScore": "相关度 {score}",
+    "totalScore": "总分 {score}",
     "score": "{score}%",
     "segments": "{count} 段"
   },

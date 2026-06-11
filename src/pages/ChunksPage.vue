@@ -7,9 +7,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, FolderOpen, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
+import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
+import SeekMindIndexTree from "../components/SeekMind/SeekMindIndexTree.vue";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindDetailPanel from "../components/SeekMind/SeekMindDetailPanel.vue";
+import SeekMindDetailSection from "../components/SeekMind/SeekMindDetailSection.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
@@ -17,6 +20,7 @@ import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreview
 import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRenderer.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
+import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   ChunkView,
@@ -24,6 +28,7 @@ import type {
   DocumentView,
   IndexDirView,
   ParserRuntimeView,
+  PreviewBlockView,
 } from "../types/SeekMind";
 
 const { t } = useI18n();
@@ -67,11 +72,45 @@ const contextMenuVisible = ref(false);
 
 let unlistenRefreshProgress: null | (() => void) = null;
 
+const {
+  visibleRows: chunkDirRows,
+  expandAncestors: expandChunkDirAncestors,
+  setExpanded: setChunkDirExpanded,
+} = useIndexDirTree(dirs);
+
 const explicitIndexDirCount = computed(() => dirs.value.filter((dir) => dir.is_explicit).length);
 
 const currentDocument = computed(
   () => documents.value.find((item) => item.path === selectedDocPath.value) ?? null,
 );
+
+const isImageDocument = computed(() => {
+  const ext = currentDocument.value?.ext?.trim().toLowerCase().replace(/^\./, "");
+  return Boolean(ext && ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "heic"].includes(ext));
+});
+
+const currentDocumentPreviewBlock = computed<PreviewBlockView | null>(() => {
+  if (!currentDocument.value || !isImageDocument.value) {
+    return null;
+  }
+
+  // 图片文档的 chunk 主要承载 OCR 文本，右侧详情需要额外显示原图预览，避免只能看到识别结果看不到素材本身。
+  return {
+    block_index: 0,
+    block_type: "image",
+    text: currentDocument.value.file_name,
+    heading: currentDocument.value.file_name,
+    level: null,
+    page: null,
+    language: null,
+    markdown: "",
+    html: "",
+    asset_path: currentDocument.value.path,
+    alt_text: currentDocument.value.file_name,
+    caption: currentDocument.value.path,
+    ocr_text: "",
+  };
+});
 
 const selectedDir = computed(
   () => dirs.value.find((item) => item.path === selectedDirPath.value) ?? null,
@@ -309,6 +348,9 @@ const syncSelection = async (forceReload = false) => {
 
     if (needsDocsReload) {
       selectedDirPath.value = nextDir;
+      if (nextDir) {
+        expandChunkDirAncestors(nextDir);
+      }
       if (!selectedDirPath.value) {
         documents.value = [];
         selectedDocPath.value = "";
@@ -345,6 +387,7 @@ const switchDirectory = async (path: string) => {
   actionMessage.value = "";
   actionErrorMessage.value = "";
   selectedDirPath.value = path;
+  expandChunkDirAncestors(path);
   selectedDocPath.value = "";
   showDetailPanel.value = false;
   documents.value = [];
@@ -354,9 +397,12 @@ const switchDirectory = async (path: string) => {
   void router.replace({ query: { ...route.query, path } });
 };
 
-const handleDirChange = (event: Event) => {
-  const nextDir = (event.target as HTMLSelectElement | null)?.value ?? "";
-  void switchDirectory(nextDir);
+const handleDirTreeSelect = (path: string) => {
+  void switchDirectory(path);
+};
+
+const handleDirTreeToggle = (path: string, expanded: boolean) => {
+  setChunkDirExpanded(path, expanded);
 };
 
 const setActionMessage = (message: string) => {
@@ -860,24 +906,27 @@ watch(
     <main class="flex min-h-0 flex-1 overflow-hidden">
       <SplitPane :panels="splitPanels">
       <template #center>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(245,246,248,0.88)] px-3 py-3">
+        <section class="seekmind-pane-center flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3">
             <div class="shrink-0 mb-3 rounded-[18px] bg-white/72 px-3 py-2.5">
-              <!-- Keep only the dropdown here so the directory selection doesn't repeat the path summary. -->
-              <div class="flex items-center gap-2">
-                <FolderOpen :size="15" class="shrink-0 text-accent" />
-                <select
-                  class="min-w-0 flex-1 rounded-[14px] bg-input px-3 py-2 text-sm text-primary focus:outline-none"
-                  :disabled="loading || loadingDocs || dirs.length === 0"
-                  :value="selectedDirPath"
-                  @change="handleDirChange"
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-sm font-medium text-primary">{{ t("page.chunks.dirSelector.label") }}</div>
+                <SeekMindBadge v-if="selectedDir" tone="default">
+                  {{ t("page.chunks.dirSelector.stats", { docs: selectedDir.docs, chunks: selectedDir.chunks }) }}
+                </SeekMindBadge>
+              </div>
+              <div class="max-h-[220px] overflow-y-auto pr-1">
+                <SeekMindIndexTree
+                  :rows="chunkDirRows"
+                  :selected-path="selectedDirPath"
+                  density="compact"
+                  :empty-text="t('page.chunks.empty.dirs')"
+                  @node-select="handleDirTreeSelect"
+                  @toggle="handleDirTreeToggle"
                 >
-                  <option value="" disabled>
-                    {{ t("page.chunks.dirSelector.placeholder") }}
-                  </option>
-                  <option v-for="dir in dirs" :key="dir.path" :value="dir.path">
-                    {{ formatDirectoryLabel(dir.path) }}
-                  </option>
-                </select>
+                  <template #label="{ row }">
+                    <span class="truncate">{{ row.displayName }}</span>
+                  </template>
+                </SeekMindIndexTree>
               </div>
             </div>
 
@@ -967,100 +1016,98 @@ watch(
         </template>
 
         <template #right>
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(248,248,250,0.92)] px-3 py-3">
-            <div class="shrink-0 mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div class="text-sm font-medium text-primary">{{ t("page.chunks.section.chunkDetail") }}</div>
-                <div class="mt-1 text-[12px] text-muted">
-                  {{ currentDocument?.file_name || t("page.chunks.selectDoc") }}
+        <section class="seekmind-pane-detail flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SeekMindDetailPanel v-if="currentDocument">
+            <template #header>
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-primary">{{ t("page.chunks.section.chunkDetail") }}</div>
+                  <div class="mt-1 text-[12px] text-muted">
+                    {{ currentDocument.file_name }}
+                  </div>
+                  <div class="mt-1 break-all text-[11px] text-dim">
+                    {{ currentDocument.path }}
+                  </div>
                 </div>
-                <div
-                  v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
-                  class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-                  :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                    ? 'border-emerald-soft bg-emerald-soft text-success'
-                    : refreshOutcomeTone(currentDocument.path) === 'warning'
-                      ? 'border-amber-soft bg-amber-soft text-warning'
-                      : refreshOutcomeTone(currentDocument.path) === 'danger'
-                        ? 'border-rose-soft bg-rose-soft text-danger'
-                        : 'border-default bg-panel text-secondary'"
-                >
-                  <Cpu :size="11" />
-                  {{ refreshOutcomeLabel(currentDocument.path) }}
-                </div>
-                <div
-                  v-if="currentDocumentRefreshWarning"
-                  class="mt-2 text-[11px] leading-5 text-warning"
-                >
-                  {{ currentDocumentRefreshWarning }}
+                <div class="flex items-center gap-2">
+                  <button
+                    class="seekmind-close-button"
+                    type="button"
+                    :title="t('common.close')"
+                    @click="closeCurrentDocument"
+                  >
+                    <X :size="13" stroke-width="2.25" />
+                  </button>
+                  <button
+                    class="inline-flex items-center gap-2 rounded-full bg-white/72 px-3 py-2 text-xs text-secondary hover:text-primary"
+                    :disabled="loading || !selectedDirPath"
+                    @click="void syncSelection()"
+                  >
+                    <RefreshCw :size="14" />
+                    {{ t("page.chunks.btn.refresh") }}
+                  </button>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <button
-                  v-if="currentDocument"
-                class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/72 text-secondary hover:text-primary"
-                  type="button"
-                  :title="t('common.close')"
-                  @click="closeCurrentDocument"
-                >
-                  <X :size="14" />
-                </button>
-                <button
-                class="inline-flex items-center gap-2 rounded-full bg-white/72 px-3 py-2 text-xs text-secondary hover:text-primary"
-                  :disabled="loading || !selectedDirPath"
-                  @click="void syncSelection()"
-                >
-                  <RefreshCw :size="14" />
-                  {{ t("page.chunks.btn.refresh") }}
-                </button>
+              <div
+                v-if="currentDocumentRefreshOutcome !== 'idle'"
+                class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                :class="refreshOutcomeTone(currentDocument.path) === 'success'
+                  ? 'border-emerald-soft bg-emerald-soft text-success'
+                  : refreshOutcomeTone(currentDocument.path) === 'warning'
+                    ? 'border-amber-soft bg-amber-soft text-warning'
+                    : refreshOutcomeTone(currentDocument.path) === 'danger'
+                      ? 'border-rose-soft bg-rose-soft text-danger'
+                      : 'border-default bg-panel text-secondary'"
+              >
+                <Cpu :size="11" />
+                {{ refreshOutcomeLabel(currentDocument.path) }}
               </div>
-            </div>
+              <div
+                v-if="currentDocumentRefreshWarning"
+                class="mt-2 text-[11px] leading-5 text-warning"
+              >
+                {{ currentDocumentRefreshWarning }}
+              </div>
+            </template>
 
-            <div class="shrink-0 mb-3">
-              <div class="rounded-[18px] bg-white/72 px-4 py-3">
-                <div class="text-sm font-medium text-primary">{{ currentDocument?.file_name || t("page.chunks.selectDoc") }}</div>
-                <div class="mt-1 break-all text-[11px] text-dim">
-                  {{ currentDocument?.path || t("page.chunks.selectDoc") }}
-                </div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  <SeekMindBadge v-if="currentDocument">{{ currentDocument.ext.toUpperCase() }}</SeekMindBadge>
-                  <SeekMindBadge v-if="currentDocument">{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</SeekMindBadge>
-                </div>
-<!-- action buttons moved to context menu -->
-                <div
-                  v-if="currentDocument && currentDocumentRefreshOutcome !== 'idle'"
-                  class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-                  :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                    ? 'border-emerald-soft bg-emerald-soft text-success'
-                    : refreshOutcomeTone(currentDocument.path) === 'warning'
-                      ? 'border-amber-soft bg-amber-soft text-warning'
-                      : refreshOutcomeTone(currentDocument.path) === 'danger'
-                        ? 'border-rose-soft bg-rose-soft text-danger'
-                        : 'border-default bg-panel text-secondary'"
-                >
-                  <Cpu :size="11" />
-                  {{ refreshOutcomeLabel(currentDocument.path) }}
-                </div>
-                <div
-                  v-if="currentDocumentRefreshWarning"
-                  class="mt-2 text-[11px] leading-5 text-warning"
-                >
-                  {{ currentDocumentRefreshWarning }}
-                </div>
-                <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
-                  {{ actionMessage }}
-                </div>
-                <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
-                  {{ actionErrorMessage }}
-                </div>
+            <SeekMindDetailSection :title="t('common.overview')" :subtitle="currentDocument.path">
+              <div class="flex flex-wrap gap-2">
+                <SeekMindBadge>{{ currentDocument.ext.toUpperCase() }}</SeekMindBadge>
+                <SeekMindBadge>{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</SeekMindBadge>
               </div>
-            </div>
+              <div class="grid gap-2 text-xs leading-5 text-muted">
+                <div>{{ t("page.chunks.titlePath") }}：{{ currentDocument.file_name }}</div>
+                <div>{{ t("page.chunks.detail.imagePreview") }}：{{ isImageDocument ? t("common.available") : t("common.unavailable") }}</div>
+              </div>
+            </SeekMindDetailSection>
 
-            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+            <SeekMindDetailSection :title="t('common.originalText')">
               <div v-if="loadingChunks" class="text-sm text-dim">{{ t("page.chunks.readingChunks") }}</div>
-              <div v-else-if="!currentDocument" class="rounded-[18px] bg-white/72 px-4 py-6 text-sm text-dim">
+              <div v-else-if="currentDocumentPreviewBlock" class="rounded-[18px] bg-white/72 p-3">
+                <SeekMindPreviewBlockRenderer :block="currentDocumentPreviewBlock" />
+              </div>
+              <div v-else-if="chunks.length > 0" class="rounded-[18px] bg-white/72 p-3">
+                <SeekMindMarkdownRenderer
+                  :block="{
+                    block_index: 0,
+                    block_type: 'paragraph',
+                    text: chunks[0].snippet,
+                    heading: chunks[0].title_path || chunks[0].heading,
+                    level: null,
+                    page: chunks[0].page ?? null,
+                    language: null,
+                    markdown: '',
+                    html: '',
+                  }"
+                />
+              </div>
+              <div v-else class="rounded-[18px] bg-white/72 px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.selectDocToView") }}
               </div>
+            </SeekMindDetailSection>
+
+            <SeekMindDetailSection :title="t('common.context')">
+              <div v-if="loadingChunks" class="text-sm text-dim">{{ t("page.chunks.readingChunks") }}</div>
               <div v-else-if="chunks.length === 0" class="rounded-[18px] bg-white/72 px-4 py-6 text-sm text-dim">
                 {{ t("page.chunks.empty.chunks") }}
               </div>
@@ -1108,8 +1155,19 @@ watch(
                   />
                 </div>
               </div>
+            </SeekMindDetailSection>
+
+            <div v-if="actionMessage" class="rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
+              {{ actionMessage }}
             </div>
-          </section>
+            <div v-if="actionErrorMessage" class="rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
+              {{ actionErrorMessage }}
+            </div>
+          </SeekMindDetailPanel>
+          <div v-else class="flex min-h-0 flex-1 items-center justify-center px-4 text-sm text-dim">
+            {{ t("page.chunks.empty.selectDocToView") }}
+          </div>
+        </section>
         </template>
       </SplitPane>
     </main>

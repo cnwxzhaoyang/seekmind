@@ -14,6 +14,8 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, BookMarked, ClipboardCopy, Clock, Eye, FileText, Files, Filter, FolderPlus, Link2, MessageSquareText, Search, SquareArrowOutUpRight, X } from "lucide-vue-next";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindDetailPanel from "../components/SeekMind/SeekMindDetailPanel.vue";
+import SeekMindDetailSection from "../components/SeekMind/SeekMindDetailSection.vue";
 import SeekMindCollectionPicker from "../components/SeekMind/SeekMindCollectionPicker.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
@@ -25,6 +27,7 @@ import SplitPane from "../components/SplitPane.vue";
 import { useQuickAccessData } from "../composables/useQuickAccessData";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { listenQaConfigUpdated } from "../utils/qaConfigEvents";
+import { emitQuickAccessUpdated } from "../utils/quickAccessEvents";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 
 const { t } = useI18n();
@@ -40,6 +43,7 @@ import type {
   SearchDebugReportEventView,
   SearchDebugView,
   SearchResultView,
+  PreviewBlockView,
 } from "../types/SeekMind";
 
 const route = useRoute();
@@ -206,12 +210,44 @@ const selectedChunk = computed(() => {
   return selectedDocumentChunks.value[selectedChunkIndex.value] ?? null;
 });
 
+const isImageExtension = (ext?: string | null) => {
+  const normalized = ext?.trim().toLowerCase().replace(/^\./, "") ?? "";
+  return Boolean(normalized && ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "heic"].includes(normalized));
+};
+
+const selectedImagePreviewBlock = computed<PreviewBlockView | null>(() => {
+  if (!selected.value || !isImageExtension(selected.value.ext)) {
+    return null;
+  }
+
+  // 修复：图片文件的搜索命中多为 OCR 文本，详情里额外补充原图，避免用户只能看到识别文本。
+  return {
+    block_index: -1,
+    block_type: "image",
+    text: selected.value.file_name,
+    heading: selected.value.file_name,
+    level: null,
+    page: null,
+    language: null,
+    markdown: "",
+    html: "",
+    asset_path: selected.value.path,
+    alt_text: selected.value.file_name,
+    caption: selected.value.path,
+    ocr_text: "",
+  };
+});
+
 const selectedPreviewBlocks = computed(() => {
   const chunkBlocks = selectedChunk.value?.preview_blocks ?? [];
+  const resultBlocks = selected.value?.preview_blocks ?? [];
+  if (selectedImagePreviewBlock.value) {
+    return [selectedImagePreviewBlock.value, ...(chunkBlocks.length > 0 ? chunkBlocks : resultBlocks)];
+  }
   if (chunkBlocks.length > 0) {
     return chunkBlocks;
   }
-  return selected.value?.preview_blocks ?? [];
+  return resultBlocks;
 });
 
 const qaSelectedPreviewBlocks = computed(() => qaSelectedSource.value?.preview_blocks ?? []);
@@ -892,6 +928,7 @@ const runSearch = async () => {
       clearSearchDebugReport();
     }
     await loadQuickAccessData();
+    emitQuickAccessUpdated("search");
   } catch (error) {
     results.value = [];
     selectedResultClosed.value = false;
@@ -904,6 +941,7 @@ const runSearch = async () => {
       clearSearchDebugReport();
     }
     await loadQuickAccessData();
+    emitQuickAccessUpdated("search-error");
   } finally {
     loading.value = false;
   }
@@ -1256,7 +1294,7 @@ watch(showDebugPanel, async (visible) => {
       <SplitPane :panels="splitPanels">
         <template #center>
           <!-- 修复：搜索面板改为扁平化结构，减少卡片边框和分割线层级。 -->
-          <section class="flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
+          <section class="seekmind-pane-center flex min-h-0 flex-1 flex-col overflow-hidden">
             <div class="space-y-3 px-4 pt-2 pb-3">
               <form
                 v-if="!qaMode"
@@ -1525,10 +1563,10 @@ watch(showDebugPanel, async (visible) => {
         </template>
 
         <template #right>
-          <aside class="min-h-0 flex-1 overflow-y-auto bg-panel/70 px-5 py-4">
-            <div v-if="!qaMode && selected" class="seekmind-detail">
-              <div class="seekmind-detail-block py-0">
-                <div class="flex items-center justify-between gap-3">
+          <aside class="seekmind-pane-detail flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <SeekMindDetailPanel v-if="!qaMode && selected">
+              <template #header>
+                <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
                     <div class="truncate text-base font-semibold leading-6 text-primary" :title="selected.file_name">
                       {{ selected.file_name }}
@@ -1542,40 +1580,43 @@ watch(showDebugPanel, async (visible) => {
                       {{ selected.ext.toUpperCase() }}
                     </div>
                     <button
-                      class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                      class="seekmind-close-button"
                       type="button"
                       :title="t('common.close')"
                       @click="closeSelectedResult"
                     >
-                      <X :size="14" />
+                      <X :size="13" stroke-width="2.25" />
                     </button>
                   </div>
                 </div>
-                <div v-if="selectedTitlePath" class="seekmind-detail-kv mt-2" :title="selectedTitlePath">
-                  <div class="seekmind-detail-kv-label">
+                <div v-if="selectedTitlePath" class="mt-2" :title="selectedTitlePath">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
                     {{ t("page.appSearch.detail.titlePath") }}
                   </div>
-                  <div class="seekmind-detail-kv-value">
+                  <div class="mt-1 text-sm leading-6 text-primary">
                     {{ selectedTitlePath }}
                   </div>
                 </div>
-              </div>
+              </template>
 
-              <div class="seekmind-detail-block flex flex-wrap gap-1.5 py-2.5">
-                <SeekMindBadge>{{ selected.ext.toUpperCase() }}</SeekMindBadge>
-                <SeekMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</SeekMindBadge>
-                <SeekMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</SeekMindBadge>
-                <SeekMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</SeekMindBadge>
-                <SeekMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</SeekMindBadge>
-                <SeekMindBadge tone="default">{{ selectedChunkPositionLabel }}</SeekMindBadge>
-                <SeekMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? "..." }) }}</SeekMindBadge>
-                <SeekMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</SeekMindBadge>
-              </div>
+              <SeekMindDetailSection :title="t('common.overview')" :subtitle="selectedCitation">
+                <div class="flex flex-wrap gap-1.5">
+                  <SeekMindBadge>{{ selected.ext.toUpperCase() }}</SeekMindBadge>
+                  <SeekMindBadge>{{ selected.page ? t("searchResultCard.page", { page: selected.page }) : t("searchResultCard.paragraph", { para: selected.paragraph }) }}</SeekMindBadge>
+                  <SeekMindBadge v-if="selected.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selected.page }) }}</SeekMindBadge>
+                  <SeekMindBadge tone="success">{{ t("searchResultCard.matchField", { field: matchedFieldLabel }) }}</SeekMindBadge>
+                  <SeekMindBadge tone="default">{{ selected.snippet_window_start }}-{{ selected.snippet_window_end }} / {{ selected.snippet_source_len }}</SeekMindBadge>
+                  <SeekMindBadge tone="default">{{ selectedChunkPositionLabel }}</SeekMindBadge>
+                  <SeekMindBadge tone="default">{{ t("page.appSearch.detail.chunkCount", { count: selectedChunkCount ?? '...' }) }}</SeekMindBadge>
+                  <SeekMindBadge tone="default"><Clock class="mr-1 inline" :size="12" />{{ selected.modified }}</SeekMindBadge>
+                </div>
+                <div class="rounded-[14px] bg-white/70 px-3 py-3 text-sm leading-6 text-secondary">
+                  {{ selected.rank_reason.summary || selected.rank_reason.match_origin || selected.match_origin || t('common.none') }}
+                </div>
+                <!-- 修复：命中原因摘要已经包含 boosts 的信息，这里不再重复展开同一组标签，避免视觉上像重复命中。 -->
+              </SeekMindDetailSection>
 
-              <!-- 修复：右侧命中详情不再重复展示文件操作，统一交给结果列表右键菜单承载，避免同一动作出现两个入口。 -->
-
-              <div class="seekmind-detail-block">
-                <div class="seekmind-detail-title">{{ t("page.appSearch.detail.hitParagraph") }}</div>
+              <SeekMindDetailSection :title="t('common.originalText')">
                 <div v-if="selectedPreviewBlocks.length > 0" class="space-y-2">
                   <SeekMindPreviewBlockRenderer
                     v-for="block in selectedPreviewBlocks"
@@ -1600,10 +1641,9 @@ watch(showDebugPanel, async (visible) => {
                   :highlight-text="selected.snippet"
                   :highlight-spans="selected.highlight_spans"
                 />
-              </div>
+              </SeekMindDetailSection>
 
-              <div class="seekmind-detail-block">
-                <div class="seekmind-detail-title">{{ t("page.appSearch.detail.contextPreview") }}</div>
+              <SeekMindDetailSection :title="t('common.context')">
                 <div v-if="selectedChunk" class="space-y-3">
                   <div
                     v-for="item in selectedContextChunks"
@@ -1647,7 +1687,7 @@ watch(showDebugPanel, async (visible) => {
                       />
                     </div>
                     <div class="seekmind-item-meta mt-1">
-                      {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? "-" }) }}
+                      {{ item.chunk?.page ? t("page.appSearch.detail.pdfPage", { page: item.chunk.page }) : t("searchResultCard.paragraph", { para: item.chunk?.paragraph ?? '-' }) }}
                     </div>
                   </div>
                 </div>
@@ -1655,38 +1695,42 @@ watch(showDebugPanel, async (visible) => {
                   {{ t("page.appSearch.detail.noContext") }}
                 </div>
                 <p class="seekmind-item-meta mt-3">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
-              </div>
+              </SeekMindDetailSection>
 
-              <div v-if="actionMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
+              <div v-if="actionMessage" class="rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
                 {{ actionMessage }}
               </div>
-              <div v-if="actionErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
+              <div v-if="actionErrorMessage" class="rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
                 {{ actionErrorMessage }}
               </div>
-            </div>
+            </SeekMindDetailPanel>
 
-            <div v-else-if="qaMode && qaSelectedSource" class="seekmind-detail">
-              <div class="mb-4 rounded-lg border border-default bg-panel p-4">
+            <SeekMindDetailPanel v-else-if="qaMode && qaSelectedSource">
+              <template #header>
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="text-lg font-semibold text-primary">{{ qaSelectedSource.file_name }}</div>
-                    <div class="mt-1 break-all text-xs text-muted">{{ qaSelectedSource.path }}</div>
+                    <div class="truncate text-base font-semibold leading-6 text-primary" :title="qaSelectedSource.file_name">
+                      {{ qaSelectedSource.file_name }}
+                    </div>
+                    <div class="mt-0.5 truncate text-xs leading-5 text-muted" :title="qaSelectedSource.path">
+                      {{ qaSelectedSource.path }}
+                    </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <div class="seekmind-file-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface text-[11px] font-semibold text-secondary">
+                    <div class="seekmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
                       {{ qaSelectedSource.ext.toUpperCase() }}
                     </div>
                     <button
-                      class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover hover:text-primary"
+                      class="seekmind-close-button"
                       type="button"
                       :title="t('common.close')"
                       @click="closeSelectedQaSource"
                     >
-                      <X :size="14" />
+                      <X :size="13" stroke-width="2.25" />
                     </button>
                   </div>
                 </div>
-                <div v-if="qaSelectedTitlePath" class="mt-3 rounded-md border border-default bg-surface px-3 py-2">
+                <div v-if="qaSelectedTitlePath" class="mt-2" :title="qaSelectedTitlePath">
                   <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
                     {{ t("page.appSearch.detail.titlePath") }}
                   </div>
@@ -1694,17 +1738,23 @@ watch(showDebugPanel, async (visible) => {
                     {{ qaSelectedTitlePath }}
                   </div>
                 </div>
-              </div>
+              </template>
 
-              <div class="mb-4 flex flex-wrap gap-2">
-                <SeekMindBadge>{{ qaSelectedSource.ext.toUpperCase() }}</SeekMindBadge>
-                <SeekMindBadge>{{ qaSelectedSource.page ? t("searchResultCard.page", { page: qaSelectedSource.page }) : t("searchResultCard.paragraph", { para: qaSelectedSource.paragraph }) }}</SeekMindBadge>
-                <SeekMindBadge v-if="qaSelectedSource.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: qaSelectedSource.page }) }}</SeekMindBadge>
-                <SeekMindBadge tone="success">{{ t("page.appSearch.qa.sourceId", { id: qaSelectedSource.source_id }) }}</SeekMindBadge>
-              </div>
+              <SeekMindDetailSection :title="t('common.overview')" :subtitle="qaSelectedCitation">
+                <div class="flex flex-wrap gap-1.5">
+                  <SeekMindBadge>{{ qaSelectedSource.ext.toUpperCase() }}</SeekMindBadge>
+                  <SeekMindBadge>{{ qaSelectedSource.page ? t("searchResultCard.page", { page: qaSelectedSource.page }) : t("searchResultCard.paragraph", { para: qaSelectedSource.paragraph }) }}</SeekMindBadge>
+                  <SeekMindBadge v-if="qaSelectedSource.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: qaSelectedSource.page }) }}</SeekMindBadge>
+                  <SeekMindBadge tone="success">{{ t("page.appSearch.qa.sourceId", { id: qaSelectedSource.source_id }) }}</SeekMindBadge>
+                  <SeekMindBadge tone="default">{{ qaAnswer?.retrieval.search_mode || t("common.none") }}</SeekMindBadge>
+                  <SeekMindBadge tone="default">{{ qaAnswer?.retrieval.selected_count ?? 0 }}/{{ qaAnswer?.retrieval.candidate_count ?? 0 }}</SeekMindBadge>
+                </div>
+                <div class="rounded-[14px] bg-white/70 px-3 py-3 text-sm leading-6 text-secondary">
+                  {{ qaSelectedSource.rank_reason || t('common.none') }}
+                </div>
+              </SeekMindDetailSection>
 
-              <div class="mb-4 rounded-lg border border-default bg-surface p-4">
-                <div class="mb-2 text-sm font-medium text-secondary">{{ t("page.appSearch.qa.sourceSnippet") }}</div>
+              <SeekMindDetailSection :title="t('common.originalText')">
                 <div v-if="qaSelectedPreviewBlocks.length > 0" class="space-y-2">
                   <SeekMindPreviewBlockRenderer
                     v-for="block in qaSelectedPreviewBlocks"
@@ -1712,21 +1762,23 @@ watch(showDebugPanel, async (visible) => {
                     :block="block"
                   />
                 </div>
-                <div v-else class="whitespace-pre-wrap text-sm leading-7 text-primary">
+                <div v-else class="whitespace-pre-wrap rounded-[14px] bg-white/78 px-3 py-3 text-sm leading-7 text-primary">
                   {{ qaSelectedSource.snippet }}
                 </div>
-                <p class="seekmind-item-meta mt-3">{{ qaSelectedSource.rank_reason }}</p>
-              </div>
+              </SeekMindDetailSection>
 
-              <div class="mt-4 rounded-lg border border-default bg-surface p-4">
-                <div class="seekmind-section-label">{{ t("page.appSearch.qa.sourceMeta") }}</div>
-                <div class="mt-1 seekmind-metric-value text-primary">{{ qaSelectedCitation || t("common.none") }}</div>
-                <div class="mt-1 seekmind-item-meta">
-                  {{ qaAnswer?.retrieval.search_mode || t("common.none") }} · {{ qaAnswer?.retrieval.selected_count ?? 0 }}/{{ qaAnswer?.retrieval.candidate_count ?? 0 }}
+              <SeekMindDetailSection :title="t('common.context')">
+                <div class="grid gap-2 text-sm leading-6 text-secondary">
+                  <div>
+                    {{ t("page.appSearch.qa.sourceMeta") }}：{{ qaSelectedCitation || t("common.none") }}
+                  </div>
+                  <div>
+                    {{ t("common.matchReason") }}：{{ qaSelectedSource.rank_reason || t("common.none") }}
+                  </div>
                 </div>
-              </div>
+              </SeekMindDetailSection>
 
-              <div class="mt-4 flex flex-wrap gap-2">
+              <div class="flex flex-wrap gap-2">
                 <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="openSelectedQaFile">
                   {{ t("page.appSearch.detail.openFile") }}
                 </button>
@@ -1743,7 +1795,7 @@ watch(showDebugPanel, async (visible) => {
                   {{ t("page.appSearch.detail.copyCitation") }}
                 </button>
               </div>
-            </div>
+            </SeekMindDetailPanel>
 
             <div v-else class="rounded-lg border border-dashed border-default bg-surface p-6 text-sm text-muted">
               {{ qaMode ? t("page.appSearch.qa.noSourceSelected") : t("page.appSearch.noResults") }}

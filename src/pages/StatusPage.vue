@@ -1748,7 +1748,9 @@ onBeforeUnmount(() => {
 .panel-scroll {
   min-height: 0;
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 12px 16px 16px;
 }
 
@@ -1758,6 +1760,10 @@ onBeforeUnmount(() => {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
 }
 
 .left-panel,
@@ -1766,12 +1772,25 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  height: 100%;
+}
+
+.left-panel {
+  overflow: hidden;
+}
+
+.right-panel {
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* 左侧目录卡需要随列高拉伸，目录过多时仅在卡片内部滚动，避免整页高度继续膨胀。 */
 .left-panel > .info-card-large {
   flex: 1;
   min-height: 0;
+  height: 100%;
+  align-self: stretch;
+  overflow: hidden;
 }
 
 /* 卡片通用 */
@@ -2299,6 +2318,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  max-height: 100%;
 }
 
 .dir-tree-toolbar {
@@ -2315,6 +2337,7 @@ onBeforeUnmount(() => {
 .dir-list {
   flex: 1;
   min-height: 0;
+  max-height: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2687,8 +2710,26 @@ html.dark .index-status-panel .last-update {
 
 /* 响应式 */
 @media (max-width: 1400px) {
+  .panel-scroll {
+    overflow-y: auto;
+  }
   .panel-content {
     grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  .left-panel,
+  .right-panel {
+    height: auto;
+    overflow: visible;
+  }
+  .left-panel > .info-card-large,
+  .info-card-large {
+    height: auto;
+    max-height: none;
+  }
+  .dir-list {
+    max-height: 520px;
   }
 }
 

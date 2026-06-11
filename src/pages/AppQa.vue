@@ -31,6 +31,8 @@ import {
   ChevronRight,
 } from "lucide-vue-next";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
+import SeekMindDetailPanel from "../components/SeekMind/SeekMindDetailPanel.vue";
+import SeekMindDetailSection from "../components/SeekMind/SeekMindDetailSection.vue";
 import SeekMindCollectionPicker from "../components/SeekMind/SeekMindCollectionPicker.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
@@ -1296,7 +1298,7 @@ watch(routeSessionId, async (next, previous) => {
       </template>
 
       <template #center>
-        <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(255,255,255,0.72)]">
+        <section class="seekmind-pane-center flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div class="flex items-center justify-between gap-3 px-4 py-2">
             <div class="text-xs font-medium text-dim">
               {{ currentSession ? currentSession.title : t("page.appQa.currentSessionEmpty") }}
@@ -1519,62 +1521,96 @@ watch(routeSessionId, async (next, previous) => {
       </template>
 
       <template #right>
-        <aside v-if="selectedSource" class="flex h-full min-h-0 flex-col overflow-hidden bg-[rgba(246,247,249,0.88)]">
-          <div class="px-4 py-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="mt-1 truncate text-sm font-medium text-primary">{{ selectedSource.file_name }}</div>
-                <div class="mt-1 break-all text-xs text-muted">{{ selectedSource.path }}</div>
-              </div>
-              <div class="flex items-center gap-2">
-                <SeekMindBadge tone="default">{{ selectedSource.source_id }}</SeekMindBadge>
-                <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/70 text-secondary hover:bg-surface-hover hover:text-primary"
-                  type="button"
-                  :title="t('common.close')"
-                  @click="closeSelectedSource"
-                >
-                  <X :size="14" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="min-h-0 flex-1 overflow-y-auto space-y-4 px-4 pb-4">
-            <div class="rounded-[18px] bg-white/84 px-3 py-3">
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex shrink-0 items-center gap-1.5">
-                  <SeekMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</SeekMindBadge>
-                  <SeekMindBadge tone="default">
-                    {{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}
-                  </SeekMindBadge>
+        <aside v-if="selectedSource" class="seekmind-pane-detail flex h-full min-h-0 flex-col overflow-hidden">
+          <SeekMindDetailPanel>
+            <template #header>
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-base font-semibold leading-6 text-primary" :title="selectedSource.file_name">{{ selectedSource.file_name }}</div>
+                  <div class="mt-0.5 break-all text-xs leading-5 text-muted" :title="selectedSource.path">{{ selectedSource.path }}</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <SeekMindBadge tone="default">{{ selectedSource.source_id }}</SeekMindBadge>
+                  <button
+                    class="seekmind-close-button"
+                    type="button"
+                    :title="t('common.close')"
+                    @click="closeSelectedSource"
+                  >
+                    <X :size="13" stroke-width="2.25" />
+                  </button>
                 </div>
               </div>
-              <div class="mt-2 truncate rounded-full bg-white/70 px-3 py-1.5 text-xs leading-5 text-secondary" :title="selectedSourceCitation">
-                {{ selectedSourceCitation || t("common.none") }}
+              <div v-if="selectedSourceTitlePath" class="mt-2" :title="selectedSourceTitlePath">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-dim">
+                  {{ t("page.appSearch.detail.titlePath") }}
+                </div>
+                <div class="mt-1 text-sm leading-6 text-primary">
+                  {{ selectedSourceTitlePath }}
+                </div>
               </div>
-            </div>
+            </template>
 
-            <div class="rounded-[18px] bg-[rgba(244,246,249,0.82)] p-4">
-              <div v-if="loadingSelectedSourcePreview && selectedSourcePreviewBlocks.length === 0" class="mt-3 rounded-[14px] bg-white/70 px-3 py-3 text-sm text-muted">
+            <SeekMindDetailSection :title="t('common.overview')" :subtitle="selectedSourceCitation">
+              <div class="flex flex-wrap gap-1.5">
+                <SeekMindBadge tone="default">{{ selectedSource.ext.toUpperCase() }}</SeekMindBadge>
+                <SeekMindBadge tone="default">
+                  {{ selectedSource.page ? t("searchResultCard.page", { page: selectedSource.page }) : t("searchResultCard.paragraph", { para: selectedSource.paragraph ?? 0 }) }}
+                </SeekMindBadge>
+                <SeekMindBadge v-if="selectedSource.page" tone="default">{{ t("page.appSearch.detail.pdfPage", { page: selectedSource.page }) }}</SeekMindBadge>
+                <SeekMindBadge tone="success">{{ t("page.appSearch.qa.sourceId", { id: selectedSource.source_id }) }}</SeekMindBadge>
+              </div>
+              <div class="rounded-[14px] bg-white/70 px-3 py-3 text-sm leading-6 text-secondary">
+                {{ qaAnswer?.retrieval.search_mode || t("common.none") }} · {{ qaAnswer?.retrieval.selected_count ?? 0 }}/{{ qaAnswer?.retrieval.candidate_count ?? 0 }}
+              </div>
+              <div class="rounded-[14px] bg-white/70 px-3 py-3 text-sm leading-6 text-secondary">
+                {{ selectedSource.rank_reason || t("common.none") }}
+              </div>
+            </SeekMindDetailSection>
+
+            <SeekMindDetailSection :title="t('common.originalText')">
+              <div v-if="loadingSelectedSourcePreview && selectedSourcePreviewBlocks.length === 0" class="rounded-[14px] bg-white/70 px-3 py-3 text-sm text-muted">
                 {{ t("common.loading") }}
               </div>
-              <div v-else-if="selectedSourcePreviewBlocks.length > 0" class="mt-3 space-y-2">
+              <div v-else-if="selectedSourcePreviewBlocks.length > 0" class="space-y-2">
                 <SeekMindPreviewBlockRenderer
                   v-for="block in selectedSourcePreviewBlocks"
                   :key="block.block_index"
                   :block="block"
                 />
               </div>
-              <div v-else class="mt-3 whitespace-pre-wrap rounded-[14px] bg-white/78 px-3 py-3 text-sm leading-7 text-secondary">
+              <div v-else class="whitespace-pre-wrap rounded-[14px] bg-white/78 px-3 py-3 text-sm leading-7 text-secondary">
                 {{ selectedSource.snippet }}
               </div>
-              <p class="seekmind-item-meta mt-3">{{ selectedSource.rank_reason }}</p>
-            </div>
+            </SeekMindDetailSection>
 
-          </div>
+            <SeekMindDetailSection :title="t('common.context')">
+              <div class="grid gap-2 text-sm leading-6 text-secondary">
+                <div>{{ t("page.appSearch.qa.sourceMeta") }}：{{ selectedSourceCitation || t("common.none") }}</div>
+                <div>{{ t("common.matchReason") }}：{{ selectedSource.rank_reason || t("common.none") }}</div>
+              </div>
+            </SeekMindDetailSection>
+
+            <div class="flex flex-wrap gap-2">
+              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="openSelectedQaFile">
+                {{ t("page.appSearch.detail.openFile") }}
+              </button>
+              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="viewQaChunks">
+                {{ t("page.appSearch.detail.viewChunks") }}
+              </button>
+              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="quickLookSelectedQaFile">
+                {{ t("page.appSearch.detail.quickLook") }}
+              </button>
+              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaPath">
+                {{ t("page.appSearch.detail.copyPath") }}
+              </button>
+              <button class="rounded-md border border-default bg-surface px-3 py-2 text-xs text-secondary hover:bg-surface-hover" @click="copySelectedQaCitation">
+                {{ t("page.appSearch.detail.copyCitation") }}
+              </button>
+            </div>
+          </SeekMindDetailPanel>
         </aside>
-        <aside v-else class="flex h-full min-h-0 items-center justify-center bg-[rgba(246,247,249,0.88)] px-4 text-center text-xs text-muted">
+        <aside v-else class="seekmind-pane-detail flex h-full min-h-0 items-center justify-center px-4 text-center text-xs text-muted">
           {{ qaMessages.length ? t("page.appQa.noSourceSelected") : t("page.appQa.noSourceYet") }}
         </aside>
       </template>

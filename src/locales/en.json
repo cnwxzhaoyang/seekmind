@@ -15,6 +15,10 @@
     "rebuild": "Rebuild",
     "reindex": "Re-index",
     "close": "Close",
+    "overview": "Overview",
+    "originalText": "Original Text",
+    "context": "Context",
+    "matchReason": "Why It Matched",
     "openFile": "Open File",
     "viewChunks": "View Chunks",
     "open": "Open",
@@ -442,6 +446,9 @@
         "indexDirs": "Index Directories",
         "docList": "Documents",
         "chunkDetail": "Chunk Details"
+      },
+      "detail": {
+        "imagePreview": "Image Preview"
       },
       "selectDir": "Select an index directory",
       "selectDoc": "Select a document",
@@ -1079,6 +1086,7 @@
     "scoreTitle": "Title {score}",
     "scoreFilename": "Filename {score}",
     "scorePreference": "Preference {score}",
+    "matchScore": "Relevance {score}",
     "rankChange": "Rank {original} -> {final} (delta {delta})"
   },
 
@@ -1088,7 +1096,8 @@
     "openFirst": "Open First",
     "docGroup": "Document Group",
     "hitSnippets": "{count} hit fragments",
-    "totalScore": "Score {score}%",
+    "matchScore": "Relevance {score}",
+    "totalScore": "Score {score}",
     "score": "{score}%",
     "segments": "{count} segments"
   },

@@ -101,7 +101,10 @@ const emitContextMenu = (event: MouseEvent) => {
               </div>
             </div>
             <div class="text-right text-[11px] text-muted">
-              <div class="font-medium text-secondary">{{ Math.round(group.topResult.score * 100) }}%</div>
+              <!-- 修复：分组顶部展示的是文档级相关度分，不是百分比。 -->
+              <div class="font-medium text-secondary">
+                {{ t("searchResultGroupCard.matchScore", { score: group.topResult.score.toFixed(2) }) }}
+              </div>
               <div class="mt-1">{{ t("searchResultGroupCard.segments", { count: group.count }) }}</div>
             </div>
           </div>
@@ -113,7 +116,7 @@ const emitContextMenu = (event: MouseEvent) => {
           <span>·</span>
           <span>{{ t("searchResultGroupCard.hitSnippets", { count: group.count }) }}</span>
           <span>·</span>
-          <span>{{ t("searchResultGroupCard.totalScore", { score: Math.round(group.totalScore * 100) }) }}</span>
+          <span>{{ t("searchResultGroupCard.totalScore", { score: group.totalScore.toFixed(2) }) }}</span>
         </div>
 
         <div class="mt-2 text-sm leading-6 text-secondary">
@@ -126,7 +129,7 @@ const emitContextMenu = (event: MouseEvent) => {
             <SeekMindBadge>{{ group.ext.toUpperCase() }}</SeekMindBadge>
             <span>{{ t("searchResultGroupCard.segments", { count: group.count }) }}</span>
             <span>·</span>
-            <span>{{ t("searchResultGroupCard.totalScore", { score: Math.round(group.totalScore * 100) }) }}</span>
+            <span>{{ t("searchResultGroupCard.totalScore", { score: group.totalScore.toFixed(2) }) }}</span>
             <span>·</span>
             <span>{{ t("searchResultCard.rankReason") }}: {{ group.topResult.rank_reason.summary || t("common.none") }}</span>
           </div>

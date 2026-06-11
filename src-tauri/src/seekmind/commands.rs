@@ -439,10 +439,23 @@ pub async fn search_documents(
         return Err("全文索引正在修复，请稍后再搜索".to_string());
     }
 
-    state
+    let results = state
         .search_documents(&query, limit)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    // 修复：普通搜索也必须记录历史，侧栏最近搜索依赖 search_history 表刷新。
+    state
+        .record_search_history(&query, results.len())
+        .await
+        .map_err(|error| error.to_string())?;
+    eprintln!(
+        "[SeekMind] search history recorded query='{}' hits={}",
+        query,
+        results.len()
+    );
+
+    Ok(results)
 }
 
 async fn build_search_debug_report(
