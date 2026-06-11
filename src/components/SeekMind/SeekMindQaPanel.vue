@@ -399,7 +399,7 @@ onMounted(async () => {
                 <div class="relative">
                   <select
                     v-model="providerMode"
-                    class="w-full appearance-none rounded-lg border border-default bg-input px-4 py-2.5 pr-10 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                    class="seekmind-select w-full px-4 py-2.5 pr-10 text-sm outline-none transition"
                   >
                     <option v-for="option in providerPresets" :key="option" :value="option">
                       {{ providerLabel(option) }}

@@ -1474,7 +1474,7 @@ watch(routeSessionId, async (next, previous) => {
               <div class="flex items-center gap-2">
                 <select
                   v-model="qaProfileChoice"
-                  class="min-w-0 flex-1 rounded-full bg-white px-3 py-2 text-[12px] text-secondary outline-none"
+                  class="seekmind-select min-w-0 flex-1 rounded-full px-3 py-2 text-[12px] text-secondary outline-none"
                 >
                   <option value="__current__">
                     {{ t("page.appQa.defaultModelOption", { model: qaCurrentModelLabel }) }}

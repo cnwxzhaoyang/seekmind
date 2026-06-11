@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
           <div class="mb-1.5 seekmind-section-label">{{ t("semantic.defaultModel") }}</div>
           <select
             v-model="selectedEmbeddingModelId"
-            class="w-full rounded-lg border border-default bg-input px-4 py-2.5 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+            class="seekmind-select w-full px-4 py-2.5 text-sm outline-none transition"
           >
             <option v-for="model in embeddingModels" :key="model.id" :value="model.id">
               {{ model.name }} · {{ model.provider }} · {{ t("semantic.dimension", { dim: model.dimension }) }}

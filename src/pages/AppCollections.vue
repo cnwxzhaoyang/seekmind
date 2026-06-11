@@ -801,7 +801,7 @@ onActivated(async () => {
                 v-for="collection in filteredCollections"
                 :key="collection.id"
                 class="seekmind-elevated-card rounded-[14px] px-3 py-2.5 transition"
-                :class="selectedCollectionId === collection.id ? 'bg-[rgba(0,122,255,0.12)]' : 'bg-white/72 hover:bg-white/90'"
+                :class="selectedCollectionId === collection.id ? 'seekmind-card-selected' : 'bg-white/72 hover:bg-white/90'"
                 @click="selectCollection(collection)"
                 @contextmenu.prevent="openCollectionMenu(collection, $event)"
               >
@@ -900,7 +900,7 @@ onActivated(async () => {
                     v-for="tag in availableItemTagFilters"
                     :key="tag.id"
                     class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition"
-                    :class="itemTagFilter === tag.id ? 'bg-[rgba(0,122,255,0.12)] text-primary' : 'bg-white/72 text-secondary hover:bg-white/90 hover:text-primary'"
+                    :class="itemTagFilter === tag.id ? 'seekmind-card-selected text-primary' : 'bg-white/72 text-secondary hover:bg-white/90 hover:text-primary'"
                     type="button"
                     @click="toggleItemTagFilter(tag.id)"
                   >
@@ -917,7 +917,7 @@ onActivated(async () => {
                 v-for="item in filteredCollectionItems"
                 :key="item.id"
                 class="seekmind-elevated-card cursor-pointer rounded-[18px] p-3 transition"
-                :class="selectedItemId === item.id ? 'bg-[rgba(0,122,255,0.12)]' : 'bg-white/72 hover:bg-white/90'"
+                :class="selectedItemId === item.id ? 'seekmind-card-selected' : 'bg-white/72 hover:bg-white/90'"
                 @click="selectItem(item)"
                 @contextmenu.prevent="openItemMenu(item, $event)"
               >
