@@ -23,6 +23,7 @@ import SeekMindHighlightedText from "../components/SeekMind/SeekMindHighlightedT
 import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRenderer.vue";
 import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreviewBlockRenderer.vue";
 import SeekMindSearchResultGroupCard from "../components/SeekMind/SeekMindSearchResultGroupCard.vue";
+import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { useQuickAccessData } from "../composables/useQuickAccessData";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
@@ -1425,9 +1426,7 @@ watch(showDebugPanel, async (visible) => {
                 <div v-if="debugReportLoading" class="mt-3 rounded-md border border-dashed border-default bg-surface px-3 py-3 text-muted">
                   {{ t("page.appSearch.debug.loading") }}
                 </div>
-                <div v-else-if="debugReportError" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-3 py-3 text-danger">
-                  {{ debugReportError }}
-                </div>
+                <SeekMindToast v-else-if="debugReportError" :message="debugReportError" tone="error" />
                 <div v-else-if="debugReport" class="mt-3 space-y-3">
                   <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     <div class="rounded-md border border-default bg-surface px-3 py-2">
@@ -1455,9 +1454,7 @@ watch(showDebugPanel, async (visible) => {
                 </div>
               </div>
 
-              <div v-if="!qaMode && errorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
-                {{ errorMessage }}
-              </div>
+              <SeekMindToast v-if="!qaMode && errorMessage" :message="errorMessage" tone="error" />
 
               <template v-if="!qaMode">
                 <div v-if="!results.length && !loading" class="m-4 rounded-md border border-dashed border-transparent bg-transparent px-4 py-6 text-center text-xs text-muted">
@@ -1482,12 +1479,8 @@ watch(showDebugPanel, async (visible) => {
               </template>
 
               <template v-else>
-                <div v-if="qaErrorMessage" class="m-4 rounded-md border border-transparent bg-danger-soft px-4 py-3 text-sm text-danger">
-                  {{ qaErrorMessage }}
-                </div>
-                <div v-if="qaInfoMessage" class="m-4 rounded-md border border-transparent bg-emerald-soft px-4 py-3 text-sm text-success">
-                  {{ qaInfoMessage }}
-                </div>
+                <SeekMindToast v-if="qaErrorMessage" :message="qaErrorMessage" tone="error" />
+                <SeekMindToast v-if="qaInfoMessage" :message="qaInfoMessage" tone="success" />
                 <div v-if="qaLoading && qaMessages.length === 0" class="m-4 rounded-md border border-transparent bg-transparent px-4 py-6 text-center text-xs text-muted">
                   {{ t("page.appSearch.qa.loading") }}
                 </div>
@@ -1697,12 +1690,8 @@ watch(showDebugPanel, async (visible) => {
                 <p class="seekmind-item-meta mt-3">{{ t("page.appSearch.detail.snippetSource", { start: selected.snippet_window_start, end: selected.snippet_window_end, length: selected.snippet_source_len }) }}</p>
               </SeekMindDetailSection>
 
-              <div v-if="actionMessage" class="rounded-md border border-emerald-soft bg-emerald-soft px-3 py-2 text-xs text-success">
-                {{ actionMessage }}
-              </div>
-              <div v-if="actionErrorMessage" class="rounded-md border border-danger-soft bg-danger-soft px-3 py-2 text-xs text-danger">
-                {{ actionErrorMessage }}
-              </div>
+              <SeekMindToast v-if="actionMessage" :message="actionMessage" tone="success" />
+              <SeekMindToast v-if="actionErrorMessage" :message="actionErrorMessage" tone="error" />
             </SeekMindDetailPanel>
 
             <SeekMindDetailPanel v-else-if="qaMode && qaSelectedSource">

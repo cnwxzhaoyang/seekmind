@@ -13,6 +13,7 @@ import SeekMindConfirmDialog from "../components/SeekMind/SeekMindConfirmDialog.
 import SeekMindQaPanel from "../components/SeekMind/SeekMindQaPanel.vue";
 import SeekMindSemanticPanel from "../components/SeekMind/SeekMindSemanticPanel.vue";
 import SeekMindUpdatePanel from "../components/SeekMind/SeekMindUpdatePanel.vue";
+import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
 import { setLocale as setI18nLocale } from "../i18n";
@@ -416,13 +417,8 @@ onBeforeUnmount(() => {
     </header>
 
     <main ref="mainScrollEl" class="settings-prototype-main min-h-0 flex-1 overflow-y-auto p-4">
-      <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
-        {{ errorMessage }}
-      </div>
-
-      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
-        {{ infoMessage }}
-      </div>
+      <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
+      <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
 
       <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-6 text-xs text-muted">
         {{ t("page.settings.loading") }}
@@ -830,18 +826,8 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="space-y-5 p-4">
-              <div
-                v-if="networkErrorMessage"
-                class="rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger"
-              >
-                {{ networkErrorMessage }}
-              </div>
-              <div
-                v-if="networkInfoMessage"
-                class="rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success"
-              >
-                {{ networkInfoMessage }}
-              </div>
+              <SeekMindToast v-if="networkErrorMessage" :message="networkErrorMessage" tone="error" />
+              <SeekMindToast v-if="networkInfoMessage" :message="networkInfoMessage" tone="success" />
 
               <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
                 <div>

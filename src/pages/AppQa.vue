@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
+import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import {
   Plus,
   X,
@@ -1312,9 +1313,7 @@ watch(routeSessionId, async (next, previous) => {
           </div>
 
           <div ref="qaChatScrollEl" class="relative min-h-0 flex-1 overflow-y-auto px-2" @scroll.passive="handleChatScroll">
-            <div v-if="qaErrorMessage" class="m-4 rounded-md border border-danger-soft bg-danger-soft px-4 py-3 text-sm text-danger">
-              {{ qaErrorMessage }}
-            </div>
+            <SeekMindToast v-if="qaErrorMessage" :message="qaErrorMessage" tone="error" />
             <div v-else-if="qaMessages.length" class="space-y-4 p-4">
               <article
                 v-for="(message, index) in qaMessages"

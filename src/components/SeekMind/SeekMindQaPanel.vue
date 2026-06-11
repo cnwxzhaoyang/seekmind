@@ -8,6 +8,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, ChevronDown, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
 import SeekMindBadge from "./SeekMindBadge.vue";
+import SeekMindToast from "./SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../../services/seekMindApi";
 import { useInfoMessage } from "../../composables/useInfoMessage";
 import { emitQaConfigUpdated } from "../../utils/qaConfigEvents";
@@ -382,13 +383,8 @@ onMounted(async () => {
     </div>
 
     <div class="settings-card-body space-y-4">
-      <div v-if="errorMessage" class="rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
-        {{ errorMessage }}
-      </div>
-
-      <div v-if="infoMessage" class="rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
-        {{ infoMessage }}
-      </div>
+      <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
+      <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
 
       <div v-if="loading" class="settings-empty-state">
         {{ t("common.loading") }}
@@ -560,12 +556,8 @@ onMounted(async () => {
                 <SeekMindBadge tone="default">{{ profiles.length }}</SeekMindBadge>
               </div>
 
-              <div v-if="profileErrorMessage" class="mt-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger">
-                {{ profileErrorMessage }}
-              </div>
-              <div v-if="profileMessage" class="mt-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success">
-                {{ profileMessage }}
-              </div>
+              <SeekMindToast v-if="profileErrorMessage" :message="profileErrorMessage" tone="error" />
+              <SeekMindToast v-if="profileMessage" :message="profileMessage" tone="success" />
 
               <div class="mt-2">
                 <div class="qa-connection-list-scroll">

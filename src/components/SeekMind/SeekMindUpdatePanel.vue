@@ -9,6 +9,7 @@ import { useI18n } from "vue-i18n";
 import { AlertTriangle, Download, RefreshCw, ShieldCheck } from "lucide-vue-next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import SeekMindBadge from "./SeekMindBadge.vue";
+import SeekMindToast from "./SeekMindToast.vue";
 import { formatSeekMindError, seekMindApi } from "../../services/seekMindApi";
 import type { AppRuntimeInfoView, UpdateCheckView } from "../../types/SeekMind";
 
@@ -129,19 +130,8 @@ onMounted(async () => {
     </div>
 
     <div class="space-y-5 p-4">
-      <div
-        v-if="errorMessage"
-        class="rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-xs text-danger"
-      >
-        {{ errorMessage }}
-      </div>
-
-      <div
-        v-if="infoMessage"
-        class="rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-xs text-success"
-      >
-        {{ infoMessage }}
-      </div>
+      <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
+      <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
 
       <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
         <div>

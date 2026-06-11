@@ -2,33 +2,30 @@
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/02
- * @Description 知识库页面，负责集合管理、最近访问和条目详情编辑。
+ * @Description 知识库页面，负责集合管理和条目详情编辑。
  */
 defineOptions({
   name: "AppCollectionsPage",
 });
 
 import { computed, onActivated, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
-import { BookMarked, ClipboardCopy, Eye, FileDown, FileText, Files, FolderPlus, Layers3, MessageSquareText, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
+import { BookMarked, ClipboardCopy, Eye, FileDown, Files, FolderPlus, Layers3, Pencil, Plus, RefreshCw, Search, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
 import SeekMindDetailPanel from "../components/SeekMind/SeekMindDetailPanel.vue";
 import SeekMindDetailSection from "../components/SeekMind/SeekMindDetailSection.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
 import SplitPane from "../components/SplitPane.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
-import type { CollectionItemView, CollectionView, RecentViewEntry, TagView } from "../types/SeekMind";
+import type { CollectionItemView, CollectionView, TagView } from "../types/SeekMind";
 
 const { t } = useI18n();
-const router = useRouter();
-
 const collections = ref<CollectionView[]>([]);
-const recentViews = ref<RecentViewEntry[]>([]);
 const collectionTags = ref<TagView[]>([]);
 const itemTags = ref<TagView[]>([]);
 const collectionItemTagsMap = ref<Record<string, TagView[]>>({});
@@ -42,7 +39,10 @@ const itemTagFilter = ref("");
 const collectionName = ref("");
 const collectionDescription = ref("");
 const collectionTagName = ref("");
+const collectionTagInputRef = ref<HTMLInputElement | null>(null);
 const collectionSaving = ref(false);
+const collectionDialogVisible = ref(false);
+const collectionDialogMode = ref<"create" | "edit">("create");
 const collectionsLoading = ref(false);
 const itemsLoading = ref(false);
 const errorMessage = ref("");
@@ -55,33 +55,8 @@ const itemMenuPosition = ref({ x: 0, y: 0 });
 const itemMenuTarget = ref<CollectionItemView | null>(null);
 const itemNoteDraft = ref("");
 const itemTagName = ref("");
+const itemTagInputRef = ref<HTMLInputElement | null>(null);
 const itemSaving = ref(false);
-
-const recentViewTypeLabel = (item: RecentViewEntry) => {
-  switch (item.target_type) {
-    case "collection":
-      return t("page.collections.recentType.collection");
-    case "qa_session":
-      return t("page.collections.recentType.qaSession");
-    case "document":
-      return t("page.collections.recentType.document");
-    default:
-      return t("page.collections.recentType.chunk");
-  }
-};
-
-const recentViewTypeIcon = (item: RecentViewEntry) => {
-  switch (item.target_type) {
-    case "collection":
-      return BookMarked;
-    case "qa_session":
-      return MessageSquareText;
-    case "document":
-      return FileText;
-    default:
-      return Files;
-  }
-};
 
 const selectedCollection = computed(
   () => collections.value.find((item) => item.id === selectedCollectionId.value) ?? null,
@@ -207,13 +182,20 @@ const itemTypeIcon = (item: CollectionItemView) => {
   }
 };
 
-const resetEditor = () => {
-  selectedCollectionId.value = "";
+const resetCollectionDialog = () => {
   collectionName.value = "";
   collectionDescription.value = "";
 };
 
-const syncEditorFromCollection = (collection: CollectionView | null) => {
+const focusCollectionTagInput = () => {
+  collectionTagInputRef.value?.focus();
+};
+
+const focusItemTagInput = () => {
+  itemTagInputRef.value?.focus();
+};
+
+const syncCollectionDialogFromCollection = (collection: CollectionView | null) => {
   collectionName.value = collection?.name ?? "";
   collectionDescription.value = collection?.description ?? "";
 };
@@ -279,19 +261,18 @@ const loadCollections = async (preferSelected = true) => {
       selectedCollectionId.value = "";
       collectionItems.value = [];
       selectedItemId.value = "";
-      resetEditor();
+      resetCollectionDialog();
     }
 
     if (!selectedCollectionId.value) {
       const first = list[0] ?? null;
       if (first) {
         selectedCollectionId.value = first.id;
-        syncEditorFromCollection(first);
         await loadItems(first.id, preferSelected);
         await loadCollectionTags(first.id);
         await seekMindApi.recordRecentView("collection", first.id, first.name, first.description || "");
       } else {
-        resetEditor();
+        resetCollectionDialog();
         collectionItems.value = [];
         selectedItemId.value = "";
         collectionTags.value = [];
@@ -300,19 +281,10 @@ const loadCollections = async (preferSelected = true) => {
       await loadItems(selectedCollectionId.value, true);
       await loadCollectionTags(selectedCollectionId.value);
     }
-    await loadRecentViews();
   } catch (error) {
     errorMessage.value = formatSeekMindError(error, t("page.collections.error.loadCollections"));
   } finally {
     collectionsLoading.value = false;
-  }
-};
-
-const loadRecentViews = async () => {
-  try {
-    recentViews.value = await seekMindApi.listRecentViews(8);
-  } catch (error) {
-    console.error("[SeekMind] listRecentViews failed", error);
   }
 };
 
@@ -359,29 +331,40 @@ const loadItems = async (collectionId: string, preserveSelected = true) => {
 
 const selectCollection = async (collection: CollectionView) => {
   selectedCollectionId.value = collection.id;
-  syncEditorFromCollection(collection);
   await loadItems(collection.id, false);
   await loadCollectionTags(collection.id);
   await seekMindApi.recordRecentView("collection", collection.id, collection.name, collection.description || "");
-  await loadRecentViews();
 };
 
-const startNewCollection = () => {
-  selectedCollectionId.value = "";
-  resetEditor();
-  collectionItems.value = [];
-  collectionItemTagsMap.value = {};
-  itemTagFilter.value = "";
-  selectedItemId.value = "";
-  itemNoteDraft.value = "";
-  collectionTags.value = [];
-  itemTags.value = [];
-  collectionTagName.value = "";
-  itemTagName.value = "";
-  showDetailPanel.value = false;
+const openCreateCollectionDialog = () => {
+  collectionDialogMode.value = "create";
+  resetCollectionDialog();
+  collectionDialogVisible.value = true;
+  console.info("[SeekMind] collection dialog opened", {
+    mode: "create",
+    selectedCollectionId: selectedCollectionId.value || null,
+  });
 };
 
-const saveCollection = async () => {
+const openEditCollectionDialog = (collection: CollectionView) => {
+  selectedCollectionId.value = collection.id;
+  collectionDialogMode.value = "edit";
+  syncCollectionDialogFromCollection(collection);
+  collectionDialogVisible.value = true;
+  console.info("[SeekMind] collection dialog opened", {
+    mode: "edit",
+    collectionId: collection.id,
+    collectionName: collection.name,
+  });
+};
+
+const closeCollectionDialog = () => {
+  collectionDialogVisible.value = false;
+  collectionSaving.value = false;
+  resetCollectionDialog();
+};
+
+const submitCollectionDialog = async () => {
   const name = collectionName.value.trim();
   if (!name || collectionSaving.value) {
     return;
@@ -392,13 +375,13 @@ const saveCollection = async () => {
   infoMessage.value = "";
 
   try {
-    if (selectedCollectionId.value) {
+    if (collectionDialogMode.value === "edit" && selectedCollectionId.value) {
       const updated = await seekMindApi.updateCollection(selectedCollectionId.value, {
         name,
         description: collectionDescription.value.trim(),
       });
       collections.value = collections.value.map((item) => (item.id === updated.id ? updated : item));
-      syncEditorFromCollection(updated);
+      selectedCollectionId.value = updated.id;
       infoMessage.value = t("page.collections.updated", { name: updated.name });
     } else {
       const created = await seekMindApi.createCollection(name, collectionDescription.value.trim());
@@ -406,6 +389,12 @@ const saveCollection = async () => {
       await selectCollection(created);
       infoMessage.value = t("page.collections.created", { name: created.name });
     }
+    collectionDialogVisible.value = false;
+    resetCollectionDialog();
+    console.info("[SeekMind] collection dialog submitted", {
+      mode: collectionDialogMode.value,
+      collectionName: name,
+    });
   } catch (error) {
     errorMessage.value = formatSeekMindError(error, t("page.collections.error.saveCollection"));
   } finally {
@@ -426,11 +415,18 @@ const deleteCollection = async (collection: CollectionView) => {
       if (next) {
         await selectCollection(next);
       } else {
-        startNewCollection();
+        selectedCollectionId.value = "";
+        collectionItems.value = [];
+        collectionItemTagsMap.value = {};
+        itemTagFilter.value = "";
+        selectedItemId.value = "";
+        itemNoteDraft.value = "";
+        collectionTags.value = [];
+        itemTags.value = [];
+        collectionTagName.value = "";
+        itemTagName.value = "";
+        showDetailPanel.value = false;
       }
-    }
-    if (selectedCollectionId.value !== collection.id) {
-      await loadRecentViews();
     }
     infoMessage.value = t("page.collections.deleted", { name: collection.name });
   } catch (error) {
@@ -567,32 +563,6 @@ const openItemFile = async (item: CollectionItemView) => {
   await seekMindApi.openFile(item.path);
 };
 
-const openRecentView = async (item: RecentViewEntry) => {
-  switch (item.target_type) {
-    case "collection": {
-      const collection = collections.value.find((entry) => entry.id === item.target_id);
-      if (collection) {
-        await selectCollection(collection);
-      } else {
-        await loadCollections(false);
-        const next = collections.value.find((entry) => entry.id === item.target_id);
-        if (next) {
-          await selectCollection(next);
-        }
-      }
-      break;
-    }
-    case "qa_session":
-      await router.push({ path: "/qa", query: { session: item.target_id } });
-      break;
-    default:
-      if (item.path.trim()) {
-        await seekMindApi.openFile(item.path);
-      }
-      break;
-  }
-};
-
 const quickLookItem = async (item: CollectionItemView) => {
   if (!item.path.trim()) return;
   await seekMindApi.quickLookFile(item.path);
@@ -640,6 +610,17 @@ const collectionContextMenuItems = computed<ContextMenuItem[]>(() => {
   }
 
   return [
+    {
+      key: "edit",
+      label: t("page.collections.editCollection"),
+      icon: Pencil,
+      handler: () => {
+        if (collectionMenuTarget.value) {
+          void selectCollection(collectionMenuTarget.value);
+          openEditCollectionDialog(collectionMenuTarget.value);
+        }
+      },
+    },
     {
       key: "export",
       label: t("page.collections.exportMarkdown"),
@@ -727,7 +708,6 @@ const openItemMenu = (item: CollectionItemView, event: MouseEvent) => {
 
 onMounted(async () => {
   await loadCollections(false);
-  await loadRecentViews();
   if (collections.value.length > 0 && !selectedCollectionId.value) {
     await selectCollection(collections.value[0]);
   }
@@ -735,7 +715,6 @@ onMounted(async () => {
 
 onActivated(async () => {
   await loadCollections(false);
-  await loadRecentViews();
 });
 </script>
 
@@ -780,105 +759,31 @@ onActivated(async () => {
       </div>
     </header>
 
-    <div v-if="errorMessage" class="border-b border-danger-soft bg-danger-soft px-5 py-3 text-sm text-danger">
-      {{ errorMessage }}
-    </div>
-    <div v-if="infoMessage" class="border-b border-emerald-soft bg-emerald-soft px-5 py-3 text-sm text-success">
-      {{ infoMessage }}
-    </div>
+    <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
+    <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
 
     <SplitPane class="min-h-0 flex-1" :panels="splitPanels">
       <template #left>
         <aside class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[rgba(245,246,248,0.88)]">
           <div class="px-4 py-3">
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <div class="text-sm font-semibold text-primary">{{ t("page.collections.editorTitle") }}</div>
-                <div class="mt-1 text-xs text-muted">{{ t("page.collections.editorDesc") }}</div>
+            <div class="flex items-center gap-2">
+              <div class="relative min-w-0 flex-1">
+                <Search class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" :size="15" />
+                <input
+                  v-model="collectionFilter"
+                  class="w-full rounded-[14px] bg-white/72 py-2 pl-9 pr-3 text-sm text-primary placeholder:text-muted focus:outline-none"
+                  type="text"
+                  :placeholder="t('page.collections.filterPlaceholder')"
+                >
               </div>
               <button
-                class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/72 text-muted transition hover:text-primary"
+                class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-default bg-white/72 text-secondary transition hover:bg-white/90 hover:text-primary"
                 type="button"
                 :title="t('page.collections.newCollection')"
-                @click="startNewCollection"
+                :aria-label="t('page.collections.newCollection')"
+                @click="openCreateCollectionDialog"
               >
-                <Plus :size="15" />
-              </button>
-            </div>
-            <div class="mt-2 space-y-2">
-              <input
-                v-model="collectionName"
-                class="w-full rounded-[14px] bg-white/72 px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
-                type="text"
-                :placeholder="t('page.collections.namePlaceholder')"
-              >
-              <textarea
-                v-model="collectionDescription"
-                class="min-h-[64px] w-full resize-none rounded-[14px] bg-white/72 px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
-                :placeholder="t('page.collections.descriptionPlaceholder')"
-              />
-            </div>
-            <div class="mt-2 flex items-center gap-2">
-              <button
-                class="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-                type="button"
-                :disabled="collectionSaving || !collectionName.trim()"
-                @click="saveCollection"
-              >
-                <FolderPlus :size="16" />
-                {{ selectedCollectionId ? t("page.collections.saveChanges") : t("page.collections.create") }}
-              </button>
-              <button
-                class="inline-flex items-center gap-2 rounded-full bg-white/72 px-4 py-2 text-sm text-secondary transition hover:text-primary"
-                type="button"
-                @click="startNewCollection"
-              >
-                {{ t("page.collections.reset") }}
-              </button>
-            </div>
-          </div>
-
-          <div class="px-4 py-2.5">
-            <div class="relative">
-              <Search class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" :size="15" />
-              <input
-                v-model="collectionFilter"
-                class="w-full rounded-[14px] bg-white/72 py-2 pl-9 pr-3 text-sm text-primary placeholder:text-muted focus:outline-none"
-                type="text"
-                :placeholder="t('page.collections.filterPlaceholder')"
-              >
-            </div>
-          </div>
-
-          <div class="px-4 py-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div class="text-sm font-semibold text-primary">{{ t("page.collections.recentTitle") }}</div>
-              <div class="text-[11px] text-muted">{{ t("page.collections.recentSubtitle") }}</div>
-            </div>
-            <div v-if="recentViews.length === 0" class="text-[11px] text-muted">
-              {{ t("page.collections.recentEmpty") }}
-            </div>
-            <div v-else class="max-h-48 space-y-2 overflow-y-auto pr-1">
-              <button
-                v-for="item in recentViews"
-                :key="`${item.target_type}:${item.target_id}`"
-                class="flex w-full items-start justify-between gap-3 rounded-[14px] bg-white/72 px-3 py-2 text-left transition hover:bg-white/90"
-                type="button"
-                @click="openRecentView(item)"
-              >
-                <div class="flex min-w-0 items-start gap-2">
-                  <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/72 text-accent">
-                    <component :is="recentViewTypeIcon(item)" :size="14" />
-                  </span>
-                  <div class="min-w-0">
-                    <div class="truncate text-sm font-medium text-primary">{{ item.title }}</div>
-                    <div class="mt-1 truncate text-[11px] text-muted">{{ item.path || t("common.none") }}</div>
-                  </div>
-                </div>
-                <div class="shrink-0 text-right">
-                  <SeekMindBadge tone="default">{{ recentViewTypeLabel(item) }}</SeekMindBadge>
-                  <div class="mt-1 text-[10px] text-dim">{{ item.viewed_at }}</div>
-                </div>
+                <Plus :size="16" />
               </button>
             </div>
           </div>
@@ -930,15 +835,12 @@ onActivated(async () => {
             <SeekMindBadge tone="default">{{ t("page.collections.itemCount", { count: collectionItems.length }) }}</SeekMindBadge>
           </div>
           <div v-if="selectedCollection" class="seekmind-content-block seekmind-content-block--tight-top">
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-[11px] font-medium text-dim">{{ t("page.collections.tags") }}</div>
-              <div class="text-[10px] text-muted">{{ collectionTags.length }}</div>
-            </div>
-            <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
+            <!-- 标签输入改为单行标签栏：已有标签、加号和输入框始终在同一行。 -->
+            <div class="mt-2 flex min-h-10 items-center gap-1 overflow-x-auto rounded-[14px] border border-default bg-white/90 px-2 py-1 shadow-[inset_0_1px_0_rgba(15,23,42,0.02)]">
               <div
                 v-for="tag in collectionTags"
                 :key="tag.id"
-                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/72 px-2 py-0.5 text-[11px] text-secondary"
+                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgba(0,122,255,0.08)] px-2 py-0.5 text-[11px] text-secondary"
               >
                 <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
                 <button
@@ -950,25 +852,23 @@ onActivated(async () => {
                   <Trash2 :size="10" />
                 </button>
               </div>
-              <span v-if="collectionTags.length === 0" class="text-[11px] text-muted">{{ t("page.collections.noTags") }}</span>
-            </div>
-            <div class="mt-2 flex items-center gap-2">
+              <button
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-default bg-white text-muted transition hover:border-accent/30 hover:text-accent"
+                type="button"
+                :title="t('page.collections.addTag')"
+                :aria-label="t('page.collections.addTag')"
+                @click="focusCollectionTagInput"
+              >
+                <Plus :size="13" />
+              </button>
               <input
+                ref="collectionTagInputRef"
                 v-model="collectionTagName"
-                class="min-w-0 flex-1 rounded-md bg-white/72 px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none"
+                class="min-w-[7rem] flex-1 bg-transparent px-1.5 py-1 text-xs text-primary placeholder:text-muted focus:outline-none"
                 type="text"
                 :placeholder="t('page.collections.tagPlaceholder')"
                 @keydown.enter.prevent="addCollectionTag"
               >
-              <button
-                class="inline-flex items-center gap-1.5 rounded-full bg-white/72 px-2.5 py-1.5 text-xs text-secondary transition hover:text-primary"
-                type="button"
-                :disabled="!collectionTagName.trim()"
-                @click="addCollectionTag"
-              >
-                <Plus :size="13" />
-                {{ t("page.collections.addTag") }}
-              </button>
             </div>
           </div>
 
@@ -1096,15 +996,11 @@ onActivated(async () => {
             </SeekMindDetailSection>
 
             <SeekMindDetailSection :title="t('common.context')">
-              <div class="flex items-center justify-between gap-2">
-                <div class="text-[11px] font-medium text-dim">{{ t("page.collections.tags") }}</div>
-                <div class="text-[10px] text-muted">{{ itemTags.length }}</div>
-              </div>
-              <div class="mt-2 flex gap-2 overflow-x-auto pb-1">
+              <div class="mt-2 flex min-h-10 items-center gap-1 overflow-x-auto rounded-[14px] border border-default bg-white/90 px-2 py-1 shadow-[inset_0_1px_0_rgba(15,23,42,0.02)]">
                 <div
                   v-for="tag in itemTags"
                   :key="tag.id"
-                  class="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/72 px-2 py-0.5 text-[11px] text-secondary"
+                  class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgba(0,122,255,0.08)] px-2 py-0.5 text-[11px] text-secondary"
                 >
                   <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
                   <button
@@ -1116,25 +1012,23 @@ onActivated(async () => {
                     <Trash2 :size="10" />
                   </button>
                 </div>
-                <span v-if="itemTags.length === 0" class="text-[11px] text-muted">{{ t("page.collections.noTags") }}</span>
-              </div>
-              <div class="mt-2 flex items-center gap-2">
+                <button
+                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-default bg-white text-muted transition hover:border-accent/30 hover:text-accent"
+                  type="button"
+                  :title="t('page.collections.addTag')"
+                  :aria-label="t('page.collections.addTag')"
+                  @click="focusItemTagInput"
+                >
+                  <Plus :size="13" />
+                </button>
                 <input
+                  ref="itemTagInputRef"
                   v-model="itemTagName"
-                  class="min-w-0 flex-1 rounded-[14px] bg-white/72 px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none"
+                  class="min-w-[7rem] flex-1 bg-transparent px-1.5 py-1 text-xs text-primary placeholder:text-muted focus:outline-none"
                   type="text"
                   :placeholder="t('page.collections.tagPlaceholder')"
                   @keydown.enter.prevent="addItemTag"
                 >
-                <button
-                  class="inline-flex items-center gap-1.5 rounded-full bg-white/72 px-2.5 py-1.5 text-xs text-secondary transition hover:text-primary"
-                  type="button"
-                  :disabled="!itemTagName.trim()"
-                  @click="addItemTag"
-                >
-                  <Plus :size="13" />
-                  {{ t("page.collections.addTag") }}
-                </button>
               </div>
               <div class="mt-3">
                 <div class="mb-2 text-[11px] font-medium text-dim">{{ t("page.collections.note") }}</div>
@@ -1178,5 +1072,63 @@ onActivated(async () => {
       :items="itemContextMenuItems"
       @close="itemMenuVisible = false"
     />
+
+    <div
+      v-if="collectionDialogVisible"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4 py-6"
+      @click.self="closeCollectionDialog"
+    >
+      <div class="w-full max-w-[420px] rounded-[20px] border border-default bg-panel p-4 shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-primary">
+              {{ collectionDialogMode === "edit" ? t("page.collections.editCollection") : t("page.collections.newCollection") }}
+            </div>
+          </div>
+          <button
+            class="seekmind-close-button shrink-0"
+            type="button"
+            :title="t('common.close')"
+            @click="closeCollectionDialog"
+          >
+            <X :size="13" stroke-width="2.25" />
+          </button>
+        </div>
+
+        <div class="mt-4 space-y-2">
+          <input
+            v-model="collectionName"
+            class="w-full rounded-[14px] bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
+            type="text"
+            :placeholder="t('page.collections.namePlaceholder')"
+            @keydown.enter.prevent="submitCollectionDialog"
+          >
+          <textarea
+            v-model="collectionDescription"
+            class="min-h-[88px] w-full resize-none rounded-[14px] bg-surface px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none"
+            :placeholder="t('page.collections.descriptionPlaceholder')"
+          />
+        </div>
+
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button
+            class="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-muted transition hover:text-primary"
+            type="button"
+            @click="closeCollectionDialog"
+          >
+            {{ t("common.cancel") }}
+          </button>
+          <button
+            class="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            :disabled="collectionSaving || !collectionName.trim()"
+            @click="submitCollectionDialog"
+          >
+            <component :is="collectionDialogMode === 'edit' ? Pencil : FolderPlus" :size="15" />
+            {{ collectionDialogMode === "edit" ? t("page.collections.saveChanges") : t("page.collections.create") }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

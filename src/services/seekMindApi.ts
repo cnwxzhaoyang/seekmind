@@ -80,8 +80,14 @@ export const seekMindApi = {
     invoke<void>("remove_recent_document", { path }),
   listRecentViews: (limit = 12) =>
     invoke<RecentViewEntry[]>("list_recent_views", { limit }),
-  recordRecentView: (targetType: string, targetId: string, title: string, path = "") =>
-    invoke<void>("record_recent_view", { targetType, targetId, title, path }),
+  recordRecentView: async (targetType: string, targetId: string, title: string, path = "") => {
+    try {
+      await invoke<void>("record_recent_view", { targetType, targetId, title, path });
+    } catch (error) {
+      // 修复：最近查看属于辅助写入，浏览器预览或未注入 Tauri 桥接时不应影响主页面加载。
+      console.warn("[SeekMind] record_recent_view skipped", { targetType, targetId, error });
+    }
+  },
   listTags: () => invoke<TagView[]>("list_tags"),
   listTargetTags: (targetType: string, targetId: string) =>
     invoke<TagView[]>("list_target_tags", { targetType, targetId }),

@@ -9,6 +9,7 @@ import { useI18n } from "vue-i18n";
 import { RefreshCw, Save, Search, Sparkles } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import SeekMindBadge from "./SeekMindBadge.vue";
+import SeekMindToast from "./SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../../services/seekMindApi";
 import { useInfoMessage } from "../../composables/useInfoMessage";
 import type {
@@ -216,13 +217,8 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="settings-card-body">
-      <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm text-danger">
-        {{ errorMessage }}
-      </div>
-
-      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-sm text-success">
-        {{ infoMessage }}
-      </div>
+      <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
+      <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
 
       <div v-if="loading" class="rounded-md border border-dashed border-default bg-surface px-4 py-5 text-sm text-muted">
         {{ t("semantic.loading") }}

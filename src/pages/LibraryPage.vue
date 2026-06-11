@@ -7,6 +7,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { FolderPlus, FolderOpen, CheckCircle2, Loader2, RefreshCw, X, ToggleLeft, ToggleRight, UploadCloud, Eye, Copy, FileText } from "lucide-vue-next";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import SeekMindIndexTree from "../components/SeekMind/SeekMindIndexTree.vue";
 import SeekMindTaskCard from "../components/SeekMind/SeekMindTaskCard.vue";
@@ -588,13 +589,8 @@ onBeforeUnmount(() => {
         class="mb-4"
       />
 
-      <div v-if="errorMessage" class="mb-3 rounded-md border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm text-danger">
-        {{ errorMessage }}
-      </div>
-
-      <div v-if="infoMessage" class="mb-3 rounded-md border border-emerald-soft bg-emerald-soft px-4 py-2.5 text-sm text-success">
-        {{ infoMessage }}
-      </div>
+      <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
+      <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
 
         <div class="mb-3 flex items-center justify-between border-b border-default bg-surface px-4 py-2">
         <div class="seekmind-section-label">{{ t("page.library.emptyState.title") }}</div>
