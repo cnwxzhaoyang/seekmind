@@ -790,17 +790,17 @@ onActivated(async () => {
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            <div v-if="collectionsLoading" class="rounded-[18px] bg-white/72 px-4 py-6 text-center text-xs text-muted">
+            <div v-if="collectionsLoading" class="seekmind-elevated-card rounded-[18px] px-4 py-6 text-center text-xs text-muted">
               {{ t("common.loading") }}
             </div>
-            <div v-else-if="filteredCollections.length === 0" class="rounded-[18px] bg-white/72 px-4 py-6 text-center text-xs text-muted">
+            <div v-else-if="filteredCollections.length === 0" class="seekmind-elevated-card rounded-[18px] px-4 py-6 text-center text-xs text-muted">
               {{ t("page.collections.emptyCollections") }}
             </div>
             <div v-else class="space-y-2">
               <div
                 v-for="collection in filteredCollections"
                 :key="collection.id"
-                class="rounded-[14px] px-3 py-2.5 transition"
+                class="seekmind-elevated-card rounded-[14px] px-3 py-2.5 transition"
                 :class="selectedCollectionId === collection.id ? 'bg-[rgba(0,122,255,0.12)]' : 'bg-white/72 hover:bg-white/90'"
                 @click="selectCollection(collection)"
                 @contextmenu.prevent="openCollectionMenu(collection, $event)"
@@ -837,11 +837,11 @@ onActivated(async () => {
           </div>
           <div v-if="selectedCollection" class="seekmind-content-block seekmind-content-block--tight-top">
             <!-- 标签输入改为单行标签栏：已有标签、加号和输入框始终在同一行。 -->
-            <div class="mt-2 flex min-h-10 items-center gap-1 overflow-x-auto rounded-[14px] border border-default bg-white/90 px-2 py-1 shadow-[inset_0_1px_0_rgba(15,23,42,0.02)]">
+            <div class="seekmind-inline-tag-strip seekmind-elevated-card mt-2">
               <div
                 v-for="tag in collectionTags"
                 :key="tag.id"
-                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgba(0,122,255,0.08)] px-2 py-0.5 text-[11px] text-secondary"
+                class="seekmind-inline-tag-chip text-[11px]"
               >
                 <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
                 <button
@@ -854,7 +854,7 @@ onActivated(async () => {
                 </button>
               </div>
               <button
-                class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-default bg-white text-muted transition hover:border-accent/30 hover:text-accent"
+                class="seekmind-inline-tag-add"
                 type="button"
                 :title="t('page.collections.addTag')"
                 :aria-label="t('page.collections.addTag')"
@@ -865,7 +865,7 @@ onActivated(async () => {
               <input
                 ref="collectionTagInputRef"
                 v-model="collectionTagName"
-                class="min-w-[7rem] flex-1 bg-transparent px-1.5 py-1 text-xs text-primary placeholder:text-muted focus:outline-none"
+                class="seekmind-inline-tag-input"
                 type="text"
                 :placeholder="t('page.collections.tagPlaceholder')"
                 @keydown.enter.prevent="addCollectionTag"
@@ -874,14 +874,14 @@ onActivated(async () => {
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-4 pt-3">
-            <div v-if="!selectedCollection" class="rounded-[18px] bg-white/72 px-4 py-8 text-center text-xs text-muted">
+            <div v-if="!selectedCollection" class="seekmind-elevated-card rounded-[18px] px-4 py-8 text-center text-xs text-muted">
               {{ t("page.collections.emptyCollections") }}
             </div>
-            <div v-else-if="itemsLoading" class="rounded-[18px] bg-white/72 px-4 py-8 text-center text-xs text-muted">
+            <div v-else-if="itemsLoading" class="seekmind-elevated-card rounded-[18px] px-4 py-8 text-center text-xs text-muted">
               {{ t("common.loading") }}
             </div>
             <div v-else class="space-y-3">
-              <div v-if="availableItemTagFilters.length > 0" class="rounded-[18px] bg-white/72 px-3 py-3">
+              <div v-if="availableItemTagFilters.length > 0" class="seekmind-elevated-card rounded-[18px] px-3 py-3">
                 <div class="flex items-center justify-between gap-2">
                   <div class="text-[11px] font-medium text-dim">
                     {{ t("page.collections.itemTagFilter") }}
@@ -909,14 +909,14 @@ onActivated(async () => {
                   </button>
                 </div>
               </div>
-              <div v-if="filteredCollectionItems.length === 0" class="rounded-[18px] bg-white/72 px-4 py-8 text-center text-xs text-muted">
+              <div v-if="filteredCollectionItems.length === 0" class="seekmind-elevated-card rounded-[18px] px-4 py-8 text-center text-xs text-muted">
                 {{ itemTagFilter ? t("page.collections.noFilteredItems") : t("page.collections.emptyItems") }}
               </div>
               <article
                 v-else
                 v-for="item in filteredCollectionItems"
                 :key="item.id"
-                class="cursor-pointer rounded-[18px] p-3 transition"
+                class="seekmind-elevated-card cursor-pointer rounded-[18px] p-3 transition"
                 :class="selectedItemId === item.id ? 'bg-[rgba(0,122,255,0.12)]' : 'bg-white/72 hover:bg-white/90'"
                 @click="selectItem(item)"
                 @contextmenu.prevent="openItemMenu(item, $event)"
@@ -997,11 +997,11 @@ onActivated(async () => {
             </SeekMindDetailSection>
 
             <SeekMindDetailSection :title="t('common.context')">
-              <div class="mt-2 flex min-h-10 items-center gap-1 overflow-x-auto rounded-[14px] border border-default bg-white/90 px-2 py-1 shadow-[inset_0_1px_0_rgba(15,23,42,0.02)]">
+              <div class="seekmind-inline-tag-strip seekmind-elevated-card mt-2">
                 <div
                   v-for="tag in itemTags"
                   :key="tag.id"
-                  class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgba(0,122,255,0.08)] px-2 py-0.5 text-[11px] text-secondary"
+                  class="seekmind-inline-tag-chip text-[11px]"
                 >
                   <span class="max-w-[7rem] truncate">{{ tag.name }}</span>
                   <button
@@ -1014,7 +1014,7 @@ onActivated(async () => {
                   </button>
                 </div>
                 <button
-                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-default bg-white text-muted transition hover:border-accent/30 hover:text-accent"
+                  class="seekmind-inline-tag-add"
                   type="button"
                   :title="t('page.collections.addTag')"
                   :aria-label="t('page.collections.addTag')"
@@ -1025,7 +1025,7 @@ onActivated(async () => {
                 <input
                   ref="itemTagInputRef"
                   v-model="itemTagName"
-                  class="min-w-[7rem] flex-1 bg-transparent px-1.5 py-1 text-xs text-primary placeholder:text-muted focus:outline-none"
+                  class="seekmind-inline-tag-input"
                   type="text"
                   :placeholder="t('page.collections.tagPlaceholder')"
                   @keydown.enter.prevent="addItemTag"
