@@ -165,6 +165,8 @@ export const seekMindApi = {
     invoke<void>("update_qa_session_title", { sessionId, title }),
   exportQaSessionMarkdown: (path: string, markdown: string) =>
     invoke<string>("export_qa_session_markdown", { path, markdown }),
+  exportLogMarkdown: (path: string, markdown: string) =>
+    invoke<string>("export_log_markdown", { path, markdown }),
   searchDocuments: (query: string, limit = 20) =>
     invoke<SearchResultView[]>("search_documents", { query, limit }),
   getSearchDebugReport: (query: string, limit = 20) =>

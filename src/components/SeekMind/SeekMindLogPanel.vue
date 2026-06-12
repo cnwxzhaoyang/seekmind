@@ -8,9 +8,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
-import { ChevronDown, ChevronUp, Database, Download, FileText, NotebookText, Sparkles, Trash2 } from "lucide-vue-next";
+import SeekMindToast from "./SeekMindToast.vue";
 import SeekMindBadge from "./SeekMindBadge.vue";
+import SeekMindIcon from "./SeekMindIcon.vue";
+import { useQuickAccessData } from "../../composables/useQuickAccessData";
+import { useInfoMessage } from "../../composables/useInfoMessage";
 import { seekMindApi } from "../../services/seekMindApi";
 import type {
   AppRuntimeInfoView,
@@ -30,6 +32,8 @@ const HEIGHT_DEFAULT = 200;
 const STORAGE_KEY = "seekmind.logPanel.height";
 
 const { t } = useI18n();
+const { quickDirs, recentDocuments, favorites } = useQuickAccessData();
+const { infoMessage: exportInfoMessage } = useInfoMessage();
 
 type LogScope = "index" | "document" | "semantic";
 type LogLevel = "info" | "success" | "warning" | "error";
@@ -52,6 +56,7 @@ const dragging = ref(false);
 const dragStartY = ref(0);
 const dragStartHeight = ref(0);
 const exporting = ref(false);
+const exportTone = ref<"success" | "error">("success");
 const indexStatus = ref<IndexStatusView | null>(null);
 const indexSettings = ref<IndexSettingsView | null>(null);
 const appRuntime = ref<AppRuntimeInfoView | null>(null);
@@ -75,10 +80,10 @@ function saveHeight(h: number) {
   try { localStorage.setItem(STORAGE_KEY, String(h)); } catch {}
 }
 
-const scopeMeta: Record<LogScope, { label: string; taskLabel: string; icon: typeof Database }> = {
-  index: { label: "logPanel.scope.index", taskLabel: "logPanel.scopeLabel.index", icon: Database },
-  document: { label: "logPanel.scope.document", taskLabel: "logPanel.scopeLabel.document", icon: FileText },
-  semantic: { label: "logPanel.scope.semantic", taskLabel: "logPanel.scopeLabel.semantic", icon: Sparkles },
+const scopeMeta: Record<LogScope, { label: string; taskLabel: string; icon: string }> = {
+  index: { label: "logPanel.scope.index", taskLabel: "logPanel.scopeLabel.index", icon: "icon-index-status" },
+  document: { label: "logPanel.scope.document", taskLabel: "logPanel.scopeLabel.document", icon: "icon-file" },
+  semantic: { label: "logPanel.scope.semantic", taskLabel: "logPanel.scopeLabel.semantic", icon: "icon-sync" },
 };
 
 const levelTone: Record<LogLevel, "default" | "success" | "warning" | "danger"> = {
@@ -96,9 +101,17 @@ const pushLog = (entry: Omit<LogEntry, "id" | "timestamp">) => {
   ].slice(0, maxEntries);
 };
 
-const formatTime = (timestamp: string) => {
+const formatEntryTimestamp = (timestamp: string) => {
   const date = new Date(timestamp);
-  return date.toLocaleTimeString([], { hour12: false });
+  return date.toLocaleString([], {
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 };
 
 const loadMetrics = async () => {
@@ -116,6 +129,16 @@ const loadMetrics = async () => {
 const semanticWeightLabel = computed(() => Math.round((indexSettings.value?.semantic_weight ?? 0.25) * 100));
 const sqliteLabel = computed(() => `SQLite: ${indexStatus.value?.indexed_docs ?? 0}/${indexStatus.value?.scanned_docs ?? 0}`);
 const tantivyLabel = computed(() => `Tantivy: ${indexStatus.value?.indexed_chunks ?? 0}`);
+const sidebarStats = computed(() => [
+  { label: t("sidebar.statsDirs"), value: quickDirs.value.length },
+  { label: t("sidebar.statsRecent"), value: recentDocuments.value.length },
+  { label: t("sidebar.statsFavorites"), value: favorites.value.length },
+]);
+const bottomMetrics = computed(() => [
+  { key: "sqlite", label: sqliteLabel.value, tone: "success" as const },
+  { key: "tantivy", label: tantivyLabel.value, tone: "default" as const },
+  { key: "weight", label: t("page.appSearch.semanticWeight", { weight: semanticWeightLabel.value }), tone: "default" as const },
+]);
 
 const installListeners = async () => {
   if (unlistenIndex || unlistenDocument || unlistenSemantic) return;
@@ -269,10 +292,15 @@ const exportLogs = async () => {
     if (!filePath) return;
 
     const content = buildExportContent();
-    await writeTextFile(filePath, content);
+    // 修复：日志导出改走 Rust 端写盘，避免前端文件插件在部分环境下无效。
+    const savedPath = await seekMindApi.exportLogMarkdown(filePath, content);
     console.info(`[SeekMind] log export saved to ${filePath}`);
+    exportTone.value = "success";
+    exportInfoMessage.value = `已导出日志：${savedPath}`;
   } catch (error) {
     console.error("[SeekMind] log export failed", error);
+    exportTone.value = "error";
+    exportInfoMessage.value = error instanceof Error ? error.message : "导出日志失败";
   } finally {
     exporting.value = false;
   }
@@ -345,6 +373,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <SeekMindToast v-if="exportInfoMessage" :message="exportInfoMessage" :tone="exportTone" />
   <div
     class="relative shrink-0 bg-panel"
     :class="dragging ? 'select-none' : ''"
@@ -357,59 +386,92 @@ onBeforeUnmount(() => {
     />
 
     <div
-      class="flex h-7 w-full items-center justify-between gap-3 px-3 text-left"
+      class="flex h-7 w-full flex-nowrap items-center justify-between gap-3 overflow-x-auto px-3 text-left"
       role="button"
       tabindex="0"
       @click="toggleExpanded"
       @keydown.enter.prevent="toggleExpanded"
       @keydown.space.prevent="toggleExpanded"
     >
-      <div class="flex items-center gap-2">
-        <NotebookText class="text-dim" :size="14" />
-        <div class="text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
-        <div class="hidden text-[11px] text-dim sm:block">{{ t("logPanel.desc") }}</div>
+      <div class="flex min-w-0 shrink-0 items-center gap-3 whitespace-nowrap">
+        <div class="flex min-w-0 items-center gap-2 whitespace-nowrap">
+          <SeekMindIcon icon="icon-index-status" :size="14" class="text-dim" />
+          <div class="truncate text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
+        </div>
+        <!-- 修复：底 bar 中状态与操作分组展示，避免“信息”和“动作”混在一列。 -->
+        <div class="hidden lg:flex items-center gap-2 whitespace-nowrap">
+          <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-emerald-soft bg-emerald-soft px-2 py-0.5 text-[11px] text-success">
+            <span class="h-1.5 w-1.5 rounded-full bg-success" />
+            {{ t("sidebar.statusRunning") }}
+          </span>
+          <span
+            v-for="stat in sidebarStats"
+            :key="stat.label"
+            class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-default bg-badge px-2 py-0.5 text-[11px] text-secondary"
+          >
+            {{ stat.value }}
+            <span class="text-muted">{{ stat.label }}</span>
+          </span>
+        </div>
       </div>
-      <div class="flex items-center gap-2 text-[11px] text-muted">
-        <SeekMindBadge tone="success">{{ sqliteLabel }}</SeekMindBadge>
-        <SeekMindBadge tone="default">{{ tantivyLabel }}</SeekMindBadge>
-        <SeekMindBadge tone="default">{{ t("page.appSearch.semanticWeight", { weight: semanticWeightLabel }) }}</SeekMindBadge>
-        <span class="ml-1">{{ t("logPanel.events", { count: entries.length }) }}</span>
-        <button class="inline-flex items-center gap-1 hover:text-secondary" :disabled="exporting" @click.stop="exportLogs">
-          <Download :size="14" />
+      <div class="flex min-w-0 shrink-0 items-center gap-2 whitespace-nowrap text-[11px] text-muted">
+        <SeekMindBadge
+          v-for="metric in bottomMetrics"
+          :key="metric.key"
+          :tone="metric.tone"
+        >
+          {{ metric.label }}
+        </SeekMindBadge>
+        <!-- 修复：事件数量和“日志”标题语义重复，保留标题即可。 -->
+        <button
+          class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-default bg-surface px-2 py-0.5 text-[11px] text-secondary transition hover:bg-surface-hover hover:text-primary disabled:opacity-50"
+          :disabled="exporting"
+          :title="t('logPanel.export')"
+          @click.stop="exportLogs"
+        >
+          <SeekMindIcon icon="icon-export" :size="13" />
           <span class="hidden sm:inline">{{ t("logPanel.export") }}</span>
         </button>
-        <component :is="showContent ? ChevronDown : ChevronUp" :size="16" class="text-muted" />
       </div>
     </div>
 
-      <div v-if="showContent" class="flex flex-col" :style="contentStyle">
+      <div v-if="showContent" class="flex min-h-0 flex-col" :style="contentStyle">
         <div class="flex items-center justify-end border-t border-light px-4 py-2 text-xs text-dim shrink-0">
           <button class="inline-flex items-center gap-1 hover:text-secondary" @click="clearLogs">
             <Trash2 :size="13" /> {{ t("logPanel.clear") }}
           </button>
         </div>
         <div class="flex-1 overflow-y-auto p-2">
-          <div
-            v-for="entry in entries"
-            :key="entry.id"
-            class="rounded-2xl border border-light bg-panel px-3 py-2"
-          >
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
+          <!-- 修复：日志表格把正文信息集中在左侧，日期独立在右侧。 -->
+          <div class="overflow-hidden rounded-2xl border border-light bg-panel">
+            <div class="grid grid-cols-[minmax(0,1fr)_170px] border-b border-light bg-surface/60 px-3 py-2 text-[11px] font-medium text-muted">
+              <div>{{ t("logPanel.table.content") }}</div>
+              <div class="text-right">{{ t("logPanel.table.date") }}</div>
+            </div>
+            <div
+              v-for="entry in entries"
+              :key="entry.id"
+              class="grid grid-cols-[minmax(0,1fr)_170px] border-b border-light last:border-b-0"
+            >
+              <div class="min-w-0 px-3 py-2">
+                <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <SeekMindBadge :tone="levelTone[entry.level]">{{ t(scopeMeta[entry.scope].label) }}</SeekMindBadge>
-                  <div class="truncate text-sm font-medium text-primary">{{ entry.title }}</div>
-                </div>
-                <div class="mt-1 text-xs leading-5 text-secondary">{{ entry.message }}</div>
-                <div class="mt-1 truncate text-[11px] text-muted">{{ entry.details }}</div>
-                <div
-                  v-if="entry.warning"
-                  class="mt-1 rounded-xl border border-amber-soft bg-amber-soft px-2 py-1 text-[11px] leading-4 text-warning"
-                >
-                  {{ entry.warning }}
+                  <div class="min-w-0 truncate text-sm font-medium text-primary">{{ entry.title }}</div>
+                  <span class="text-[11px] text-dim">·</span>
+                  <div class="min-w-0 truncate text-[12px] text-secondary">{{ entry.message }}</div>
+                  <span class="text-[11px] text-dim">·</span>
+                  <div class="min-w-0 truncate text-[11px] text-muted">{{ entry.details }}</div>
+                  <span
+                    v-if="entry.warning"
+                    class="inline-flex items-center rounded-full border border-amber-soft bg-amber-soft px-2 py-0.5 text-[11px] leading-4 text-warning"
+                  >
+                    {{ entry.warning }}
+                  </span>
                 </div>
               </div>
-              <div class="shrink-0 text-[11px] text-muted">{{ formatTime(entry.timestamp) }}</div>
+              <div class="flex items-start justify-end px-3 py-2 text-[11px] leading-5 text-muted">
+                {{ formatEntryTimestamp(entry.timestamp) }}
+              </div>
             </div>
           </div>
         </div>

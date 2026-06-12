@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/12
+ * @Description Python 语义 sidecar 客户端，负责 embedding 状态探测与向量生成请求。
+ */
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -358,7 +363,7 @@ impl PythonSemanticClient {
                 .map_err(|error| SemanticClientError::Io(error.to_string()))?;
         }
 
-        let deadline = Instant::now() + self.timeout;
+        let deadline = Instant::now() + self.timeout_for_command(command);
         loop {
             match child
                 .try_wait()
@@ -368,6 +373,11 @@ impl PythonSemanticClient {
                 None => {
                     if Instant::now() >= deadline {
                         let _ = child.kill();
+                        eprintln!(
+                            "[SeekMind] semantic sidecar timeout command={} timeout_ms={}",
+                            command,
+                            self.timeout_for_command(command).as_millis()
+                        );
                         return Err(SemanticClientError::Timeout);
                     }
                     std::thread::sleep(Duration::from_millis(25));
@@ -402,6 +412,18 @@ impl PythonSemanticClient {
                 }
             }
         }
+    }
+
+    fn timeout_for_command(&self, command: &str) -> Duration {
+        if command == "embedding_status" {
+            return std::env::var("SEEKMIND_SEMANTIC_STATUS_TIMEOUT_MS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(Duration::from_millis)
+                .unwrap_or_else(|| Duration::from_millis(15_000));
+        }
+
+        self.timeout
     }
 
     pub fn resolve_script_path(&self) -> PathBuf {

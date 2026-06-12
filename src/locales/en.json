@@ -659,7 +659,10 @@
         "retrying": "Processing...",
         "retryFile": "Retry",
         "code": "Code {code}",
-        "retryCount": "{count} retries"
+        "retryCount": "{count} retries",
+        "lastFailedAt": "Failed At",
+        "copyReason": "Copy reason",
+        "copiedReason": "Copied failure reason"
       },
       "progress": {
         "overall": "Overall Progress",
@@ -978,7 +981,6 @@
 
   "logPanel": {
     "title": "Logs",
-    "desc": "Index / Chunk / Semantic events",
     "scopeLabel": {
       "index": "Index Task",
       "document": "Chunk Task",
@@ -987,6 +989,10 @@
     "empty": "No logs yet. Events appear automatically after running index, chunk, or semantic tasks.",
     "clear": "Clear",
     "export": "Export Logs",
+    "table": {
+      "content": "Content",
+      "date": "Date"
+    },
     "events": "{count} events",
     "scope": {
       "index": "Index",
@@ -1036,6 +1042,17 @@
     "availability": "Available: {status}",
     "lastIndexed": "Last Indexed: {time}",
     "lastError": "Last Error: {msg}",
+    "runtime": {
+      "title": "Semantic Runtime",
+      "detecting": "Detecting",
+      "detectingHint": "The app is checking whether the current embedding runtime is available.",
+      "available": "Embedding available",
+      "availableHint": "The current model can generate vectors normally, so indexing will store embeddings.",
+      "availableWithNote": "The current model can generate vectors normally. Note: {note}",
+      "unavailable": "Embedding unavailable",
+      "unavailableHint": "The current model cannot generate vectors. Indexing can continue, but semantic recall will fall back to full-text search.",
+      "probeFailed": "Semantic model probe failed"
+    },
     "btn": {
       "setDefault": "Set as Default",
       "rebuild": "Rebuild",

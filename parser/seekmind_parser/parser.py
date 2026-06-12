@@ -45,6 +45,14 @@ EMBEDDING_DIMENSION_HINTS = {
 }
 
 
+def env_value(*names: str) -> Optional[str]:
+    for name in names:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
 DOCX_NAMESPACES = {
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
@@ -1118,7 +1126,9 @@ def parse_document(
 
 
 def embedding_status(model_name: Optional[str] = None) -> EmbeddingStatus:
-    runtime = get_fastembed_runtime(model_name, eager=False)
+    # 修复：设置页不能把 fastembed 可导入但模型尚未下载/加载的 lazy 状态误判成“embedding 已可用”；
+    # 这里改成真实探测，只有模型能实际拉起时才返回 available=True。
+    runtime = get_fastembed_runtime(model_name, eager=True)
     return EmbeddingStatus(
         available=runtime.available,
         provider=runtime.provider,
@@ -1231,7 +1241,9 @@ def get_fastembed_runtime(model_name: Optional[str] = None, eager: bool = True) 
     try:
         model = TextEmbedding(
             model_name=target_model,
-            cache_dir=os.environ.get("SEEKMIND_FASTEMBED_CACHE_DIR") or None,
+            # 修复：兼容历史的 SeekMind_FASTEMBED_CACHE_DIR，同时优先读取新的 SEEKMIND_FASTEMBED_CACHE_DIR，
+            # 避免 warmup 与桌面端启动写入到两个不同模型缓存目录。
+            cache_dir=env_value("SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"),
         )
         dimension = infer_embedding_dimension(model, target_model)
         return FastEmbedRuntime(

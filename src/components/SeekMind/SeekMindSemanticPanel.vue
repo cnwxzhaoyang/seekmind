@@ -32,14 +32,42 @@ const loadingSemanticDebug = ref(false);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref("");
+const semanticProbeError = ref("");
 const { infoMessage } = useInfoMessage();
 let unlistenSemanticProgress: null | (() => void) = null;
 
+const buildFallbackSemanticStatus = (message: string): SemanticModelStatusView | null => {
+  const fallbackModel = embeddingModels.value.find((model) => model.is_default) ?? embeddingModels.value[0];
+  if (!fallbackModel) {
+    return null;
+  }
+
+  // 修复：如果运行时探测失败，语义面板不能直接空白；至少要展示一个“不可用”的占位状态，避免用户误以为 embedding 正常。
+  return {
+    model: {
+      ...fallbackModel,
+      available: false,
+    },
+    sqlite_chunks: 0,
+    embedded_chunks: 0,
+    needs_rebuild: true,
+    last_indexed_at: "",
+    last_error: message,
+    index_status: "unknown",
+  };
+};
+
 const loadSemanticStatus = async () => {
+  semanticProbeError.value = "";
   try {
     semanticStatus.value = await seekMindApi.getEmbeddingModelStatus();
     selectedEmbeddingModelId.value = semanticStatus.value.model.id;
   } catch (error) {
+    semanticProbeError.value = formatSeekMindError(error, t("semantic.runtime.probeFailed"));
+    semanticStatus.value = buildFallbackSemanticStatus(semanticProbeError.value);
+    if (semanticStatus.value) {
+      selectedEmbeddingModelId.value = semanticStatus.value.model.id;
+    }
     console.error("[SeekMind] getEmbeddingModelStatus failed", error);
   }
 };
@@ -55,8 +83,16 @@ const loadEmbeddingModels = async () => {
 const refreshAll = async () => {
   loading.value = true;
   try {
-    await loadSemanticStatus();
     await loadEmbeddingModels();
+    await loadSemanticStatus();
+    if (!semanticStatus.value && embeddingModels.value.length > 0) {
+      semanticStatus.value = buildFallbackSemanticStatus(
+        semanticProbeError.value || t("semantic.runtime.unavailableHint"),
+      );
+      if (semanticStatus.value) {
+        selectedEmbeddingModelId.value = semanticStatus.value.model.id;
+      }
+    }
   } finally {
     loading.value = false;
   }
@@ -133,6 +169,41 @@ const runSemanticDebug = async () => {
 };
 
 const canSwitchModel = computed(() => selectedEmbeddingModelId.value !== semanticStatus.value?.model.id);
+const semanticRuntimeState = computed(() => {
+  if (loading.value && !semanticStatus.value) {
+    return {
+      tone: "default" as const,
+      label: t("semantic.runtime.detecting"),
+      detail: t("semantic.runtime.detectingHint"),
+    };
+  }
+
+  if (!semanticStatus.value) {
+    return {
+      tone: "warning" as const,
+      label: t("semantic.runtime.unavailable"),
+      detail: semanticProbeError.value || t("semantic.runtime.unavailableHint"),
+    };
+  }
+
+  if (semanticStatus.value.model.available) {
+    return {
+      tone: "success" as const,
+      label: t("semantic.runtime.available"),
+      detail: semanticStatus.value.last_error.trim()
+        ? t("semantic.runtime.availableWithNote", {
+            note: semanticStatus.value.last_error,
+          })
+        : t("semantic.runtime.availableHint"),
+    };
+  }
+
+  return {
+    tone: "warning" as const,
+    label: t("semantic.runtime.unavailable"),
+    detail: semanticStatus.value.last_error || semanticProbeError.value || t("semantic.runtime.unavailableHint"),
+  };
+});
 const semanticIndexStatusLabel = computed(() => {
   const status = semanticStatus.value?.index_status || "idle";
   switch (status) {
@@ -213,7 +284,10 @@ onBeforeUnmount(() => {
           <div class="settings-card-title">{{ t("semantic.title") }}</div>
         </div>
       </div>
-      <SeekMindBadge tone="default">{{ semanticIndexStatusLabel }}</SeekMindBadge>
+      <div class="flex flex-wrap justify-end gap-2">
+        <SeekMindBadge :tone="semanticRuntimeState.tone">{{ semanticRuntimeState.label }}</SeekMindBadge>
+        <SeekMindBadge tone="default">{{ semanticIndexStatusLabel }}</SeekMindBadge>
+      </div>
     </div>
 
     <div class="settings-card-body">
@@ -225,6 +299,12 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="semanticStatus" class="space-y-3 text-sm">
+        <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm">
+          <div class="seekmind-item-meta">{{ t("semantic.runtime.title") }}</div>
+          <div class="mt-1 font-medium text-primary">{{ semanticRuntimeState.label }}</div>
+          <div class="mt-1 text-secondary">{{ semanticRuntimeState.detail }}</div>
+        </div>
+
         <label class="block">
           <div class="mb-1.5 seekmind-section-label">{{ t("semantic.defaultModel") }}</div>
           <select

@@ -13,6 +13,18 @@ use std::os::unix::fs::symlink;
 use crate::seekmind::vision_ocr::{bundled_vision_ocr_binary, default_vision_ocr_languages};
 use crate::seekmind::storage::types::NetworkProxySettings;
 
+fn env_override(names: &[&str]) -> Option<String> {
+    for name in names {
+        if let Ok(value) = std::env::var(name) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn target_triple_suffix() -> String {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => "aarch64-apple-darwin".to_string(),
@@ -116,6 +128,10 @@ pub fn resolve_bundled_sidecar(base_name: &str) -> Option<PathBuf> {
 
 pub fn configure_sidecar_command(command: &mut Command) {
     let cache_dir = ensure_fastembed_cache_dir();
+    eprintln!(
+        "[SeekMind] semantic sidecar cache dir={}",
+        cache_dir.display()
+    );
     command.env("SEEKMIND_FASTEMBED_CACHE_DIR", &cache_dir);
     command.env("HF_HOME", cache_dir.join("huggingface"));
 
@@ -166,17 +182,38 @@ fn ensure_fastembed_cache_dir() -> PathBuf {
     }
 
     let has_model_cache = cache_dir.join("models--Qdrant--bge-small-zh-v1.5").exists();
-    if !has_model_cache {
-        if let Some(archive) = bundled_fastembed_cache_archive() {
-            if let Err(error) = extract_fastembed_cache_archive(&archive, &cache_dir) {
+    if has_model_cache {
+        eprintln!(
+            "[SeekMind] fastembed cache hit dir={}",
+            cache_dir.display()
+        );
+    } else if let Some(archive) = bundled_fastembed_cache_archive() {
+        match extract_fastembed_cache_archive(&archive, &cache_dir) {
+            Ok(()) => {
+                eprintln!(
+                    "[SeekMind] restored fastembed cache from archive {} to {}",
+                    archive.display(),
+                    cache_dir.display()
+                );
+            }
+            Err(error) => {
                 eprintln!(
                     "[SeekMind] failed to extract bundled FastEmbed cache from {} to {}: {error}",
                     archive.display(),
                     cache_dir.display()
                 );
             }
-        } else if let Some(bundled_cache) = bundled_fastembed_cache_dir() {
-            if let Err(error) = copy_dir_missing(&bundled_cache, &cache_dir) {
+        }
+    } else if let Some(bundled_cache) = bundled_fastembed_cache_dir() {
+        match copy_dir_missing(&bundled_cache, &cache_dir) {
+            Ok(()) => {
+                eprintln!(
+                    "[SeekMind] restored fastembed cache from dir {} to {}",
+                    bundled_cache.display(),
+                    cache_dir.display()
+                );
+            }
+            Err(error) => {
                 eprintln!(
                     "[SeekMind] failed to copy bundled FastEmbed cache from {} to {}: {error}",
                     bundled_cache.display(),
@@ -184,12 +221,59 @@ fn ensure_fastembed_cache_dir() -> PathBuf {
                 );
             }
         }
+    } else {
+        eprintln!(
+            "[SeekMind] fastembed cache miss dir={} and no bundled cache source found",
+            cache_dir.display()
+        );
     }
 
     cache_dir
 }
 
+pub fn prepare_fastembed_cache_for_runtime() {
+    let cache_dir = ensure_fastembed_cache_dir();
+    let model_cache_dir = cache_dir.join("models--Qdrant--bge-small-zh-v1.5");
+    eprintln!(
+        "[SeekMind] fastembed runtime cache prepared dir={} model_cache_exists={}",
+        cache_dir.display(),
+        model_cache_dir.exists()
+    );
+}
+
+pub fn log_fastembed_cache_diagnostics() {
+    let cache_dir = writable_fastembed_cache_dir();
+    let model_cache_dir = cache_dir.join("models--Qdrant--bge-small-zh-v1.5");
+    let model_cache_exists = model_cache_dir.exists();
+    let configured_override =
+        env_override(&["SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"]);
+    let bundled_cache_dir = bundled_fastembed_cache_dir();
+    let bundled_cache_archive = bundled_fastembed_cache_archive();
+
+    eprintln!(
+        "[SeekMind] fastembed cache diagnostics dir={} model_cache_exists={} env_override={} bundled_dir={} bundled_archive={}",
+        cache_dir.display(),
+        model_cache_exists,
+        configured_override.as_deref().unwrap_or(""),
+        bundled_cache_dir
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+        bundled_cache_archive
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    );
+}
+
 fn writable_fastembed_cache_dir() -> PathBuf {
+    if let Some(configured) =
+        env_override(&["SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"])
+    {
+        // 修复：开发态 warmup 与 tauri dev 必须共享同一个显式模型缓存目录，不能在 sidecar 内再次强制改写到系统 cache。
+        return PathBuf::from(configured);
+    }
+
     let base = dirs::cache_dir()
         .or_else(dirs::data_local_dir)
         .or_else(dirs::data_dir)
@@ -253,14 +337,20 @@ fn resource_base_dirs() -> Vec<PathBuf> {
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
+            dirs.push(parent.join("app-resources"));
+
             if let Some(bundle_root) = parent.parent() {
                 dirs.push(bundle_root.join("Resources"));
+                dirs.push(bundle_root.join("debug").join("app-resources"));
+                dirs.push(bundle_root.join("release").join("app-resources"));
             }
         }
     }
 
     if let Ok(cwd) = std::env::current_dir() {
         dirs.push(cwd.join("src-tauri").join("app-resources"));
+        dirs.push(cwd.join("src-tauri").join("target").join("debug").join("app-resources"));
+        dirs.push(cwd.join("src-tauri").join("target").join("release").join("app-resources"));
     }
 
     dirs

@@ -588,10 +588,13 @@ fn extract_image_text(path: &Path) -> Result<String, String> {
     let text = recognize_image_text(path, &languages)?;
     let normalized = normalize_whitespace(&text);
     if normalized.is_empty() {
-        Err(format!(
-            "OCR produced empty text for image {}",
-            path.to_string_lossy()
-        ))
+        // 修复：截图类图片可能本身不含可识别文本，OCR 结果为空不应被当作解析失败，否则会把正常图片错误计入失败数。
+        eprintln!(
+            "[SeekMind] image ocr empty path={} languages={}",
+            path.to_string_lossy(),
+            languages.join(",")
+        );
+        Ok(String::new())
     } else {
         eprintln!(
             "[SeekMind] image ocr ok path={} chars={}",

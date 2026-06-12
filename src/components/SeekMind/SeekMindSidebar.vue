@@ -19,15 +19,9 @@ const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const { sidebarCollapsed, toggleSidebar } = useSidebarState();
-const { quickDirs, searchHistory, recentDocuments, favorites, loadQuickAccessData } = useQuickAccessData();
+const { searchHistory, recentDocuments, favorites, loadQuickAccessData } = useQuickAccessData();
 const panelActionTarget = ref("");
 let unlistenQuickAccessUpdated: null | (() => void) = null;
-const sidebarStats = computed(() => [
-  { label: t("sidebar.statsDirs"), value: quickDirs.value.length },
-  { label: t("sidebar.statsRecent"), value: recentDocuments.value.length },
-  { label: t("sidebar.statsFavorites"), value: favorites.value.length },
-]);
-
 const items = computed(() => [
   { key: "search", label: t("sidebar.search"), icon: "icon-search", to: "/" },
   { key: "qa", label: t("sidebar.qa"), icon: "icon-qa", to: "/qa" },
@@ -288,30 +282,6 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <div class="mt-auto border-t border-default pt-2">
-          <div class="flex items-center justify-between gap-2 text-[11px] text-muted">
-            <div class="flex min-w-0 items-center gap-3">
-              <span class="inline-flex items-center gap-1">
-                <span class="h-1.5 w-1.5 rounded-full bg-success" />
-                {{ t("sidebar.statusRunning") }}
-              </span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="inline-flex items-center gap-1 rounded-full bg-surface/70 px-2 py-0.5">
-                {{ sidebarStats[0].value }}
-                <span class="text-muted">{{ sidebarStats[0].label }}</span>
-              </span>
-              <span class="inline-flex items-center gap-1 rounded-full bg-surface/70 px-2 py-0.5">
-                {{ sidebarStats[1].value }}
-                <span class="text-muted">{{ sidebarStats[1].label }}</span>
-              </span>
-              <span class="inline-flex items-center gap-1 rounded-full bg-surface/70 px-2 py-0.5">
-                {{ sidebarStats[2].value }}
-                <span class="text-muted">{{ sidebarStats[2].label }}</span>
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 

@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
@@ -181,6 +182,19 @@ pub async fn get_app_runtime_info() -> Result<super::models::AppRuntimeInfoView,
         payload.app_version, payload.build_mode, payload.target_os, payload.target_arch
     );
     Ok(payload)
+}
+
+#[tauri::command]
+pub async fn export_log_markdown(path: String, markdown: String) -> Result<String, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("导出路径不能为空".to_string());
+    }
+
+    // 修复：日志导出改由 Rust 侧统一写盘，避免前端插件在部分环境下没有写入能力。
+    fs::write(path, markdown).map_err(|error| format!("导出日志失败: {error}"))?;
+    eprintln!("[SeekMind] log export saved to {path}");
+    Ok(path.to_string())
 }
 
 #[derive(Debug, Deserialize)]

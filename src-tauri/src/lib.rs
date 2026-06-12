@@ -42,6 +42,9 @@ pub fn run_vision_ocr_helper(args: &[String]) -> Result<(), String> {
 }
 
 pub fn run() {
+    seekmind::sidecar::log_fastembed_cache_diagnostics();
+    seekmind::sidecar::prepare_fastembed_cache_for_runtime();
+
     let database = tauri::async_runtime::block_on(seekmind::storage::Database::open_or_init())
         .expect("failed to initialize SeekMind SQLite database");
     let network_proxy_settings = tauri::async_runtime::block_on(
@@ -68,7 +71,12 @@ pub fn run() {
             });
 
             #[cfg(debug_assertions)]
-            if std::env::var("SeekMind_OPEN_DEVTOOLS").ok().as_deref() == Some("1") {
+            if std::env::var("SEEKMIND_OPEN_DEVTOOLS")
+                .ok()
+                .or_else(|| std::env::var("SeekMind_OPEN_DEVTOOLS").ok())
+                .as_deref()
+                == Some("1")
+            {
                 if let Some(window) = _app.get_webview_window("main") {
                     window.open_devtools();
                 }
@@ -131,6 +139,7 @@ pub fn run() {
             crate::seekmind::commands::clear_all_indexes,
             crate::seekmind::commands::pause_indexing,
             crate::seekmind::commands::resume_indexing,
+            crate::seekmind::commands::export_log_markdown,
             crate::seekmind::qa::commands::ask_question,
             crate::seekmind::qa::commands::cancel_qa_question,
             crate::seekmind::qa::commands::get_qa_settings,

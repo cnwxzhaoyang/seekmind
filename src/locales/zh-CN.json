@@ -656,7 +656,10 @@
         "retrying": "处理中...",
         "retryFile": "重新处理",
         "code": "代码 {code}",
-        "retryCount": "重试 {count} 次"
+        "retryCount": "重试 {count} 次",
+        "lastFailedAt": "失败时间",
+        "copyReason": "复制原因",
+        "copiedReason": "已复制失败原因"
       },
       "progress": {
         "overall": "总体进度",
@@ -975,7 +978,6 @@
 
   "logPanel": {
     "title": "日志",
-    "desc": "索引 / 切片 / 语义事件",
     "scopeLabel": {
       "index": "索引任务",
       "document": "切片任务",
@@ -989,6 +991,10 @@
     "empty": "暂无日志，执行索引、切片或语义任务后会自动显示事件。",
     "clear": "清空",
     "export": "导出日志",
+    "table": {
+      "content": "内容",
+      "date": "日期"
+    },
     "events": "{count} 条事件",
     "details": {
       "fullIndex": "全量索引",
@@ -1033,6 +1039,17 @@
     "availability": "可用性：{status}",
     "lastIndexed": "最近索引：{time}",
     "lastError": "最后错误：{msg}",
+    "runtime": {
+      "title": "语义运行状态",
+      "detecting": "正在检测",
+      "detectingHint": "系统正在探测当前 embedding 运行时是否可用。",
+      "available": "embedding 已可用",
+      "availableHint": "当前模型可正常生成向量，索引时会写入 embedding。",
+      "availableWithNote": "当前模型可正常生成向量。提示：{note}",
+      "unavailable": "embedding 不可用",
+      "unavailableHint": "当前模型无法生成向量，索引仍可继续，但语义召回会退化为全文检索。",
+      "probeFailed": "语义模型探测失败"
+    },
     "btn": {
       "setDefault": "设为默认模型",
       "rebuild": "重建语义向量",

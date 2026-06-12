@@ -1,4 +1,9 @@
 #![allow(dead_code)]
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/12
+ * @Description 语义模型状态、向量重建与语义检索存储逻辑。
+ */
 
 use chrono::Utc;
 use sqlx::Row;
@@ -130,9 +135,18 @@ pub async fn get_embedding_model_status(
 
     match runtime_status {
         Ok(status) => {
+            eprintln!(
+                "[SeekMind] semantic probe ok model={} available={} message={}",
+                model.name, status.available, status.message
+            );
             sync_model_runtime(database, &model.id, status.available, &status.message).await?;
         }
         Err(error) => {
+            // 修复：设置页首屏必须把真实探测失败同步回模型状态，否则前端会继续显示旧的 available 标记，误导用户以为 embedding 可用。
+            eprintln!(
+                "[SeekMind] semantic probe failed model={} error={}",
+                model.name, error
+            );
             sync_model_runtime(database, &model.id, false, &error.to_string()).await?;
         }
     }

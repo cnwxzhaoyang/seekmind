@@ -29,6 +29,7 @@ import {
 } from "lucide-vue-next";
 import SvgIcon from "../components/SvgIcon.vue";
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
+import SeekMindFailedFilesPanel from "../components/SeekMind/SeekMindFailedFilesPanel.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
@@ -590,10 +591,17 @@ const currentTaskDurationText = computed(() => {
 });
 
 const indexProgressPercent = computed(() => {
+  const task = status.value?.current_task;
+  if (task && Number.isFinite(task.progress)) {
+    // 修复：后台已经写入 current_task.progress，前端不再仅依赖 scanned/indexed 比例，避免大分母下始终显示 0%。
+    return Math.max(0, Math.min(100, Math.round(task.progress)));
+  }
+
   const scanned = status.value?.scanned_docs ?? 0;
   if (scanned <= 0) {
     return 0;
   }
+
   return Math.min(100, Math.round(((status.value?.indexed_docs ?? 0) / scanned) * 100));
 });
 
@@ -627,10 +635,18 @@ const latestExceptions = computed(() => {
     file: item.file,
     type: item.category || item.code || t("page.status.exception.unknownType"),
     time: "--",
-    message: item.message,
+    // 修复：FailedFileView 只有 reason，没有 message；这里改为直接展示失败原因。
+    reason: item.reason,
     traceback: "",
   }));
 });
+
+// 修复：状态页之前只暴露失败数量，失败文件与原因虽然已经在 failed_items 里返回，但没有直接显示；这里按失败时间倒序展开给独立面板使用。
+const visibleFailedItems = computed(() =>
+  [...(status.value?.failed_items ?? [])].sort((left, right) =>
+    (right.last_failed_at || "").localeCompare(left.last_failed_at || ""),
+  ),
+);
 
 const retryFailedFile = async (path: string) => {
   retryingTarget.value = path;
@@ -648,6 +664,10 @@ const retryFailedFile = async (path: string) => {
     retryingTarget.value = null;
     await syncDashboardState();
   }
+};
+
+const copyFailedReason = async (reason: string) => {
+  await copyText(reason, t("page.status.failed.copiedReason"));
 };
 
 const retryFailedGroup = async (code: string, items: FailedFileView[]) => {
@@ -1451,9 +1471,18 @@ onBeforeUnmount(() => {
                   <div class="stat-label">{{ t("page.status.section.latestException") }}</div>
                   <div
                     class="stat-value health-value-truncate"
-                    :title="latestExceptions.length > 0 ? latestExceptions[0].file : t('page.status.exception.noException')"
+                    :title="latestExceptions.length > 0
+                      ? `${latestExceptions[0].file} · ${latestExceptions[0].reason || latestExceptions[0].type}`
+                      : t('page.status.exception.noException')"
                   >
                     {{ latestExceptions.length > 0 ? latestExceptions[0].file : t("page.status.exception.noException") }}
+                  </div>
+                  <div
+                    v-if="latestExceptions.length > 0"
+                    class="stat-desc health-value-truncate"
+                    :title="latestExceptions[0].reason || latestExceptions[0].type"
+                  >
+                    {{ latestExceptions[0].reason || latestExceptions[0].type }}
                   </div>
                 </div>
               </div>
@@ -1492,6 +1521,14 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+
+          <SeekMindFailedFilesPanel
+            :items="visibleFailedItems"
+            :retrying-target="retryingTarget"
+            @retry="retryFailedFile"
+            @copy-path="copyDirPath"
+            @copy-reason="copyFailedReason"
+          />
 
         </div>
       </div>
