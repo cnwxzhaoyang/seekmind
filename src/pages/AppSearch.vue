@@ -20,6 +20,7 @@ import SeekMindCollectionPicker from "../components/SeekMind/SeekMindCollectionP
 import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import SeekMindHighlightedText from "../components/SeekMind/SeekMindHighlightedText.vue";
+import SeekMindFileIcon from "../components/SeekMind/SeekMindFileIcon.vue";
 import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRenderer.vue";
 import SeekMindPreviewBlockRenderer from "../components/SeekMind/SeekMindPreviewBlockRenderer.vue";
 import SeekMindSearchResultGroupCard from "../components/SeekMind/SeekMindSearchResultGroupCard.vue";
@@ -1569,9 +1570,7 @@ watch(showDebugPanel, async (visible) => {
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <div class="seekmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
-                      {{ selected.ext.toUpperCase() }}
-                    </div>
+                    <SeekMindFileIcon :ext="selected.ext" />
                     <button
                       class="seekmind-close-button"
                       type="button"
@@ -1706,9 +1705,7 @@ watch(showDebugPanel, async (visible) => {
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <div class="seekmind-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface text-[10px] font-semibold text-secondary">
-                      {{ qaSelectedSource.ext.toUpperCase() }}
-                    </div>
+                    <SeekMindFileIcon :ext="qaSelectedSource.ext" />
                     <button
                       class="seekmind-close-button"
                       type="button"

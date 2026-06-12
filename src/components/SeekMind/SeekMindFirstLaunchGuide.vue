@@ -7,8 +7,8 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import { FolderPlus, MessageSquareText, Search, X } from "lucide-vue-next";
 import { seekMindApi } from "../../services/seekMindApi";
+import SeekMindIcon from "./SeekMindIcon.vue";
 
 const STORAGE_KEY = "seekmind.onboarding.dismissed.v1";
 
@@ -42,9 +42,9 @@ const showGuide = computed(() => {
 });
 
 const steps = computed(() => [
-  { icon: FolderPlus, title: t("onboarding.step1Title"), desc: t("onboarding.step1Desc") },
-  { icon: Search, title: t("onboarding.step2Title"), desc: t("onboarding.step2Desc") },
-  { icon: MessageSquareText, title: t("onboarding.step3Title"), desc: t("onboarding.step3Desc") },
+  { icon: "icon-folder", title: t("onboarding.step1Title"), desc: t("onboarding.step1Desc") },
+  { icon: "icon-search", title: t("onboarding.step2Title"), desc: t("onboarding.step2Desc") },
+  { icon: "icon-qa", title: t("onboarding.step3Title"), desc: t("onboarding.step3Desc") },
 ]);
 
 const loadFirstLaunchState = async () => {
@@ -88,7 +88,7 @@ onMounted(() => {
   >
     <div class="flex items-start gap-3">
       <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-accent-soft text-accent">
-        <FolderPlus :size="19" />
+        <SeekMindIcon icon="icon-folder" :size="19" />
       </div>
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-3">
@@ -102,7 +102,7 @@ onMounted(() => {
             :title="t('onboarding.close')"
             @click="dismissGuide"
           >
-            <X :size="15" />
+            <SeekMindIcon icon="icon-close" :size="15" />
           </button>
         </div>
 
@@ -113,7 +113,7 @@ onMounted(() => {
             class="flex min-h-[68px] items-start gap-2 rounded-[14px] border border-default bg-panel/70 px-3 py-2"
           >
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-surface text-accent">
-              <component :is="step.icon" :size="15" />
+              <SeekMindIcon :icon="step.icon" :size="15" />
             </div>
             <div class="min-w-0">
               <div class="text-[11px] font-medium leading-4 text-muted">{{ t("onboarding.stepLabel", { index: index + 1 }) }}</div>

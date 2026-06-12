@@ -6,11 +6,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { PanelTopClose, PanelTopOpen } from "lucide-vue-next";
 import SeekMindBadge from "./SeekMindBadge.vue";
 import SeekMindFileIcon from "./SeekMindFileIcon.vue";
 import SeekMindHighlightedText from "./SeekMindHighlightedText.vue";
 import SeekMindSearchResultCard from "./SeekMindSearchResultCard.vue";
+import SeekMindIcon from "./SeekMindIcon.vue";
 import type { SearchResultView } from "../../types/SeekMind";
 
 const { t } = useI18n();
@@ -141,8 +141,8 @@ const emitContextMenu = (event: MouseEvent) => {
               :aria-label="props.expanded ? t('searchResultGroupCard.collapse') : t('searchResultGroupCard.expand')"
               @click.stop="emit('toggle', group.path)"
             >
-              <PanelTopClose v-if="props.expanded" :size="16" />
-              <PanelTopOpen v-else :size="16" />
+              <SeekMindIcon v-if="props.expanded" icon="icon-chevron-up" :size="16" />
+              <SeekMindIcon v-else icon="icon-chevron-down" :size="16" />
             </button>
           </div>
         </div>

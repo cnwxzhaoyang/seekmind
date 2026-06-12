@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Folder, FolderOpen, FileText } from "lucide-vue-next";
 import type { VisibleIndexDirRow } from "../../composables/useIndexDirTree";
+import SeekMindIcon from "./SeekMindIcon.vue";
 
 const props = withDefaults(defineProps<{
   rows: VisibleIndexDirRow[];
@@ -85,11 +85,11 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
         :aria-expanded="row.expanded"
         @click.stop="emit('toggle', row.dir.path, !row.expanded)"
       >
-        <FolderOpen v-if="row.expanded" :size="15" />
-        <Folder v-else :size="15" />
+        <SeekMindIcon v-if="row.expanded" icon="icon-folder" :size="15" />
+        <SeekMindIcon v-else icon="icon-folder" :size="15" />
       </button>
       <span v-else class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-muted">
-        <Folder :size="15" />
+        <SeekMindIcon icon="icon-folder" :size="15" />
       </span>
 
       <div class="seekmind-item-title min-w-0 flex-1 truncate">
@@ -104,11 +104,11 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
         </span>
         <slot name="meta" :row="row">
           <span class="inline-flex items-center gap-0.5" title="Documents">
-            <FileText :size="10" />
+            <SeekMindIcon icon="icon-file" :size="10" />
             {{ row.dir.docs }}
           </span>
           <span class="inline-flex items-center gap-0.5" title="Chunks">
-            <FileText :size="10" class="opacity-50" />
+            <SeekMindIcon icon="icon-file" :size="10" class="opacity-50" />
             {{ row.dir.chunks }}
           </span>
         </slot>

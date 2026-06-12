@@ -7,13 +7,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { BookMarked, ChevronLeft, Database, FileText, History, Layers3, MessageSquareText, Search, Settings, Star, Trash2 } from "lucide-vue-next";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
 import { seekMindApi } from "../../services/seekMindApi";
 import { formatSeekMindDateOnly } from "../../utils/dateFormat";
 import { listenQuickAccessUpdated } from "../../utils/quickAccessEvents";
 import brandIconUrl from "../../assets/app_icon_64x64.png";
+import SeekMindIcon from "./SeekMindIcon.vue";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -29,12 +29,12 @@ const sidebarStats = computed(() => [
 ]);
 
 const items = computed(() => [
-  { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
-  { key: "qa", label: t("sidebar.qa"), icon: MessageSquareText, to: "/qa" },
-  { key: "collections", label: t("sidebar.collections"), icon: BookMarked, to: "/collections" },
-  { key: "chunks", label: t("sidebar.chunks"), icon: Layers3, to: "/chunks" },
-  { key: "status", label: t("sidebar.status"), icon: Database, to: "/status" },
-  { key: "settings", label: t("sidebar.settings"), icon: Settings, to: "/settings" },
+  { key: "search", label: t("sidebar.search"), icon: "icon-search", to: "/" },
+  { key: "qa", label: t("sidebar.qa"), icon: "icon-qa", to: "/qa" },
+  { key: "collections", label: t("sidebar.collections"), icon: "icon-knowledge-base", to: "/collections" },
+  { key: "chunks", label: t("sidebar.chunks"), icon: "icon-chunk", to: "/chunks" },
+  { key: "status", label: t("sidebar.status"), icon: "icon-index-status", to: "/status" },
+  { key: "settings", label: t("sidebar.settings"), icon: "icon-settings", to: "/settings" },
 ]);
 
 const activeKey = computed(() => {
@@ -145,7 +145,7 @@ onBeforeUnmount(() => {
           :aria-label="t('sidebar.collapse')"
           @click="toggleSidebar"
         >
-          <ChevronLeft :size="15" />
+          <SeekMindIcon icon="icon-chevron-down" :size="15" class="-rotate-90" />
         </button>
       </div>
     </div>
@@ -166,7 +166,8 @@ onBeforeUnmount(() => {
         :aria-label="item.label"
       >
         <component
-          :is="item.icon"
+          :is="SeekMindIcon"
+          :icon="item.icon"
           :size="17"
           class="shrink-0"
           :class="activeKey === item.key ? 'text-white' : 'text-current'"
@@ -175,12 +176,12 @@ onBeforeUnmount(() => {
       </RouterLink>
     </nav>
 
-    <div v-if="!sidebarCollapsed" class="mt-1 min-h-0 flex-1 overflow-hidden">
+    <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden border-t border-default pt-3">
       <!-- 侧栏内容区压缩密度，改成扁平分区，避免每块都像独立卡片。 -->
       <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.56fr)] gap-2 overflow-hidden pr-1">
         <section class="flex min-h-0 flex-col overflow-hidden">
-          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[11px] font-medium text-primary">
-            <History :size="12" />
+          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
+            <SeekMindIcon icon="icon-history-search" :size="12" />
             {{ t("page.appSearch.section.recentSearch") }}
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto pt-2">
@@ -194,11 +195,11 @@ onBeforeUnmount(() => {
                 class="group flex items-center gap-1"
               >
                 <button
-                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[12px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
+                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
                   :title="item.query"
                   @click="openSearchQuery(item.query)"
                 >
-                  <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.query }}</div>
+                  <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.query }}</div>
                   <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ formatSeekMindDateOnly(item.last_hit_at, locale.value) }}</div>
                 </button>
                 <button
@@ -207,16 +208,17 @@ onBeforeUnmount(() => {
                   :disabled="panelActionTarget === `history:${item.query}`"
                   @click.stop="removeSearchHistory(item.query)"
                 >
-                  <Trash2 :size="12" />
+                  <SeekMindIcon icon="icon-delete" :size="12" />
                 </button>
               </div>
             </div>
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden">
-          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[11px] font-medium text-primary">
-            <FileText :size="12" />
+        <!-- 这里把三个历史区块拆开，避免浅色/深色主题下内容贴得太紧。 -->
+        <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
+          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
+            <SeekMindIcon icon="icon-history-open" :size="12" />
             {{ t("page.appSearch.section.recentOpen") }}
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto pt-2">
@@ -230,11 +232,11 @@ onBeforeUnmount(() => {
                 class="group flex items-start gap-1"
               >
                 <button
-                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[12px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
+                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
                   :title="t('page.appSearch.section.recentOpenTip', { title: item.title, path: item.path })"
                   @click="openRecentDocument(item.path)"
                 >
-                  <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.title }}</div>
+                  <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.title }}</div>
                   <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
                 </button>
                 <button
@@ -243,16 +245,16 @@ onBeforeUnmount(() => {
                   :disabled="panelActionTarget === `recent:${item.path}`"
                   @click.stop="removeRecentDocument(item.path)"
                 >
-                  <Trash2 :size="12" />
+                  <SeekMindIcon icon="icon-delete" :size="12" />
                 </button>
               </div>
             </div>
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden">
-          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[11px] font-medium text-primary">
-            <Star :size="12" />
+        <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
+          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
+            <SeekMindIcon icon="icon-star" :size="12" />
             {{ t("page.appSearch.section.favorites") }}
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto pt-2">
@@ -266,11 +268,11 @@ onBeforeUnmount(() => {
                 class="group flex items-start gap-1"
               >
                 <button
-                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[12px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
+                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
                   :title="t('page.appSearch.section.favoriteTip', { title: item.title, path: item.path })"
                   @click="openFavoriteDocument(item.path)"
                 >
-                  <div class="truncate text-[12px] font-medium leading-5 text-primary">{{ item.title }}</div>
+                  <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.title }}</div>
                   <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
                 </button>
                 <button
@@ -279,7 +281,7 @@ onBeforeUnmount(() => {
                   :disabled="panelActionTarget === `favorite:${item.target}`"
                   @click.stop="removeFavorite(item.target)"
                 >
-                  <Trash2 :size="12" />
+                  <SeekMindIcon icon="icon-delete" :size="12" />
                 </button>
               </div>
             </div>

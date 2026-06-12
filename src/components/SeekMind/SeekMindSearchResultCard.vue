@@ -6,10 +6,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { Clock, Heart } from "lucide-vue-next";
 import SeekMindBadge from "./SeekMindBadge.vue";
 import SeekMindHighlightedText from "./SeekMindHighlightedText.vue";
 import SeekMindFileIcon from "./SeekMindFileIcon.vue";
+import SeekMindIcon from "./SeekMindIcon.vue";
 import type { SearchResultView } from "../../types/SeekMind";
 
 const { t } = useI18n();
@@ -99,7 +99,7 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
               :title="favoriteTitle"
               @click.stop="emit('toggleFavorite')"
             >
-              <Heart :size="14" :class="props.favorited ? 'fill-danger text-danger' : ''" />
+              <SeekMindIcon icon="icon-star" :size="14" :class="props.favorited ? 'text-warning' : ''" />
             </button>
             <!-- 修复：这里展示的是可叠加的相关度分，不是 0~100% 的百分比。 -->
             <div class="text-[11px] font-medium text-dim">
@@ -128,7 +128,10 @@ const emitSelect = (event: MouseEvent | KeyboardEvent) => {
           <span>·</span>
           <span>{{ t("searchResultCard.hitSnippet") }}</span>
           <span>·</span>
-          <span><Clock class="mr-1 inline" :size="12" />{{ item.modified }}</span>
+          <span class="inline-flex items-center gap-0.5">
+            <SeekMindIcon icon="icon-history-open" :size="12" />
+            {{ item.modified }}
+          </span>
         </div>
         <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
           <span>{{ t("searchResultCard.scoreKeywords", { score: item.rank_reason.keyword_score.toFixed(2) }) }}</span>

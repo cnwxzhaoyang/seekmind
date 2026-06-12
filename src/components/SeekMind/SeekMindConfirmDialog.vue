@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { AlertTriangle, X } from "lucide-vue-next";
+import SeekMindIcon from "./SeekMindIcon.vue";
 
 interface Props {
   visible: boolean;
@@ -44,7 +44,7 @@ const { t } = useI18n();
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
             :class="danger ? 'bg-danger-soft text-danger' : 'bg-accent-soft text-accent'"
           >
-            <AlertTriangle :size="20" />
+            <SeekMindIcon :icon="danger ? 'icon-warning' : 'icon-info'" :size="20" />
           </div>
           <div class="text-sm font-semibold text-primary">{{ title || t("common.confirm") }}</div>
         </div>
@@ -54,7 +54,7 @@ const { t } = useI18n();
           :aria-label="t('common.close')"
           @click="emit('cancel')"
         >
-          <X :size="16" />
+          <SeekMindIcon icon="icon-close" :size="16" />
         </button>
       </div>
 

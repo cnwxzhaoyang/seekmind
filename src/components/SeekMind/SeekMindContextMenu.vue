@@ -5,6 +5,7 @@
  * @Description 通用右键菜单组件，负责菜单项展示、鼠标高亮和键盘导航。
  */
 import { ref, onMounted, onBeforeUnmount } from "vue";
+import SeekMindIcon from "./SeekMindIcon.vue";
 
 export interface ContextMenuItem {
   key: string;
@@ -156,7 +157,8 @@ onBeforeUnmount(() => {
           @click="handleItemClick(item)"
         >
           <span v-if="item.icon" class="inline-flex h-4 w-4 items-center justify-center">
-            <component :is="item.icon" :size="14" />
+            <SeekMindIcon v-if="typeof item.icon === 'string'" :icon="item.icon" :size="14" />
+            <component :is="item.icon" v-else :size="14" />
           </span>
           <span v-else class="inline-flex h-4 w-4" />
           {{ item.label }}

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Plus, X } from "lucide-vue-next";
 import type { CollectionView } from "../../types/SeekMind";
+import SeekMindIcon from "./SeekMindIcon.vue";
 
 interface Props {
   visible: boolean;
@@ -68,7 +68,7 @@ const handleCreate = () => {
           :aria-label="t('common.close')"
           @click="emit('close')"
         >
-          <X :size="16" />
+          <SeekMindIcon icon="icon-close" :size="16" />
         </button>
       </div>
 
@@ -120,7 +120,7 @@ const handleCreate = () => {
             :disabled="!newCollectionName.trim()"
             @click="handleCreate"
           >
-            <Plus :size="16" />
+            <SeekMindIcon icon="icon-plus" :size="16" />
             {{ t("page.collections.create") }}
           </button>
         </div>
