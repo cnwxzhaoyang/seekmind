@@ -12,7 +12,7 @@ use super::parser::{office_converter_config_json, python_parser_config_json};
 use super::search::{normalize_query, normalize_search_text};
 use super::storage::types::IndexSettings;
 use super::storage::{indexer, scanner, Database};
-use crate::seekmind::vision_ocr::bundled_vision_ocr_binary;
+use crate::seekmind::sidecar::default_python_bin;
 use crate::seekmind::vision_ocr::has_chinese_vision_language;
 use crate::seekmind::semantic::store as semantic_store;
 use crate::seekmind::storage::{db::sqlite_database_path, fulltext::fulltext_index_dir};
@@ -1191,8 +1191,8 @@ pub async fn get_parser_runtime() -> Result<super::models::ParserRuntimeView, St
         python_bin: config
             .get("bin")
             .and_then(|value| value.as_str())
-            .unwrap_or("python3")
-            .to_string(),
+            .map(ToString::to_string)
+            .unwrap_or_else(default_python_bin),
         script_path: config
             .get("script")
             .and_then(|value| value.as_str())
@@ -1337,27 +1337,7 @@ fn available_vision_ocr_languages() -> Vec<String> {
 }
 
 fn vision_ocr_binary_candidates() -> Vec<std::path::PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(value) = std::env::var("SEEKMIND_VISION_OCR_BIN") {
-        let candidate = std::path::PathBuf::from(value);
-        if candidate.exists() {
-            candidates.push(candidate);
-        }
-    }
-
-    if let Some(candidate) = bundled_vision_ocr_binary() {
-        candidates.push(candidate);
-    }
-
-    candidates.extend([
-        std::path::PathBuf::from("/opt/homebrew/bin/vision-ocr"),
-        std::path::PathBuf::from("/usr/local/bin/vision-ocr"),
-        std::path::PathBuf::from("/opt/local/bin/vision-ocr"),
-        std::path::PathBuf::from("vision-ocr"),
-    ]);
-
-    candidates
+    crate::seekmind::runtime_paths::vision_ocr_binary_candidates()
 }
 
 #[tauri::command]

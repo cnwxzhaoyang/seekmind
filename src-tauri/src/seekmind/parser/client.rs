@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::seekmind::sidecar::{configure_sidecar_command, resolve_bundled_sidecar};
+use crate::seekmind::runtime_paths::office_converter_candidates;
+use crate::seekmind::sidecar::{resolve_timeout_ms, PythonSidecarRuntime};
 
 use super::types::{
     ParsedDocument, ParserError, ParserOptions, ParserRequest, ParserResponse, ParserStreamEvent,
@@ -16,9 +17,7 @@ use super::types::{
 
 #[derive(Debug, Clone)]
 pub struct PythonParserClient {
-    python_bin: String,
-    script_path: PathBuf,
-    bundled_sidecar: Option<PathBuf>,
+    runtime: PythonSidecarRuntime,
     timeout: Duration,
 }
 
@@ -55,38 +54,18 @@ impl std::error::Error for ParserClientError {}
 
 impl PythonParserClient {
     pub fn from_env() -> Self {
-        let python_bin =
-            std::env::var("SEEKMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
-        let script_path = std::env::var("SEEKMIND_PARSER_SCRIPT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("parser/seekmind_parser/__main__.py"));
-        let bundled_sidecar = std::env::var("SEEKMIND_PARSER_BIN")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .and_then(|value| {
-                let candidate = PathBuf::from(value);
-                if candidate.exists() {
-                    Some(candidate)
-                } else {
-                    None
-                }
-            })
-            .or_else(|| resolve_bundled_sidecar("seekmind-parser").filter(|path| path.exists()));
-        let timeout_ms = std::env::var("SEEKMIND_PARSER_TIMEOUT_MS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(30_000);
+        // 修复：parser / qa / semantic sidecar 的运行时入口必须共用同一套平台解析，避免 Windows 下 python 可执行名和 script 路径继续分叉。
+        let runtime = PythonSidecarRuntime::from_env("parser/seekmind_parser/__main__.py");
+        let timeout_ms = resolve_timeout_ms("SEEKMIND_PARSER_TIMEOUT_MS", None, 30_000);
 
         Self {
-            python_bin,
-            script_path,
-            bundled_sidecar,
+            runtime,
             timeout: Duration::from_millis(timeout_ms),
         }
     }
 
     pub fn is_configured(&self) -> bool {
-        self.bundled_sidecar.is_some() || self.resolve_script_path().exists()
+        self.runtime.is_configured()
     }
 
     pub fn parse_document(&self, path: &Path) -> Result<ParsedDocument, ParserClientError> {
@@ -257,52 +236,13 @@ impl PythonParserClient {
     }
 
     pub fn resolve_script_path(&self) -> PathBuf {
-        if self.script_path.is_absolute() {
-            return self.script_path.clone();
-        }
-
-        let candidates = [
-            std::env::current_dir()
-                .ok()
-                .map(|cwd| cwd.join(&self.script_path)),
-            std::env::current_dir()
-                .ok()
-                .map(|cwd| cwd.join("src-tauri").join(&self.script_path)),
-            std::env::current_exe()
-                .ok()
-                .and_then(|exe| exe.parent().map(|parent| parent.join(&self.script_path))),
-            Some(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("..")
-                    .join(&self.script_path),
-            ),
-        ];
-
-        for candidate in candidates.into_iter().flatten() {
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-
-        self.script_path.clone()
+        self.runtime.resolve_script_path()
     }
 
     fn spawn_command(&self) -> Result<Command, ParserClientError> {
-        if let Some(path) = &self.bundled_sidecar {
-            let mut command = Command::new(path);
-            configure_sidecar_command(&mut command);
-            return Ok(command);
-        }
-
-        let script_path = self.resolve_script_path();
-        if !script_path.exists() {
-            return Err(ParserClientError::NotConfigured);
-        }
-
-        let mut command = Command::new(&self.python_bin);
-        command.arg(script_path);
-        configure_sidecar_command(&mut command);
-        Ok(command)
+        self.runtime
+            .spawn_command()
+            .ok_or(ParserClientError::NotConfigured)
     }
 }
 
@@ -337,43 +277,15 @@ pub fn python_parser_config_json() -> serde_json::Value {
     json!({
         "enabled": python_parser_enabled(),
         "available": client.is_configured(),
-        "bin": std::env::var("SEEKMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string()),
+        "bin": client.runtime.python_bin.clone(),
         "script": client.resolve_script_path().to_string_lossy().to_string(),
-        "timeout_ms": std::env::var("SEEKMIND_PARSER_TIMEOUT_MS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(30_000),
+        "timeout_ms": resolve_timeout_ms("SEEKMIND_PARSER_TIMEOUT_MS", None, 30_000),
     })
 }
 
 fn office_converter_path() -> Option<String> {
-    let mut candidates = vec![std::env::var("SEEKMIND_OFFICE_BIN").ok()];
-
-    if cfg!(target_os = "windows") {
-        candidates.extend([
-            Some("soffice.exe".to_string()),
-            Some("libreoffice.exe".to_string()),
-            std::env::var("PROGRAMFILES")
-                .ok()
-                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
-            std::env::var("PROGRAMFILES(X86)")
-                .ok()
-                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
-        ]);
-    } else if cfg!(target_os = "macos") {
-        candidates.extend([
-            Some("soffice".to_string()),
-            Some("libreoffice".to_string()),
-            Some("/Applications/LibreOffice.app/Contents/MacOS/soffice".to_string()),
-            Some("/Applications/LibreOffice.app/Contents/MacOS/libreoffice".to_string()),
-        ]);
-    } else {
-        candidates.extend([Some("soffice".to_string()), Some("libreoffice".to_string())]);
-    }
-
-    candidates
+    office_converter_candidates()
         .into_iter()
-        .flatten()
         .find(|candidate| office_converter_works(candidate))
 }
 

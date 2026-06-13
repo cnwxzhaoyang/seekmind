@@ -16,6 +16,7 @@ use zip::ZipArchive;
 use crate::seekmind::parser::types::{ParsedBlock, PdfOcrTask};
 use crate::seekmind::parser::types::ParserStreamEvent;
 use crate::seekmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
+use crate::seekmind::runtime_paths::office_converter_candidates;
 use crate::seekmind::vision_ocr::recognize_image_text;
 
 use super::types::{
@@ -662,32 +663,8 @@ fn looks_like_textutil_error_output(text: &str) -> bool {
 }
 
 fn office_converter_path() -> Option<String> {
-    let mut candidates = vec![std::env::var("SEEKMIND_OFFICE_BIN").ok()];
-    if cfg!(target_os = "windows") {
-        candidates.extend([
-            Some("soffice.exe".to_string()),
-            Some("libreoffice.exe".to_string()),
-            std::env::var("PROGRAMFILES")
-                .ok()
-                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
-            std::env::var("PROGRAMFILES(X86)")
-                .ok()
-                .map(|value| format!("{value}\\LibreOffice\\program\\soffice.exe")),
-        ]);
-    } else if cfg!(target_os = "macos") {
-        candidates.extend([
-            Some("soffice".to_string()),
-            Some("libreoffice".to_string()),
-            Some("/Applications/LibreOffice.app/Contents/MacOS/soffice".to_string()),
-            Some("/Applications/LibreOffice.app/Contents/MacOS/libreoffice".to_string()),
-        ]);
-    } else {
-        candidates.extend([Some("soffice".to_string()), Some("libreoffice".to_string())]);
-    }
-
-    candidates
+    office_converter_candidates()
         .into_iter()
-        .flatten()
         .find(|candidate| office_converter_works(candidate))
 }
 

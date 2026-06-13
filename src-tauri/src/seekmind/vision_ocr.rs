@@ -42,6 +42,7 @@ pub fn has_chinese_vision_language(languages: &[String]) -> bool {
 #[cfg(target_os = "macos")]
 mod macos {
     use super::{default_vision_ocr_languages, parse_lang_list};
+    use crate::seekmind::runtime_paths::bundled_vision_ocr_binary_path;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::OnceLock;
@@ -57,48 +58,8 @@ mod macos {
     #[link(name = "Vision", kind = "framework")]
     extern "C" {}
 
-    pub(super) fn ocr_resource_dir() -> Option<PathBuf> {
-        let mut roots = Vec::new();
-
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                roots.push(parent.to_path_buf());
-                if let Some(bundle_root) = parent.parent() {
-                    roots.push(bundle_root.join("Resources"));
-                }
-            }
-        }
-
-        if let Ok(cwd) = std::env::current_dir() {
-            roots.push(cwd.join("src-tauri").join("app-resources"));
-        }
-
-        for root in roots {
-            for candidate in [root.join("app-resources").join("ocr"), root.join("ocr")] {
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        None
-    }
-
     pub fn bundled_vision_ocr_binary() -> Option<PathBuf> {
-        let binary_name = if cfg!(target_os = "windows") {
-            "vision-ocr.exe"
-        } else {
-            "vision-ocr"
-        };
-
-        ocr_resource_dir().and_then(|root| {
-            let candidate = root.join(binary_name);
-            if candidate.is_file() {
-                Some(candidate)
-            } else {
-                None
-            }
-        })
+        bundled_vision_ocr_binary_path()
     }
 
     fn helper_candidates() -> Vec<PathBuf> {
@@ -113,10 +74,6 @@ mod macos {
 
         if let Some(candidate) = bundled_vision_ocr_binary() {
             candidates.push(candidate);
-        }
-
-        if let Ok(cwd) = std::env::current_dir() {
-            candidates.push(cwd.join("src-tauri").join("app-resources").join("ocr").join("vision-ocr"));
         }
 
         candidates.push(PathBuf::from("vision-ocr"));

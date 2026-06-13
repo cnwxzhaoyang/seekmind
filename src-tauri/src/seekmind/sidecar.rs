@@ -1,129 +1,113 @@
 /*
  * @author MorningSun
- * @CreatedDate 2026/06/06
- * @Description SeekMind sidecar and bundled helper environment wiring.
+ * @CreatedDate 2026/06/13
+ * @Description SeekMind sidecar 启动配置、模型缓存准备与运行时诊断。
  */
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
-use crate::seekmind::vision_ocr::{bundled_vision_ocr_binary, default_vision_ocr_languages};
+use flate2::read::GzDecoder;
+use tar::Archive;
+
+use crate::seekmind::runtime_paths::{
+    bundled_fastembed_cache_archive, bundled_fastembed_cache_dir, bundled_vision_ocr_binary_path,
+    env_override, fastembed_model_cache_dir, writable_fastembed_cache_dir,
+};
 use crate::seekmind::storage::types::NetworkProxySettings;
+use crate::seekmind::vision_ocr::default_vision_ocr_languages;
 
-fn env_override(names: &[&str]) -> Option<String> {
-    for name in names {
-        if let Ok(value) = std::env::var(name) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
+pub use crate::seekmind::runtime_paths::resolve_bundled_sidecar;
+
+#[derive(Debug, Clone)]
+pub struct PythonSidecarRuntime {
+    pub python_bin: String,
+    pub script_path: PathBuf,
+    pub bundled_sidecar: Option<PathBuf>,
+}
+
+impl PythonSidecarRuntime {
+    pub fn from_env(default_script_path: &str) -> Self {
+        let python_bin =
+            std::env::var("SEEKMIND_PARSER_BIN").unwrap_or_else(|_| default_python_bin());
+        let script_path = std::env::var("SEEKMIND_PARSER_SCRIPT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(default_script_path));
+        let bundled_sidecar = std::env::var("SEEKMIND_PARSER_BIN")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .and_then(|value| {
+                let candidate = PathBuf::from(value);
+                if candidate.exists() {
+                    Some(candidate)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| resolve_bundled_sidecar("seekmind-parser").filter(|path| path.exists()));
+
+        Self {
+            python_bin,
+            script_path,
+            bundled_sidecar,
+        }
+    }
+
+    pub fn is_configured(&self) -> bool {
+        self.bundled_sidecar.is_some() || self.resolve_script_path().exists()
+    }
+
+    pub fn resolve_script_path(&self) -> PathBuf {
+        if self.script_path.is_absolute() {
+            return self.script_path.clone();
+        }
+
+        let candidates = [
+            std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.join(&self.script_path)),
+            std::env::current_dir()
+                .ok()
+                .map(|cwd| cwd.join("src-tauri").join(&self.script_path)),
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|parent| parent.join(&self.script_path))),
+            Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join(&self.script_path),
+            ),
+        ];
+
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.exists() {
+                return candidate;
             }
         }
-    }
-    None
-}
 
-fn target_triple_suffix() -> String {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("macos", "aarch64") => "aarch64-apple-darwin".to_string(),
-        ("macos", "x86_64") => "x86_64-apple-darwin".to_string(),
-        ("linux", "x86_64") => "x86_64-unknown-linux-gnu".to_string(),
-        ("linux", "aarch64") => "aarch64-unknown-linux-gnu".to_string(),
-        ("windows", "x86_64") => "x86_64-pc-windows-msvc".to_string(),
-        ("windows", "aarch64") => "aarch64-pc-windows-msvc".to_string(),
-        (os, arch) => format!("{arch}-unknown-{os}"),
-    }
-}
-
-fn executable_name(base_name: &str) -> String {
-    #[cfg(target_os = "windows")]
-    {
-        format!("{base_name}.exe")
+        self.script_path.clone()
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        base_name.to_string()
-    }
-}
-
-fn suffix_candidates(base_name: &str) -> Vec<String> {
-    let mut candidates = Vec::new();
-    let executable = executable_name(base_name);
-    let suffixed = format!("{base_name}-{}", target_triple_suffix());
-    let suffixed_executable = executable_name(&suffixed);
-
-    candidates.push(suffixed_executable);
-    candidates.push(executable);
-
-    candidates
-}
-
-fn candidate_paths_for_base_dir(base_dir: PathBuf, base_name: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for name in suffix_candidates(base_name) {
-        paths.push(base_dir.join(&name));
-        paths.push(base_dir.join(&name).join(executable_name(base_name)));
-    }
-    paths
-}
-
-fn candidate_paths(base_name: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    let current_exe = std::env::current_exe().ok();
-    let current_dir = std::env::current_dir().ok();
-
-    if let Some(exe) = current_exe.as_ref() {
-        if let Some(parent) = exe.parent() {
-            paths.extend(candidate_paths_for_base_dir(
-                parent.to_path_buf(),
-                base_name,
-            ));
-
-            if let Some(bundle_root) = parent.parent() {
-                let resources_dir = bundle_root.join("Resources");
-                paths.extend(candidate_paths_for_base_dir(
-                    resources_dir.clone(),
-                    base_name,
-                ));
-                paths.extend(candidate_paths_for_base_dir(
-                    resources_dir.join("resources"),
-                    base_name,
-                ));
-                paths.extend(candidate_paths_for_base_dir(
-                    resources_dir.join("app-resources"),
-                    base_name,
-                ));
-            }
+    pub fn spawn_command(&self) -> Option<Command> {
+        if let Some(path) = &self.bundled_sidecar {
+            let mut command = Command::new(path);
+            configure_sidecar_command(&mut command);
+            return Some(command);
         }
-    }
 
-    if let Some(cwd) = current_dir.as_ref() {
-        let resources_dir = cwd.join("src-tauri").join("resources");
-        paths.extend(candidate_paths_for_base_dir(resources_dir, base_name));
-        let app_resources_dir = cwd.join("src-tauri").join("app-resources");
-        paths.extend(candidate_paths_for_base_dir(app_resources_dir, base_name));
-    }
-
-    paths
-}
-
-pub fn resolve_bundled_sidecar(base_name: &str) -> Option<PathBuf> {
-    for candidate in candidate_paths(base_name) {
-        if candidate.is_file() {
-            return Some(candidate);
+        let script_path = self.resolve_script_path();
+        if !script_path.exists() {
+            return None;
         }
-        if candidate.is_dir() {
-            let executable = candidate.join(executable_name(base_name));
-            if executable.exists() {
-                return Some(executable);
-            }
-        }
+
+        let mut command = Command::new(&self.python_bin);
+        command.arg(script_path);
+        configure_sidecar_command(&mut command);
+        Some(command)
     }
-    None
 }
 
 pub fn configure_sidecar_command(command: &mut Command) {
@@ -135,8 +119,8 @@ pub fn configure_sidecar_command(command: &mut Command) {
     command.env("SEEKMIND_FASTEMBED_CACHE_DIR", &cache_dir);
     command.env("HF_HOME", cache_dir.join("huggingface"));
 
-    // 修复：沙盒运行时不能再依赖系统路径下的 OCR 进程，这里改为注入打包内 Vision OCR helper。
-    if let Some(binary) = bundled_vision_ocr_binary() {
+    // 修复：统一通过 runtime_paths 注入打包内 OCR helper，避免平台切换时再次散落一套路径解析。
+    if let Some(binary) = bundled_vision_ocr_binary_path() {
         let languages = default_vision_ocr_languages();
         eprintln!(
             "[SeekMind] using bundled Vision OCR helper: bin={}, langs={}",
@@ -148,6 +132,28 @@ pub fn configure_sidecar_command(command: &mut Command) {
     } else {
         eprintln!("[SeekMind] bundled Vision OCR helper not found; PDF OCR may be unavailable in sandbox");
     }
+}
+
+pub fn default_python_bin() -> String {
+    if cfg!(target_os = "windows") {
+        "python".to_string()
+    } else {
+        "python3".to_string()
+    }
+}
+
+pub fn resolve_timeout_ms(primary_env: &str, fallback_env: Option<&str>, default_ms: u64) -> u64 {
+    std::env::var(primary_env)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .or_else(|| {
+            fallback_env.and_then(|name| {
+                std::env::var(name)
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+            })
+        })
+        .unwrap_or(default_ms)
 }
 
 pub fn apply_network_proxy_environment(settings: Option<&NetworkProxySettings>) {
@@ -181,8 +187,8 @@ fn ensure_fastembed_cache_dir() -> PathBuf {
         return cache_dir;
     }
 
-    let has_model_cache = cache_dir.join("models--Qdrant--bge-small-zh-v1.5").exists();
-    if has_model_cache {
+    let model_cache_dir = fastembed_model_cache_dir(&cache_dir);
+    if model_cache_dir.exists() {
         eprintln!(
             "[SeekMind] fastembed cache hit dir={}",
             cache_dir.display()
@@ -233,7 +239,7 @@ fn ensure_fastembed_cache_dir() -> PathBuf {
 
 pub fn prepare_fastembed_cache_for_runtime() {
     let cache_dir = ensure_fastembed_cache_dir();
-    let model_cache_dir = cache_dir.join("models--Qdrant--bge-small-zh-v1.5");
+    let model_cache_dir = fastembed_model_cache_dir(&cache_dir);
     eprintln!(
         "[SeekMind] fastembed runtime cache prepared dir={} model_cache_exists={}",
         cache_dir.display(),
@@ -243,15 +249,28 @@ pub fn prepare_fastembed_cache_for_runtime() {
 
 pub fn log_fastembed_cache_diagnostics() {
     let cache_dir = writable_fastembed_cache_dir();
-    let model_cache_dir = cache_dir.join("models--Qdrant--bge-small-zh-v1.5");
-    let model_cache_exists = model_cache_dir.exists();
+    let model_cache_exists = fastembed_model_cache_dir(&cache_dir).exists();
     let configured_override =
         env_override(&["SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"]);
     let bundled_cache_dir = bundled_fastembed_cache_dir();
     let bundled_cache_archive = bundled_fastembed_cache_archive();
+    let parser_sidecar = resolve_bundled_sidecar("seekmind-parser");
+    let ocr_binary = bundled_vision_ocr_binary_path();
 
     eprintln!(
-        "[SeekMind] fastembed cache diagnostics dir={} model_cache_exists={} env_override={} bundled_dir={} bundled_archive={}",
+        "[SeekMind] runtime paths platform={} arch={} parser_sidecar={} parser_sidecar_exists={} ocr_binary={} ocr_binary_exists={} fastembed_cache_dir={} model_cache_exists={} env_override={} bundled_fastembed_dir={} bundled_fastembed_archive={}",
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        parser_sidecar
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+        parser_sidecar.as_ref().is_some_and(|path| path.exists()),
+        ocr_binary
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+        ocr_binary.as_ref().is_some_and(|path| path.exists()),
         cache_dir.display(),
         model_cache_exists,
         configured_override.as_deref().unwrap_or(""),
@@ -266,97 +285,15 @@ pub fn log_fastembed_cache_diagnostics() {
     );
 }
 
-fn writable_fastembed_cache_dir() -> PathBuf {
-    if let Some(configured) =
-        env_override(&["SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"])
-    {
-        // 修复：开发态 warmup 与 tauri dev 必须共享同一个显式模型缓存目录，不能在 sidecar 内再次强制改写到系统 cache。
-        return PathBuf::from(configured);
-    }
-
-    let base = dirs::cache_dir()
-        .or_else(dirs::data_local_dir)
-        .or_else(dirs::data_dir)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("com.zhaoyang.seekmind").join("fastembed")
-}
-
-fn bundled_fastembed_cache_dir() -> Option<PathBuf> {
-    for base_dir in resource_base_dirs() {
-        let candidate = base_dir.join("app-resources").join("fastembed");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-
-        let candidate = base_dir.join("fastembed");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn bundled_fastembed_cache_archive() -> Option<PathBuf> {
-    for base_dir in resource_base_dirs() {
-        let candidate = base_dir
-            .join("app-resources")
-            .join("fastembed-cache.tar.gz");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-
-        let candidate = base_dir.join("fastembed-cache.tar.gz");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn extract_fastembed_cache_archive(archive: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+fn extract_fastembed_cache_archive(archive: &Path, target: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(target)?;
-    let status = Command::new("/usr/bin/tar")
-        .arg("-xzf")
-        .arg(archive)
-        .arg("-C")
-        .arg(target)
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("tar exited with status {status}"),
-        ))
-    }
+    let file = std::fs::File::open(archive)?;
+    let decoder = GzDecoder::new(file);
+    let mut tar = Archive::new(decoder);
+    tar.unpack(target)
 }
 
-fn resource_base_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            dirs.push(parent.join("app-resources"));
-
-            if let Some(bundle_root) = parent.parent() {
-                dirs.push(bundle_root.join("Resources"));
-                dirs.push(bundle_root.join("debug").join("app-resources"));
-                dirs.push(bundle_root.join("release").join("app-resources"));
-            }
-        }
-    }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        dirs.push(cwd.join("src-tauri").join("app-resources"));
-        dirs.push(cwd.join("src-tauri").join("target").join("debug").join("app-resources"));
-        dirs.push(cwd.join("src-tauri").join("target").join("release").join("app-resources"));
-    }
-
-    dirs
-}
-
-fn copy_dir_missing(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+fn copy_dir_missing(source: &Path, target: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(target)?;
     for entry in std::fs::read_dir(source)? {
         let entry = entry?;
@@ -382,13 +319,13 @@ fn copy_dir_missing(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn copy_symlink(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+fn copy_symlink(source: &Path, target: &Path) -> std::io::Result<()> {
     let link_target = std::fs::read_link(source)?;
     symlink(link_target, target)
 }
 
 #[cfg(not(unix))]
-fn copy_symlink(source: &PathBuf, target: &PathBuf) -> std::io::Result<()> {
+fn copy_symlink(source: &Path, target: &Path) -> std::io::Result<()> {
     let resolved = std::fs::canonicalize(source)?;
     std::fs::copy(resolved, target).map(|_| ())
 }

@@ -5,7 +5,6 @@
  */
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -14,13 +13,11 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::seekmind::models::{QaRetrievalView, QaSourceView};
-use crate::seekmind::sidecar::{configure_sidecar_command, resolve_bundled_sidecar};
+use crate::seekmind::sidecar::{resolve_timeout_ms, PythonSidecarRuntime};
 
 #[derive(Debug, Clone)]
 pub struct PythonQaClient {
-    python_bin: String,
-    script_path: PathBuf,
-    bundled_sidecar: Option<PathBuf>,
+    runtime: PythonSidecarRuntime,
     timeout: Duration,
 }
 
@@ -128,43 +125,19 @@ impl std::error::Error for QaClientError {}
 
 impl PythonQaClient {
     pub fn from_env() -> Self {
-        let python_bin =
-            std::env::var("SEEKMIND_PARSER_BIN").unwrap_or_else(|_| "python3".to_string());
-        let script_path = std::env::var("SEEKMIND_PARSER_SCRIPT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("parser/SEEKMIND_parser/__main__.py"));
-        let bundled_sidecar = std::env::var("SEEKMIND_PARSER_BIN")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .and_then(|value| {
-                let candidate = PathBuf::from(value);
-                if candidate.exists() {
-                    Some(candidate)
-                } else {
-                    None
-                }
-            })
-            .or_else(|| resolve_bundled_sidecar("seekmind-parser").filter(|path| path.exists()));
-        let timeout_ms = std::env::var("SEEKMIND_QA_TIMEOUT_MS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .or_else(|| {
-                std::env::var("SEEKMIND_PARSER_TIMEOUT_MS")
-                    .ok()
-                    .and_then(|value| value.parse::<u64>().ok())
-            })
-            .unwrap_or(300_000);
+        // 修复：问答 sidecar 入口统一复用 parser runtime 解析，同时修正历史的 SEEKMIND_parser 路径拼写错误。
+        let runtime = PythonSidecarRuntime::from_env("parser/seekmind_parser/__main__.py");
+        let timeout_ms =
+            resolve_timeout_ms("SEEKMIND_QA_TIMEOUT_MS", Some("SEEKMIND_PARSER_TIMEOUT_MS"), 300_000);
 
         Self {
-            python_bin,
-            script_path,
-            bundled_sidecar,
+            runtime,
             timeout: Duration::from_millis(timeout_ms),
         }
     }
 
     pub fn is_configured(&self) -> bool {
-        self.bundled_sidecar.is_some() || self.resolve_script_path().exists()
+        self.runtime.is_configured()
     }
 
     pub fn ask_question_stream<F>(
@@ -301,52 +274,9 @@ impl PythonQaClient {
         response.ok_or_else(|| QaClientError::InvalidResponse("missing response".to_string()))
     }
 
-    fn resolve_script_path(&self) -> PathBuf {
-        if self.script_path.is_absolute() {
-            return self.script_path.clone();
-        }
-
-        let candidates = [
-            std::env::current_dir()
-                .ok()
-                .map(|cwd| cwd.join(&self.script_path)),
-            std::env::current_dir()
-                .ok()
-                .map(|cwd| cwd.join("src-tauri").join(&self.script_path)),
-            std::env::current_exe()
-                .ok()
-                .and_then(|exe| exe.parent().map(|parent| parent.join(&self.script_path))),
-            Some(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("..")
-                    .join(&self.script_path),
-            ),
-        ];
-
-        for candidate in candidates.into_iter().flatten() {
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-
-        self.script_path.clone()
-    }
-
     fn spawn_command(&self) -> Result<Command, QaClientError> {
-        if let Some(path) = &self.bundled_sidecar {
-            let mut command = Command::new(path);
-            configure_sidecar_command(&mut command);
-            return Ok(command);
-        }
-
-        let script_path = self.resolve_script_path();
-        if !script_path.exists() {
-            return Err(QaClientError::NotConfigured);
-        }
-
-        let mut command = Command::new(&self.python_bin);
-        command.arg(script_path);
-        configure_sidecar_command(&mut command);
-        Ok(command)
+        self.runtime
+            .spawn_command()
+            .ok_or(QaClientError::NotConfigured)
     }
 }

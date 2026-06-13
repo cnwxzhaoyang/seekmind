@@ -1857,14 +1857,15 @@ def pdf_image_extraction_enabled() -> bool:
 
 
 def vision_ocr_binary() -> Optional[str]:
-    bundled = os.environ.get("SeekMind_VISION_OCR_BIN", "").strip()
+    bundled = env_value("SEEKMIND_VISION_OCR_BIN", "SeekMind_VISION_OCR_BIN") or ""
     if bundled and Path(bundled).is_file():
         return bundled
 
     # 修复：沙盒版 OCR 不能再默认依赖系统路径，这里优先使用随 App 打包的 Vision OCR helper。
+    bundled_binary = "vision-ocr.exe" if sys.platform.startswith("win") else "vision-ocr"
     for candidate in (
-        shutil.which("vision-ocr"),
-        str(Path(__file__).resolve().parents[2] / "src-tauri" / "app-resources" / "ocr" / "vision-ocr"),
+        shutil.which(bundled_binary),
+        str(Path(__file__).resolve().parents[2] / "src-tauri" / "app-resources" / "ocr" / bundled_binary),
     ):
         if candidate and Path(candidate).is_file():
             return candidate
@@ -1873,7 +1874,7 @@ def vision_ocr_binary() -> Optional[str]:
 
 
 def pdf_ocr_enabled() -> bool:
-    return os.environ.get("SeekMind_DISABLE_PDF_OCR", "").strip() != "1" and vision_ocr_binary() is not None
+    return (env_value("SEEKMIND_DISABLE_PDF_OCR", "SeekMind_DISABLE_PDF_OCR") or "") != "1" and vision_ocr_binary() is not None
 
 
 @lru_cache(maxsize=1)
