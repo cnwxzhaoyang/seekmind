@@ -117,16 +117,21 @@ onMounted(async () => {
 
 <template>
   <section id="settings-update" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-    <div class="settings-section-head">
-      <div class="settings-section-head-left">
-        <span class="settings-section-icon settings-section-icon--plain">
+    <!-- 修复：自动更新卡头部改为显式行内布局，确保图标、标题、状态 badge 与其它设置卡保持一致，并保留底部分隔线。 -->
+    <div class="flex min-h-[42px] items-center justify-between gap-3 border-b border-default px-4 py-2">
+      <div class="flex min-w-0 items-center gap-3">
+        <span class="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-accent">
           <RefreshCw :size="18" />
         </span>
         <div class="min-w-0">
-          <div class="settings-section-title">{{ t("page.settings.update.title") }}</div>
+          <div class="text-xs font-bold leading-none tracking-[-0.01em] text-primary">
+            {{ t("page.settings.update.title") }}
+          </div>
         </div>
       </div>
-      <SeekMindBadge tone="default">{{ currentVersion }}</SeekMindBadge>
+      <SeekMindBadge class="shrink-0" :tone="autoCheckEnabled ? 'success' : 'default'">
+        {{ autoCheckEnabled ? t("page.settings.update.autoCheckEnabled") : t("page.settings.update.disabled") }}
+      </SeekMindBadge>
     </div>
 
     <div class="space-y-5 p-4">

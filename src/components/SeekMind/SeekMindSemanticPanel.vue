@@ -4,7 +4,7 @@
  * @CreatedDate 2026/06/02
  * @Description 设置页中的语义检索配置面板，负责模型选择、重建和调试。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { RefreshCw, Save, Search, Sparkles } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
@@ -20,6 +20,9 @@ import type {
 } from "../../types/SeekMind";
 
 const { t } = useI18n();
+const emit = defineEmits<{
+  (event: "status-changed", status: SemanticModelStatusView | null): void;
+}>();
 
 const semanticStatus = ref<SemanticModelStatusView | null>(null);
 const embeddingModels = ref<EmbeddingModelView[]>([]);
@@ -204,20 +207,10 @@ const semanticRuntimeState = computed(() => {
     detail: semanticStatus.value.last_error || semanticProbeError.value || t("semantic.runtime.unavailableHint"),
   };
 });
-const semanticIndexStatusLabel = computed(() => {
-  const status = semanticStatus.value?.index_status || "idle";
-  switch (status) {
-    case "idle":
-      return t("status.idle");
-    case "running":
-      return t("status.running");
-    case "completed":
-      return t("status.completed");
-    case "failed":
-      return t("status.failed");
-    default:
-      return status;
-  }
+const embeddingActionsDisabled = computed(() => semanticRuntimeState.value.tone !== "success");
+
+watch(semanticStatus, (status) => {
+  emit("status-changed", status);
 });
 
 const installSemanticProgressListener = async () => {
@@ -285,8 +278,10 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="flex flex-wrap justify-end gap-2">
-        <SeekMindBadge :tone="semanticRuntimeState.tone">{{ semanticRuntimeState.label }}</SeekMindBadge>
-        <SeekMindBadge tone="default">{{ semanticIndexStatusLabel }}</SeekMindBadge>
+        <!-- 修复：只保留一个语义可用性入口，避免状态与按钮可用性出现分裂。 -->
+        <SeekMindBadge :tone="semanticRuntimeState.tone" :title="semanticRuntimeState.detail">
+          {{ semanticRuntimeState.label }}
+        </SeekMindBadge>
       </div>
     </div>
 
@@ -299,12 +294,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="semanticStatus" class="space-y-3 text-sm">
-        <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm">
-          <div class="seekmind-item-meta">{{ t("semantic.runtime.title") }}</div>
-          <div class="mt-1 font-medium text-primary">{{ semanticRuntimeState.label }}</div>
-          <div class="mt-1 text-secondary">{{ semanticRuntimeState.detail }}</div>
-        </div>
-
         <label class="block">
           <div class="mb-1.5 seekmind-section-label">{{ t("semantic.defaultModel") }}</div>
           <select
@@ -393,7 +382,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           class="inline-flex items-center justify-center gap-2 rounded-lg border border-default bg-surface px-4 py-3 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-          :disabled="saving"
+          :disabled="saving || embeddingActionsDisabled"
           @click="rebuildSemanticEmbeddings"
         >
           <Sparkles :size="16" />
@@ -422,7 +411,7 @@ onBeforeUnmount(() => {
           />
           <button
             class="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-            :disabled="loadingSemanticDebug"
+            :disabled="loadingSemanticDebug || embeddingActionsDisabled"
             @click="runSemanticDebug"
           >
             <Search :size="16" />
@@ -481,7 +470,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 14px 8px;
+  min-height: 42px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--color-border);
 }
 

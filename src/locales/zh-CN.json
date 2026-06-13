@@ -756,21 +756,35 @@
 
     "settings": {
       "title": "设置",
-      "subtitle": "配置索引排除规则、最大文件大小，并管理本地索引数据。",
+      "subtitle": "配置索引过滤、语义检索、LLM 连接以及本地运行参数。",
       "semantic": {
         "title": "语义检索",
-        "desc": "开启后，搜索会同时使用全文和语义召回。",
+        "desc": "配置语义召回策略，并与下方的向量模型状态联动。",
         "enabled": "已启用",
         "disabled": "已关闭",
+        "unavailable": "不可用",
+        "disabledHint": "语义检索已关闭，搜索仅使用全文召回。",
+        "runtimeAvailable": "语义检索已开启，当前 embedding 模型可正常参与召回。",
+        "runtimeUnavailable": "语义检索已开启，但 embedding 模型当前不可用。",
         "weight": "语义权重",
         "threshold": "语义阈值",
-        "thresholdDesc": "只有语义分数达到该阈值的候选才会参与最终排序。"
+        "thresholdDesc": "只有语义分数达到该阈值的候选才会参与最终排序。",
+        "help": {
+          "weight": "语义相似度在最终排序中的占比，越高越偏向向量召回结果。",
+          "threshold": "低于该相似度的候选不会进入最终排序。",
+          "preference": "控制收藏、最近打开和搜索历史等行为信号是否参与排序加分。",
+          "ranking": "控制标题、文件名和偏好信号在最终得分中的影响强度。",
+          "titleWeight": "标题命中对最终排序的影响程度。",
+          "filenameWeight": "文件名命中对最终排序的影响程度。",
+          "preferenceWeight": "收藏、最近打开和搜索历史等偏好信号对最终排序的影响程度。"
+        }
       },
       "qa": {
-        "title": "来源问答",
-        "desc": "基于本地文档片段生成可回溯答案。",
+        "title": "LLM 连接",
+        "desc": "配置回答模型服务、检索回答参数和默认连接。",
         "enabled": "已启用",
         "disabled": "已关闭",
+        "configured": "本机配置",
         "enableLabel": "是否启用",
         "enableHint": "只有启用后，搜索页的问答入口才会调用模型。",
         "provider": "模型提供方",
@@ -791,10 +805,14 @@
         "modelPlaceholder": "gpt-4o-mini",
         "temperature": "温度",
         "maxTokens": "最大输出 token",
-        "contextLimit": "上下文 chunk 上限",
+        "contextLimit": "结果片段上限",
         "tokenBudget": "上下文 token 预算",
         "minEvidence": "最少证据数",
         "minRetrievalScore": "最低召回分数",
+        "help": {
+          "contextLimit": "单次回答最多携带多少个检索片段参与上下文构造，越高覆盖更广但更占 token。",
+          "minRetrievalScore": "低于该分数的检索结果不会进入回答阶段，用于过滤弱相关片段。"
+        },
         "save": "保存",
         "saving": "保存中...",
         "refresh": "刷新配置",
@@ -882,12 +900,14 @@
       "btn": {
         "reset": "恢复默认",
         "save": "保存设置",
+        "saveRetrieval": "保存检索设置",
         "saving": "保存中...",
+        "savingRetrieval": "保存中...",
         "clear": "清空全部索引",
         "clearing": "清空中..."
       },
       "section": {
-        "rules": "索引规则",
+        "rules": "索引过滤",
         "instructions": "操作说明",
         "appearance": "界面",
         "update": "自动更新",

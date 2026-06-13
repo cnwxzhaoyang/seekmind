@@ -2,11 +2,11 @@
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/02
- * @Description 设置页，承载索引规则、语义检索、AI 回答和外观网络配置。
+ * @Description 设置页，承载索引过滤、语义检索、LLM 连接和外观网络配置。
  */
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { Database, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Settings, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
+import { CircleHelp, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Settings, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
 import SeekMindConfirmDialog from "../components/SeekMind/SeekMindConfirmDialog.vue";
@@ -17,7 +17,7 @@ import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
 import { setLocale as setI18nLocale } from "../i18n";
-import type { IndexSettingsView, NetworkProxySettingsView } from "../types/SeekMind";
+import type { IndexSettingsView, NetworkProxySettingsView, SemanticModelStatusView } from "../types/SeekMind";
 
 const { t, locale } = useI18n();
 const { themeMode, setTheme } = useTheme();
@@ -71,7 +71,41 @@ const errorMessage = ref("");
 const { infoMessage } = useInfoMessage();
 const activeSection = ref("settings-rules");
 const mainScrollEl = ref<HTMLElement | null>(null);
+const semanticModelStatus = ref<SemanticModelStatusView | null>(null);
+const semanticModelStatusReady = ref(false);
 let sectionObserver: IntersectionObserver | null = null;
+
+const semanticFeatureState = computed(() => {
+  if (!semanticSearchEnabled.value) {
+    return {
+      tone: "default" as const,
+      label: t("page.settings.semantic.disabled"),
+      detail: t("page.settings.semantic.disabledHint"),
+    };
+  }
+
+  if (!semanticModelStatusReady.value) {
+    return {
+      tone: "default" as const,
+      label: t("semantic.runtime.detecting"),
+      detail: t("semantic.runtime.detectingHint"),
+    };
+  }
+
+  if (semanticModelStatus.value?.model.available) {
+    return {
+      tone: "success" as const,
+      label: t("page.settings.semantic.enabled"),
+      detail: t("page.settings.semantic.runtimeAvailable"),
+    };
+  }
+
+  return {
+    tone: "warning" as const,
+    label: t("page.settings.semantic.unavailable"),
+    detail: semanticModelStatus.value?.last_error?.trim() || t("page.settings.semantic.runtimeUnavailable"),
+  };
+});
 
 const hasChanges = computed(() => {
   if (!savedSettings.value) {
@@ -260,6 +294,12 @@ const handleClearCancel = () => {
   showClearConfirm.value = false;
 };
 
+const handleSemanticStatusChanged = (status: SemanticModelStatusView | null) => {
+  // 修复：语义检索卡头状态必须与 embedding 真实可用性一致，避免设置页出现“已启用但不可用”的错配。
+  semanticModelStatus.value = status;
+  semanticModelStatusReady.value = true;
+};
+
 const scrollToSection = (id: string) => {
   activeSection.value = id;
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -284,12 +324,6 @@ const settingsNavItems = computed(() => [
     label: t("page.settings.qa.title"),
     hint: t("page.settings.qa.desc"),
     icon: MessageSquareText,
-  },
-  {
-    id: "settings-model",
-    label: t("semantic.title"),
-    hint: t("semantic.desc"),
-    icon: Database,
   },
   {
     id: "settings-appearance",
@@ -398,20 +432,12 @@ onBeforeUnmount(() => {
 
       <div class="settings-prototype-header-right">
         <button
-          class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
+          class="settings-top-reset inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
           :disabled="loading || saving"
           @click="resetToDefaults"
         >
           <RefreshCw :size="15" />
           {{ t("page.settings.btn.reset") }}
-        </button>
-        <button
-          class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-          :disabled="loading || saving"
-          @click="saveSettings"
-        >
-          <Save :size="15" />
-          {{ saving ? t("page.settings.btn.saving") : t("page.settings.btn.save") }}
         </button>
       </div>
     </header>
@@ -484,14 +510,6 @@ onBeforeUnmount(() => {
                 {{ t("page.settings.btn.reset") }}
               </button>
               <button
-                class="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="loading || saving"
-                @click="saveSettings"
-              >
-                <Save :size="15" />
-                {{ saving ? t("page.settings.btn.saving") : t("page.settings.btn.save") }}
-              </button>
-              <button
                 class="inline-flex items-center justify-center gap-2 rounded-md border border-danger-soft bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger transition hover:opacity-90"
                 @click="scrollToSection('settings-danger')"
               >
@@ -525,202 +543,215 @@ onBeforeUnmount(() => {
         </aside>
 
         <div class="min-w-0 space-y-4">
-          <div class="grid gap-4 xl:grid-cols-2">
-            <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-              <div class="settings-section-head">
-                <div class="settings-section-head-left">
-                  <span class="settings-section-icon settings-section-icon--plain">
-                    <SlidersHorizontal :size="18" />
-                  </span>
-                  <div class="min-w-0">
-                    <div class="settings-section-title">{{ t("page.settings.section.rules") }}</div>
+          <div id="settings-semantic" class="scroll-mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
+              <section class="min-w-0 rounded-lg border border-default bg-surface">
+                <div class="settings-section-head">
+                  <div class="settings-section-head-left">
+                    <span class="settings-section-icon settings-section-icon--plain">
+                      <Sparkles :size="18" />
+                    </span>
+                    <div class="min-w-0">
+                      <div class="settings-section-title">{{ t("page.settings.semantic.title") }}</div>
+                    </div>
                   </div>
-                </div>
-                <SeekMindBadge tone="default">{{ t("status.localEffective") }}</SeekMindBadge>
-              </div>
-
-              <div class="space-y-5 p-4">
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.label.excludeDirs") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.placeholder.dirs") }}</div>
-                  </div>
-                  <textarea
-                    v-model="excludeDirsText"
-                    rows="4"
-                    class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-                    :placeholder="t('page.settings.placeholder.dirs')"
-                  />
+                  <SeekMindBadge :tone="semanticFeatureState.tone" :title="semanticFeatureState.detail">
+                    {{ semanticFeatureState.label }}
+                  </SeekMindBadge>
                 </div>
 
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.label.excludeExts") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.placeholder.exts") }}</div>
+                <div class="space-y-5 p-4">
+                  <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
+                    <div>
+                      <div class="seekmind-section-label">{{ t("page.settings.semantic.title") }}</div>
+                      <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
+                    </div>
+                    <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
+                      <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
+                      {{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}
+                    </label>
                   </div>
-                  <textarea
-                    v-model="excludeExtsText"
-                    rows="3"
-                    class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-                    :placeholder="t('page.settings.placeholder.exts')"
-                  />
-                </div>
 
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.label.maxFileSize") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
+                  <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
+                    <div>
+                      <div class="seekmind-section-label settings-inline-help">
+                        <span>{{ t("page.settings.semantic.weight") }}</span>
+                        <button
+                          type="button"
+                          class="settings-help-trigger"
+                          :title="t('page.settings.semantic.help.weight')"
+                          :aria-label="t('page.settings.semantic.help.weight')"
+                        >
+                          <CircleHelp :size="14" />
+                        </button>
+                      </div>
+                      <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.help.weight") }}</div>
+                    </div>
+                    <div class="rounded-lg border border-default bg-panel px-4 py-3">
+                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
+                        <span>{{ t("page.settings.semantic.weight") }}</span>
+                        <span>{{ Math.round(semanticWeight * 100) }}%</span>
+                      </div>
+                      <input v-model.number="semanticWeight" type="range" min="0" max="1" step="0.05" class="w-full accent-accent" />
+                    </div>
                   </div>
-                  <div class="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
-                    <input
-                      v-model.number="maxFileSizeMb"
-                      type="number"
-                      min="1"
-                      step="1"
-                      class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-                    />
-                    <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm text-dim">
-                      <div class="seekmind-section-label">{{ t("page.settings.label.currentStatus") }}</div>
-                      <div class="mt-1 text-sm font-medium text-primary">
-                        {{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}
+
+                  <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
+                    <div>
+                      <div class="seekmind-section-label settings-inline-help">
+                        <span>{{ t("page.settings.semantic.threshold") }}</span>
+                        <button
+                          type="button"
+                          class="settings-help-trigger"
+                          :title="t('page.settings.semantic.help.threshold')"
+                          :aria-label="t('page.settings.semantic.help.threshold')"
+                        >
+                          <CircleHelp :size="14" />
+                        </button>
+                      </div>
+                      <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.help.threshold") }}</div>
+                    </div>
+                    <div class="rounded-lg border border-default bg-panel px-4 py-3">
+                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
+                        <span>{{ t("page.settings.semantic.threshold") }}</span>
+                        <span>{{ Math.round(semanticThreshold * 100) }}%</span>
+                      </div>
+                      <input v-model.number="semanticThreshold" type="range" min="0" max="1" step="0.05" class="w-full accent-accent" />
+                    </div>
+                  </div>
+
+                  <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-start">
+                    <div>
+                      <div class="seekmind-section-label settings-inline-help">
+                        <span>{{ t("page.settings.preference.title") }}</span>
+                        <button
+                          type="button"
+                          class="settings-help-trigger"
+                          :title="t('page.settings.semantic.help.preference')"
+                          :aria-label="t('page.settings.semantic.help.preference')"
+                        >
+                          <CircleHelp :size="14" />
+                        </button>
+                      </div>
+                      <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.help.preference") }}</div>
+                    </div>
+                    <div class="grid gap-2 rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
+                      <label class="inline-flex items-center justify-between gap-3">
+                        <span>{{ t("page.settings.preference.favorite") }}</span>
+                        <input v-model="preferFavoritesEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
+                      </label>
+                      <label class="inline-flex items-center justify-between gap-3">
+                        <span>{{ t("page.settings.preference.recent") }}</span>
+                        <input v-model="preferRecentEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
+                      </label>
+                      <label class="inline-flex items-center justify-between gap-3">
+                        <span>{{ t("page.settings.preference.history") }}</span>
+                        <input v-model="preferHistoryEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-start">
+                    <div>
+                      <div class="seekmind-section-label settings-inline-help">
+                        <span>{{ t("page.settings.weight.title") }}</span>
+                        <button
+                          type="button"
+                          class="settings-help-trigger"
+                          :title="t('page.settings.semantic.help.ranking')"
+                          :aria-label="t('page.settings.semantic.help.ranking')"
+                        >
+                          <CircleHelp :size="14" />
+                        </button>
+                      </div>
+                      <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.help.ranking") }}</div>
+                    </div>
+                    <div class="space-y-4 rounded-lg border border-default bg-panel px-4 py-3">
+                      <label class="block">
+                        <div class="mb-2 flex items-center justify-between seekmind-item-meta">
+                          <span :title="t('page.settings.semantic.help.titleWeight')">{{ t("page.settings.weight.titleWeight") }}</span>
+                          <span>{{ titleWeight.toFixed(2) }}</span>
+                        </div>
+                        <input v-model.number="titleWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
+                      </label>
+                      <label class="block">
+                        <div class="mb-2 flex items-center justify-between seekmind-item-meta">
+                          <span :title="t('page.settings.semantic.help.filenameWeight')">{{ t("page.settings.weight.filenameWeight") }}</span>
+                          <span>{{ filenameWeight.toFixed(2) }}</span>
+                        </div>
+                        <input v-model.number="filenameWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
+                      </label>
+                      <label class="block">
+                        <div class="mb-2 flex items-center justify-between seekmind-item-meta">
+                          <span :title="t('page.settings.semantic.help.preferenceWeight')">{{ t("page.settings.weight.preferenceWeight") }}</span>
+                          <span>{{ preferenceWeight.toFixed(2) }}</span>
+                        </div>
+                        <input v-model.number="preferenceWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-end gap-2 border-t border-default pt-4">
+                    <SeekMindBadge v-if="hasChanges" tone="warning">{{ t("page.settings.status.changed") }}</SeekMindBadge>
+                    <button
+                      class="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
+                      :disabled="loading || saving || !hasChanges"
+                      @click="saveSettings"
+                    >
+                      <Save :size="15" />
+                      {{ saving ? t("page.settings.btn.savingRetrieval") : t("page.settings.btn.saveRetrieval") }}
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <div class="min-w-0 space-y-4">
+                <SeekMindSemanticPanel class="min-w-0" @status-changed="handleSemanticStatusChanged" />
+
+                <section id="settings-rules" class="scroll-mt-4 rounded-lg border border-default bg-surface">
+                  <div class="settings-section-head">
+                    <div class="settings-section-head-left">
+                      <span class="settings-section-icon settings-section-icon--plain">
+                        <SlidersHorizontal :size="18" />
+                      </span>
+                      <div class="min-w-0">
+                        <div class="settings-section-title">{{ t("page.settings.section.rules") }}</div>
+                      </div>
+                    </div>
+                    <SeekMindBadge tone="default">{{ t("status.localEffective") }}</SeekMindBadge>
+                  </div>
+
+                  <div class="space-y-5 p-4">
+                    <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
+                      <div>
+                        <div class="seekmind-section-label">{{ t("page.settings.label.maxFileSize") }}</div>
+                        <div class="seekmind-item-meta mt-1">{{ t("page.settings.label.maxFileSizeHint") ?? t("page.settings.placeholder.maxFileSize") }}</div>
+                      </div>
+                      <div class="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+                        <input
+                          v-model.number="maxFileSizeMb"
+                          type="number"
+                          min="1"
+                          step="1"
+                          class="w-full rounded-lg border border-default bg-input px-4 py-3 text-sm text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                        />
+                        <div class="rounded-lg border border-default bg-panel px-4 py-3 text-sm text-dim">
+                          <div class="seekmind-section-label">{{ t("page.settings.label.currentStatus") }}</div>
+                          <div class="mt-1 text-sm font-medium text-primary">
+                            {{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                </section>
               </div>
-            </section>
-
-            <section id="settings-semantic" class="scroll-mt-4 rounded-lg border border-default bg-surface">
-              <div class="settings-section-head">
-                <div class="settings-section-head-left">
-                  <span class="settings-section-icon settings-section-icon--plain">
-                    <Sparkles :size="18" />
-                  </span>
-                  <div class="min-w-0">
-                    <div class="settings-section-title">{{ t("page.settings.semantic.title") }}</div>
-                  </div>
-                </div>
-                <SeekMindBadge tone="success">{{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}</SeekMindBadge>
-              </div>
-
-              <div class="space-y-5 p-4">
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.semantic.title") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.desc") }}</div>
-                  </div>
-                  <label class="inline-flex items-center justify-start gap-2 text-sm text-secondary">
-                    <input v-model="semanticSearchEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
-                    {{ semanticSearchEnabled ? t("page.settings.semantic.enabled") : t("page.settings.semantic.disabled") }}
-                  </label>
-                </div>
-
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-center">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.semantic.weight") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
-                  </div>
-                  <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                    <div class="mb-2 flex items-center justify-between seekmind-item-meta">
-                      <span>{{ t("page.settings.semantic.weight") }}</span>
-                      <span>{{ Math.round(semanticWeight * 100) }}%</span>
-                    </div>
-                    <input
-                      v-model.number="semanticWeight"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      class="w-full accent-accent"
-                    />
-                  </div>
-                </div>
-
-                <div class="grid gap-4 xl:grid-cols-[180px_minmax(0,1fr)] xl:items-center">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.semantic.threshold") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.semantic.thresholdDesc") }}</div>
-                  </div>
-                  <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                    <div class="mb-2 flex items-center justify-between seekmind-item-meta">
-                      <span>{{ t("page.settings.semantic.threshold") }}</span>
-                      <span>{{ Math.round(semanticThreshold * 100) }}%</span>
-                    </div>
-                    <input
-                      v-model.number="semanticThreshold"
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      class="w-full accent-accent"
-                    />
-                  </div>
-                </div>
-
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.preference.title") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.preference.title") }}</div>
-                  </div>
-                  <div class="grid gap-2 rounded-lg border border-default bg-panel px-4 py-3 text-sm text-secondary">
-                    <label class="inline-flex items-center justify-between gap-3">
-                      <span>{{ t("page.settings.preference.favorite") }}</span>
-                      <input v-model="preferFavoritesEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
-                    </label>
-                    <label class="inline-flex items-center justify-between gap-3">
-                      <span>{{ t("page.settings.preference.recent") }}</span>
-                      <input v-model="preferRecentEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
-                    </label>
-                    <label class="inline-flex items-center justify-between gap-3">
-                      <span>{{ t("page.settings.preference.history") }}</span>
-                      <input v-model="preferHistoryEnabled" type="checkbox" class="h-4 w-4 rounded border-default text-accent accent-accent" />
-                    </label>
-                  </div>
-                </div>
-
-                <div class="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)] xl:items-start">
-                  <div>
-                    <div class="seekmind-section-label">{{ t("page.settings.weight.title") }}</div>
-                    <div class="seekmind-item-meta mt-1">{{ t("page.settings.weight.title") }}</div>
-                  </div>
-                  <div class="space-y-4 rounded-lg border border-default bg-panel px-4 py-3">
-                    <label class="block">
-                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
-                        <span>{{ t("page.settings.weight.titleWeight") }}</span>
-                        <span>{{ titleWeight.toFixed(2) }}</span>
-                      </div>
-                      <input v-model.number="titleWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
-                    </label>
-                    <label class="block">
-                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
-                        <span>{{ t("page.settings.weight.filenameWeight") }}</span>
-                        <span>{{ filenameWeight.toFixed(2) }}</span>
-                      </div>
-                      <input v-model.number="filenameWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
-                    </label>
-                    <label class="block">
-                      <div class="mb-2 flex items-center justify-between seekmind-item-meta">
-                        <span>{{ t("page.settings.weight.preferenceWeight") }}</span>
-                        <span>{{ preferenceWeight.toFixed(2) }}</span>
-                      </div>
-                      <input v-model.number="preferenceWeight" type="range" min="0" max="3" step="0.1" class="w-full accent-accent" />
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </section>
           </div>
 
           <div id="settings-qa" class="scroll-mt-4">
             <SeekMindQaPanel />
           </div>
 
-          <div id="settings-model" class="scroll-mt-4">
-            <SeekMindSemanticPanel />
-          </div>
-
-          <div class="grid gap-4 xl:grid-cols-2">
-            <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
+          <section id="settings-appearance" class="scroll-mt-4 rounded-lg border border-default bg-surface">
               <div class="settings-section-head">
                 <div class="settings-section-head-left">
                   <span class="settings-section-icon settings-section-icon--plain">
@@ -732,8 +763,8 @@ onBeforeUnmount(() => {
                 </div>
                 <SeekMindBadge tone="default">{{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}</SeekMindBadge>
               </div>
-              <div class="space-y-5 p-4">
-                <div>
+              <div class="grid gap-4 p-4 xl:grid-cols-2 xl:items-start">
+                <div class="rounded-lg border border-default bg-panel px-4 py-3">
                   <div class="mb-2 seekmind-section-label">{{ t("page.settings.language") }}</div>
                   <div class="grid gap-2">
                     <button
@@ -757,7 +788,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div>
+                <div class="rounded-lg border border-default bg-panel px-4 py-3">
                   <div class="mb-2 seekmind-section-label">{{ t("page.settings.theme") }}</div>
                   <div class="grid gap-2">
                     <button
@@ -791,22 +822,6 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </section>
-
-            <section class="rounded-lg border border-default bg-surface">
-              <div class="settings-section-head">
-                <div>
-                  <div class="seekmind-section-label">{{ t("page.settings.section.instructions") }}</div>
-                  <div class="seekmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
-                </div>
-                <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
-              </div>
-              <div class="space-y-2 p-4 text-sm text-secondary">
-                <p>• {{ t("page.settings.instructions.dirs") }}</p>
-                <p>• {{ t("page.settings.instructions.exts") }}</p>
-                <p>• {{ t("page.settings.instructions.maxSize") }}</p>
-              </div>
-            </section>
-          </div>
 
           <SeekMindUpdatePanel />
 
@@ -979,6 +994,25 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
+.settings-inline-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: help;
+}
+
 .settings-prototype-title-icon {
   display: inline-flex;
   align-items: center;
@@ -1019,15 +1053,9 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.settings-prototype-header-right > button:first-child {
+.settings-prototype-header-right > .settings-top-reset {
   color: #ffc76c;
   border-color: rgba(247, 184, 75, 0.34);
-}
-
-.settings-prototype-header-right > button:last-child {
-  background: linear-gradient(135deg, #2f81ff, #1267e8);
-  border-color: rgba(81, 151, 255, 0.8);
-  box-shadow: 0 14px 34px rgba(47, 129, 255, 0.22);
 }
 
 /* 修复：收敛深色主题的蓝色面积，保留层次但避免整页发蓝。 */
@@ -1091,7 +1119,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 2px 12px 2px;
+  min-height: 42px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -1255,15 +1284,9 @@ html:not(.dark) .settings-prototype-header-right > button {
   color: #334155;
 }
 
-html:not(.dark) .settings-prototype-header-right > button:first-child {
+html:not(.dark) .settings-prototype-header-right > .settings-top-reset {
   color: #92400e;
   border-color: rgba(245, 158, 11, 0.28);
-}
-
-html:not(.dark) .settings-prototype-header-right > button:last-child {
-  background: linear-gradient(135deg, #2f81ff, #1267e8);
-  border-color: rgba(47, 129, 255, 0.44);
-  color: white;
 }
 
 html:not(.dark) .settings-prototype-main section,

@@ -2,11 +2,11 @@
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/02
- * @Description 设置页中的 AI 回答配置面板，负责模型、参数与连通性测试。
+ * @Description 设置页中的 LLM 连接配置面板，负责模型、参数与连通性测试。
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Check, ChevronDown, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
+import { Check, ChevronDown, CircleHelp, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
 import SeekMindBadge from "./SeekMindBadge.vue";
 import SeekMindToast from "./SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../../services/seekMindApi";
@@ -379,7 +379,7 @@ onMounted(async () => {
           <div class="settings-card-title">{{ t("page.settings.qa.title") }}</div>
         </div>
       </div>
-      <SeekMindBadge tone="success">{{ t("page.settings.qa.enabled") }}</SeekMindBadge>
+      <SeekMindBadge tone="default">{{ t("page.settings.qa.configured") }}</SeekMindBadge>
     </div>
 
     <div class="settings-card-body space-y-4">
@@ -470,7 +470,17 @@ onMounted(async () => {
 
             <div class="grid gap-2.5 xl:grid-cols-3">
               <label class="block">
-                <div class="mb-1.5 seekmind-section-label">{{ t("page.settings.qa.contextLimit") }}</div>
+                <div class="mb-1.5 seekmind-section-label settings-inline-help">
+                  <span>{{ t("page.settings.qa.contextLimit") }}</span>
+                  <button
+                    type="button"
+                    class="settings-help-trigger"
+                    :title="t('page.settings.qa.help.contextLimit')"
+                    :aria-label="t('page.settings.qa.help.contextLimit')"
+                  >
+                    <CircleHelp :size="14" />
+                  </button>
+                </div>
                 <input
                   v-model.number="contextChunkLimit"
                   type="number"
@@ -502,8 +512,18 @@ onMounted(async () => {
             </div>
 
             <label class="block">
-              <div class="mb-1.5 flex items-center justify-between seekmind-section-label">
-                <span>{{ t("page.settings.qa.minRetrievalScore") }}</span>
+              <div class="mb-1.5 flex items-center justify-between seekmind-section-label settings-inline-help">
+                <span class="inline-flex items-center gap-1.5">
+                  <span>{{ t("page.settings.qa.minRetrievalScore") }}</span>
+                  <button
+                    type="button"
+                    class="settings-help-trigger"
+                    :title="t('page.settings.qa.help.minRetrievalScore')"
+                    :aria-label="t('page.settings.qa.help.minRetrievalScore')"
+                  >
+                    <CircleHelp :size="14" />
+                  </button>
+                </span>
                 <span>{{ minRetrievalScore.toFixed(2) }}</span>
               </div>
               <input v-model.number="minRetrievalScore" type="range" min="-1" max="1" step="0.05" class="w-full accent-accent" />
@@ -670,6 +690,25 @@ onMounted(async () => {
 
 .settings-card-body {
   padding: 10px 14px 12px;
+}
+
+.settings-inline-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: help;
 }
 
 .settings-empty-state {

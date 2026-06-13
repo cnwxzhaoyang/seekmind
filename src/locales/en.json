@@ -759,21 +759,35 @@
 
     "settings": {
       "title": "Settings",
-      "subtitle": "Configure index exclusion rules, max file size, and manage local index data.",
+      "subtitle": "Configure index filters, semantic retrieval, LLM connections, and local runtime behavior.",
       "semantic": {
         "title": "Semantic Search",
-        "desc": "When enabled, search will use both full-text and semantic recall.",
+        "desc": "Configure semantic recall strategy and keep it aligned with the vector model status below.",
         "enabled": "Enabled",
         "disabled": "Disabled",
+        "unavailable": "Unavailable",
+        "disabledHint": "Semantic retrieval is off, so search falls back to full-text only.",
+        "runtimeAvailable": "Semantic retrieval is on and the current embedding model is available for recall.",
+        "runtimeUnavailable": "Semantic retrieval is on, but the current embedding model is unavailable.",
         "weight": "Semantic Weight",
         "threshold": "Semantic Threshold",
-        "thresholdDesc": "Only candidates whose semantic score reaches this threshold will enter final ranking."
+        "thresholdDesc": "Only candidates whose semantic score reaches this threshold will enter final ranking.",
+        "help": {
+          "weight": "How much semantic similarity contributes to the final ranking. Higher values favor vector recall more strongly.",
+          "threshold": "Candidates below this similarity threshold are excluded from final ranking.",
+          "preference": "Controls whether favorites, recently opened files, and search history add preference boosts.",
+          "ranking": "Controls how strongly title, filename, and preference signals affect the final score.",
+          "titleWeight": "How much title matches affect final ranking.",
+          "filenameWeight": "How much filename matches affect final ranking.",
+          "preferenceWeight": "How much favorites, recents, and search history signals affect final ranking."
+        }
       },
       "qa": {
-        "title": "Source QA",
-        "desc": "Generate traceable answers from local document snippets.",
+        "title": "LLM Connection",
+        "desc": "Configure the answer model service, retrieval-answer parameters, and default connection.",
         "enabled": "Enabled",
         "disabled": "Disabled",
+        "configured": "Local Config",
         "enableLabel": "Enable QA",
         "enableHint": "The QA entry in the search page will only call the model when this is enabled.",
         "provider": "Model Provider",
@@ -794,10 +808,14 @@
         "modelPlaceholder": "gpt-4o-mini",
         "temperature": "Temperature",
         "maxTokens": "Max Output Tokens",
-        "contextLimit": "Context Chunk Limit",
+        "contextLimit": "Retrieved Chunk Limit",
         "tokenBudget": "Context Token Budget",
         "minEvidence": "Minimum Evidence Count",
         "minRetrievalScore": "Minimum Retrieval Score",
+        "help": {
+          "contextLimit": "The maximum number of retrieved chunks to include in one answer context. Higher values cover more but cost more tokens.",
+          "minRetrievalScore": "Retrieved results below this score are filtered out before answer generation."
+        },
         "save": "Save",
         "saving": "Saving...",
         "refresh": "Refresh Config",
@@ -885,12 +903,14 @@
       "btn": {
         "reset": "Reset to Defaults",
         "save": "Save",
+        "saveRetrieval": "Save Retrieval Settings",
         "saving": "Saving...",
+        "savingRetrieval": "Saving...",
         "clear": "Clear All Indexes",
         "clearing": "Clearing..."
       },
       "section": {
-        "rules": "Index Rules",
+        "rules": "Index Filters",
         "instructions": "Instructions",
         "appearance": "Appearance",
         "update": "Auto Update",
