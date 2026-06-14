@@ -117,18 +117,19 @@ function assertHostCanBuildTargetSidecar(targetTriple) {
 }
 
 async function buildVisionOcrHelper(targetTriple) {
-  if (targetOsFromTriple(targetTriple) !== "macos") {
-    console.info("[SeekMind] skip bundled Vision OCR helper for non-macOS target");
+  const targetOs = targetOsFromTriple(targetTriple);
+  if (!["macos", "windows"].includes(targetOs)) {
+    console.info("[SeekMind] skip bundled OCR helper for unsupported target");
     await removeIfExists(ocrDir);
     return;
   }
 
-  if (process.platform !== "darwin") {
-    console.info("[SeekMind] skip bundled Vision OCR helper build on non-macOS host");
+  if ((targetOs === "macos" && process.platform !== "darwin") || (targetOs === "windows" && process.platform !== "win32")) {
+    console.info(`[SeekMind] skip bundled OCR helper build on host=${process.platform} for target=${targetOs}`);
     return;
   }
 
-  console.info("[SeekMind] building bundled Vision OCR helper...");
+  console.info(`[SeekMind] building bundled OCR helper for ${targetOs}...`);
   await removeIfExists(ocrDir);
   await runCommand("cargo", [
     "build",
@@ -139,14 +140,16 @@ async function buildVisionOcrHelper(targetTriple) {
     visionOcrBaseName,
   ]);
 
-  const helperBin = path.join(rootDir, "src-tauri", "target", "release", visionOcrBaseName);
+  const helperFileName = targetOs === "windows" ? `${visionOcrBaseName}.exe` : visionOcrBaseName;
+  const bundledFileName = targetOs === "windows" ? "vision-ocr.exe" : "vision-ocr";
+  const helperBin = path.join(rootDir, "src-tauri", "target", "release", helperFileName);
   if (!(await pathExists(helperBin))) {
     throw new Error(`Vision OCR helper build failed: ${helperBin} not found`);
   }
 
   await ensureDir(ocrDir);
-  await fs.copyFile(helperBin, path.join(ocrDir, "vision-ocr"));
-  console.info(`[SeekMind] bundled Vision OCR helper: ${path.join(ocrDir, "vision-ocr")}`);
+  await fs.copyFile(helperBin, path.join(ocrDir, bundledFileName));
+  console.info(`[SeekMind] bundled OCR helper: ${path.join(ocrDir, bundledFileName)}`);
 }
 
 async function ensurePyInstaller() {
@@ -227,6 +230,19 @@ async function runTauriBuild() {
     extraEnv.APPLE_SIGNING_IDENTITY = "-";
   }
 
+  const bundlesArgIndex = args.indexOf("--bundles");
+  if (bundlesArgIndex >= 0 && args[bundlesArgIndex + 1]) {
+    // Forward explicit bundle selection so Windows can avoid WiX-only MSI paths when needed.
+    tauriArgs.push("--bundles", args[bundlesArgIndex + 1]);
+  }
+
+  if (args.includes("--no-bundle")) {
+    // Keep a no-bundle fallback for restricted or proxied environments where installer tooling cannot be downloaded.
+    tauriArgs.push("--no-bundle");
+  }
+
+  console.info(`[SeekMind] invoking Tauri build: ${tauriArgs.join(" ")}`);
+
   await runCommand(npmExecCommand(), tauriArgs, extraEnv);
 }
 
@@ -241,6 +257,7 @@ const requestedTarget = (() => {
 const effectiveTarget = requestedTarget || (await resolveRustHostTriple());
 assertHostCanBuildTargetSidecar(effectiveTarget);
 const outputName = `${parserBaseName}-${effectiveTarget}`;
+console.info(`[SeekMind] using python command for sidecar build: ${pythonCommand}`);
 
 await buildVisionOcrHelper(effectiveTarget);
 await buildParserSidecar(outputName);

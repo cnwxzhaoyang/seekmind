@@ -1,3 +1,8 @@
+/**
+ * @author MorningSun
+ * @CreatedDate 2026/06/14
+ * @Description 索引目录树构建与展开状态管理，兼容 Windows 和 macOS 路径展示与父子关系计算。
+ */
 import { computed, ref, unref, type MaybeRef } from "vue";
 import type { IndexDirView } from "../types/SeekMind";
 
@@ -5,6 +10,7 @@ export interface IndexDirTreeNode {
   dir: IndexDirView;
   children: IndexDirTreeNode[];
   parentPath: string;
+  normalizedPath: string;
   isVirtual: boolean;
 }
 
@@ -16,6 +22,7 @@ export interface VisibleIndexDirRow {
   displayName: string;
   fullPath: string;
   parentPath: string;
+  normalizedPath: string;
   isVirtual: boolean;
 }
 
@@ -25,7 +32,8 @@ export interface UseIndexDirTreeOptions {
 
 const DEFAULT_VIRTUAL_DIR_PREFIX = "virtual://";
 
-export const normalizeIndexDirPath = (path: string) => path.replace(/\/+$/, "");
+export const normalizeIndexDirPath = (path: string) =>
+  path.replace(/\\/g, "/").replace(/\/+$/, "");
 
 export const getIndexDirDisplayName = (path: string) => {
   const normalized = normalizeIndexDirPath(path);
@@ -63,9 +71,12 @@ export function useIndexDirTree(
     for (const item of nodes) {
       const normalized = normalizeIndexDirPath(item.path);
       nodeMap.set(normalized, {
+        // 修复：目录树内部统一使用 `/` 路径计算父子关系，
+        // 但动作仍必须保留原始路径，避免 Windows 下删除/启停/重建传错路径。
         dir: item,
         children: [],
         parentPath: "",
+        normalizedPath: normalized,
         isVirtual: normalized.startsWith(virtualDirPrefix),
       });
     }
@@ -74,7 +85,7 @@ export function useIndexDirTree(
     const availablePaths = [...nodeMap.keys()];
 
     for (const node of nodeMap.values()) {
-      const parentPath = findParentPathFromPaths(node.dir.path, availablePaths);
+      const parentPath = findParentPathFromPaths(node.normalizedPath, availablePaths);
       node.parentPath = parentPath;
 
       const parent = parentPath ? nodeMap.get(parentPath) ?? null : null;
@@ -92,7 +103,9 @@ export function useIndexDirTree(
         if (leftVirtual !== rightVirtual) {
           return leftVirtual - rightVirtual;
         }
-        return getIndexDirDisplayName(left.dir.path).localeCompare(getIndexDirDisplayName(right.dir.path));
+        return getIndexDirDisplayName(left.normalizedPath).localeCompare(
+          getIndexDirDisplayName(right.normalizedPath),
+        );
       });
       for (const node of list) {
         sortNodes(node.children);
@@ -149,18 +162,18 @@ export function useIndexDirTree(
 
     const walk = (nodes: IndexDirTreeNode[], depth: number) => {
       for (const node of nodes) {
-        const normalized = normalizeIndexDirPath(node.dir.path);
         const hasChildren = node.children.length > 0;
-        const expanded = isExpanded(normalized, depth, hasChildren);
+        const expanded = isExpanded(node.normalizedPath, depth, hasChildren);
 
         rows.push({
           dir: node.dir,
           depth,
           hasChildren,
           expanded,
-          displayName: getIndexDirDisplayName(node.dir.path),
+          displayName: getIndexDirDisplayName(node.normalizedPath),
           fullPath: node.dir.path,
           parentPath: node.parentPath,
+          normalizedPath: node.normalizedPath,
           isVirtual: node.isVirtual,
         });
 

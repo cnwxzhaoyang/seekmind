@@ -35,11 +35,11 @@
     "virtualDir": "虚拟目录",
     "office": {
       "warningTitle": "Office 解析未就绪",
-      "warningDesc": "未检测到 soffice / libreoffice。`.doc`、`.ppt`、`.pptx` 将降级为纯文本提取，图片和表格预览可能缺失。",
-      "warningHint": "请安装 LibreOffice，或设置 `SEEKMIND_OFFICE_BIN` 指向可执行文件。Windows 和 macOS 都会使用同一套探测逻辑。",
+      "warningDesc": "未检测到可用的 Office 转换运行时。旧版 `.doc`、`.ppt` 将降级为有限文本提取，图片和表格预览可能缺失。",
+      "warningHint": "可安装 LibreOffice，或在 Windows / macOS 上安装 Microsoft Office。程序会按平台自动探测可用运行时，也可通过 `SEEKMIND_OFFICE_BIN` 显式指定 `soffice`。",
       "runtimeLabel": "Office 转换器",
       "runtimeAvailable": "已检测到 {bin}",
-      "runtimeUnavailable": "未检测到 soffice / libreoffice",
+      "runtimeUnavailable": "未检测到可用的 Office 转换运行时",
       "runtimePlatform": "当前平台：{platform}"
     },
     "ocr": {
@@ -408,6 +408,7 @@
         "favoriteRemoved": "已移除收藏"
       },
       "detail": {
+        "actualParser": "本次实际解析",
         "hitParagraph": "命中段落",
         "contextPreview": "上下文预览",
         "previousChunk": "上一段",
@@ -662,6 +663,7 @@
         "copiedReason": "已复制失败原因"
       },
       "progress": {
+        "currentParser": "当前实际解析",
         "overall": "总体进度",
         "currentFile": "正在索引文件",
         "duration": "本次索引耗时",

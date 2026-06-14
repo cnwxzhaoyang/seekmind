@@ -40,6 +40,7 @@ dependencies = [
  "uuid",
  "wait-timeout",
  "window-vibrancy",
+ "windows",
  "zip",
 ]
 

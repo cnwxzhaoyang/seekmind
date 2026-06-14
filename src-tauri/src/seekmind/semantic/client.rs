@@ -396,7 +396,8 @@ impl PythonSemanticClient {
                 .ok()
                 .and_then(|value| value.parse::<u64>().ok())
                 .map(Duration::from_millis)
-                .unwrap_or_else(|| Duration::from_millis(15_000));
+                // 修复：首次 embedding 探测可能需要下载模型，15 秒会把缓存切成残缺状态。
+                .unwrap_or_else(|| Duration::from_millis(120_000));
         }
 
         self.timeout

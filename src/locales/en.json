@@ -35,11 +35,11 @@
     "virtualDir": "Virtual Directory",
     "office": {
       "warningTitle": "Office parsing is not ready",
-      "warningDesc": "No soffice / libreoffice was detected. `.doc`, `.ppt`, and `.pptx` will fall back to plain-text extraction, so image and table previews may be missing.",
-      "warningHint": "Install LibreOffice or set `SEEKMIND_OFFICE_BIN` to the executable path. The same detection logic applies on Windows and macOS.",
+      "warningDesc": "No compatible Office runtime was detected. Legacy `.doc` and `.ppt` files will fall back to limited text extraction, so image and table previews may be missing.",
+      "warningHint": "Install LibreOffice, or install Microsoft Office on Windows / macOS. SeekMind will auto-detect the available runtime for the current platform, and you can still set `SEEKMIND_OFFICE_BIN` to an explicit `soffice` path.",
       "runtimeLabel": "Office Converter",
       "runtimeAvailable": "Detected {bin}",
-      "runtimeUnavailable": "No soffice / libreoffice detected",
+      "runtimeUnavailable": "No compatible Office runtime detected",
       "runtimePlatform": "Platform: {platform}"
     },
     "ocr": {
@@ -407,6 +407,7 @@
         "favoriteRemoved": "Favorite removed"
       },
       "detail": {
+        "actualParser": "Actual Parser",
         "hitParagraph": "Matched Paragraph",
         "contextPreview": "Context Preview",
         "previousChunk": "Previous",
@@ -665,6 +666,7 @@
         "copiedReason": "Copied failure reason"
       },
       "progress": {
+        "currentParser": "Actual Parser",
         "overall": "Overall Progress",
         "currentFile": "Current File",
         "duration": "Duration",

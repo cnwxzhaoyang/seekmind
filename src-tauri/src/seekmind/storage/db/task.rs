@@ -9,10 +9,76 @@ use sqlx::Row;
 use crate::seekmind::models::{CurrentTaskView, FailedFileView};
 
 use super::rows::{CurrentTaskRow, FailedFileRow, IndexCheckpointRow, IndexRunSummaryRow};
-use super::util::{current_unix_ts, format_unix_ts, is_virtual_directory, scalar_count_bind};
+use super::util::{
+    current_unix_ts, format_unix_ts, is_virtual_directory, normalize_path_for_comparison,
+    normalized_like_prefix, scalar_count_bind,
+};
 use super::Database;
 
 impl Database {
+    pub(crate) async fn recover_interrupted_index_task(&self) -> Result<(), sqlx::Error> {
+        let checkpoint_exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM index_checkpoint
+            WHERE id = 1
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?
+            > 0;
+
+        let current_task = sqlx::query_as::<_, CurrentTaskRow>(
+            r#"
+            SELECT label, details, state, current_dir, current_file, started_at, progress, scanned, total, succeeded, failed, updated, skipped, deleted, warning, pause_requested
+            FROM current_task
+            WHERE id = 1
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(task) = current_task else {
+            return Ok(());
+        };
+
+        if task.state != "running" {
+            return Ok(());
+        }
+
+        if checkpoint_exists {
+            // 修复：桌面端热重载或异常退出后，内存中的索引线程已经不存在，但数据库还残留 running。
+            // 启动时把它恢复成可继续的 paused，避免状态页一直假装卡在某个文件上。
+            self.set_current_task(
+                &task.label,
+                "检测到上次索引任务中断，已恢复为暂停，可点击继续",
+                "paused",
+                &task.current_dir,
+                &task.current_file,
+                task.progress.clamp(0, 100) as u8,
+                task.scanned.max(0) as usize,
+                task.total.max(0) as usize,
+                task.succeeded.max(0) as usize,
+                task.failed.max(0) as usize,
+                task.updated.max(0) as usize,
+                task.skipped.max(0) as usize,
+                task.deleted.max(0) as usize,
+                Some("上次任务被中断"),
+                true,
+            )
+            .await?;
+            eprintln!(
+                "[SeekMind] recovered interrupted index task as paused file={}",
+                task.current_file
+            );
+        } else {
+            self.clear_current_task().await?;
+            eprintln!("[SeekMind] cleared stale running index task without checkpoint");
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn save_index_run_summary(
         &self,
         updated: usize,
@@ -351,15 +417,17 @@ impl Database {
             .await? as usize;
             (docs, chunks)
         } else {
-            let prefix = format!("{path}/%");
+            let normalized_path = normalize_path_for_comparison(path);
+            let prefix = normalized_like_prefix(path);
             let docs = sqlx::query_scalar::<_, i64>(
                 r#"
                 SELECT COUNT(*)
                 FROM documents
-                WHERE path = ? OR path LIKE ?
+                WHERE REPLACE(path, CHAR(92), '/') = ?
+                   OR REPLACE(path, CHAR(92), '/') LIKE ?
                 "#,
             )
-            .bind(path)
+            .bind(normalized_path.clone())
             .bind(&prefix)
             .fetch_one(&self.pool)
             .await? as usize;
@@ -369,10 +437,11 @@ impl Database {
                 SELECT COUNT(*)
                 FROM chunks c
                 INNER JOIN documents d ON d.id = c.document_id
-                WHERE d.path = ? OR d.path LIKE ?
+                WHERE REPLACE(d.path, CHAR(92), '/') = ?
+                   OR REPLACE(d.path, CHAR(92), '/') LIKE ?
                 "#,
             )
-            .bind(path)
+            .bind(normalized_path)
             .bind(&prefix)
             .fetch_one(&self.pool)
             .await? as usize;

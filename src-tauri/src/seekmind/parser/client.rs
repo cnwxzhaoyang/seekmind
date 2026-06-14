@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::seekmind::runtime_paths::office_converter_candidates;
+use crate::seekmind::runtime_paths::office_runtime;
 use crate::seekmind::sidecar::{resolve_timeout_ms, PythonSidecarRuntime};
 
 use super::types::{
@@ -283,38 +283,15 @@ pub fn python_parser_config_json() -> serde_json::Value {
     })
 }
 
-fn office_converter_path() -> Option<String> {
-    office_converter_candidates()
-        .into_iter()
-        .find(|candidate| office_converter_works(candidate))
-}
-
-fn office_converter_works(candidate: &str) -> bool {
-    if candidate.trim().is_empty() {
-        return false;
-    }
-
-    Command::new(candidate)
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
 pub fn office_converter_config_json() -> serde_json::Value {
-    let bin = office_converter_path().unwrap_or_default();
-    let available = !bin.is_empty();
-    let message = if available {
-        "ready"
-    } else {
-        "LibreOffice / soffice not found"
-    };
+    let runtime = office_runtime();
 
     json!({
         "enabled": true,
-        "available": available,
-        "bin": bin,
-        "message": message,
-        "platform": std::env::consts::OS,
+        "available": runtime.available,
+        "bin": runtime.bin,
+        "message": runtime.message,
+        "platform": runtime.platform,
+        "kind": runtime.kind,
     })
 }

@@ -8,7 +8,7 @@
 use crate::seekmind::models::{IndexRefreshProgressView, IndexStatusView};
 use crate::seekmind::parser::types::ParserStreamEvent;
 use crate::seekmind::storage::scanner;
-use crate::seekmind::storage::types::{DocumentState, IndexSettings};
+use crate::seekmind::storage::types::{DocumentState, IndexSettings, ParserSource};
 use crate::seekmind::storage::Database;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -228,6 +228,8 @@ pub async fn rebuild_pdf_ocr_queue(
                     message,
                     scope: "pdf-ocr".to_string(),
                     path: path.clone(),
+                    parser_source: String::new(),
+                    warning: None,
                     status,
                     updated_at: chrono::Utc::now().to_rfc3339(),
                 });
@@ -251,6 +253,8 @@ pub async fn rebuild_pdf_ocr_queue(
                     message: format!("PDF OCR 重跑失败：{error}"),
                     scope: "pdf-ocr".to_string(),
                     path: path.clone(),
+                    parser_source: String::new(),
+                    warning: None,
                     status,
                     updated_at: chrono::Utc::now().to_rfc3339(),
                 });
@@ -288,6 +292,8 @@ pub async fn rebuild_pdf_ocr_queue(
         message: "PDF OCR 队列重跑完成".to_string(),
         scope: "pdf-ocr".to_string(),
         path: String::new(),
+        parser_source: String::new(),
+        warning: None,
         status: status.clone(),
         updated_at: chrono::Utc::now().to_rfc3339(),
     });
@@ -700,15 +706,29 @@ async fn process_index_plan(
             "正在解析并索引文档".to_string(),
         );
         let parser_tx_for_parse = parser_tx.clone();
+        eprintln!("[SeekMind] indexing parse start path={}", path);
         let parse_result = scanner::parse_document_with_progress(&file, move |event| {
             let _ = parser_tx_for_parse.send(event);
         });
         drop(parser_tx);
         let _ = parser_thread.join();
 
+        let actual_parser_source: Option<String>;
+        let mut actual_parser_warning: Option<String> = None;
         match parse_result {
             Ok((document, chunks, blocks, ocr_tasks, outcome)) => {
-                if let Some(warning) = outcome.warning {
+                actual_parser_source = Some(match outcome.source {
+                    ParserSource::Python => "python".to_string(),
+                    ParserSource::Rust => "rust".to_string(),
+                });
+                actual_parser_warning = outcome.warning.clone();
+                eprintln!(
+                    "[SeekMind] indexing parse completed path={} route={} chunks={}",
+                    path,
+                    actual_parser_source.clone().unwrap_or_default(),
+                    chunks.len()
+                );
+                if let Some(warning) = actual_parser_warning.clone() {
                     eprintln!("[SeekMind] indexing warning for {}: {warning}", path);
                 }
                 match database
@@ -733,6 +753,7 @@ async fn process_index_plan(
             }
             Err(reason) => {
                 plan.failed += 1;
+                actual_parser_source = Some("rust".to_string());
                 let (category, code) = classify_failure(&reason, &path);
                 let _ = database
                     .record_failed_file(&path, &reason, &category, &code)
@@ -751,6 +772,20 @@ async fn process_index_plan(
             &on_progress,
         )
         .await?;
+        if let Some(actual_parser_source) = actual_parser_source {
+            let status_snapshot = database.get_index_status().await?;
+            on_progress(IndexRefreshProgressView {
+                job_id: job_id.to_string(),
+                state: "running".to_string(),
+                message: String::new(),
+                scope: scope.to_string(),
+                path: path.clone(),
+                parser_source: actual_parser_source,
+                warning: actual_parser_warning,
+                status: status_snapshot,
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            });
+        }
     }
 
     database
@@ -914,6 +949,8 @@ async fn emit_index_progress(
         message: message.to_string(),
         scope: scope.to_string(),
         path: path.to_string(),
+        parser_source: String::new(),
+        warning: None,
         status,
         updated_at: chrono::Utc::now().to_rfc3339(),
     });
@@ -983,6 +1020,8 @@ fn spawn_parser_progress_forwarder(
                         message: details_for_task,
                         scope,
                         path,
+                        parser_source: event.parser_source,
+                        warning: warning_for_task,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     });

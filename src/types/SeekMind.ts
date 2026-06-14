@@ -216,6 +216,8 @@ export interface IndexRefreshProgressView {
   message: string;
   scope: string;
   path: string;
+  parser_source: string;
+  warning?: string | null;
   status: IndexStatusView;
   updated_at: string;
 }

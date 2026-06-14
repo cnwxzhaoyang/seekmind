@@ -715,6 +715,29 @@ const refreshOutcomeLabel = (path: string) => {
   return "";
 };
 
+const actualParserLabel = (path?: string) => {
+  if (!path) {
+    return t("common.unknown");
+  }
+  const outcome = refreshOutcomes.value[path];
+  if (outcome === "python") {
+    return t("status.parser.python");
+  }
+  if (outcome === "rust") {
+    return t("status.parser.pythonFallback");
+  }
+  if (refreshStates.value[path] === "running") {
+    const source = refreshActiveSources.value[path];
+    if (source === "python") {
+      return t("status.parser.python");
+    }
+    if (source === "rust") {
+      return t("status.parser.pythonFallback");
+    }
+  }
+  return t("common.unknown");
+};
+
 const refreshOutcomeTone = (path?: string) => {
   if (!path) {
     return "default" as const;
@@ -999,7 +1022,7 @@ watch(
                           ? 'bg-emerald-soft text-success'
                           : 'bg-amber-soft text-warning'"
                       >
-                        {{ refreshOutcomeLabel(doc.path) }}
+                        {{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(doc.path) }}
                       </div>
                       <div
                         v-if="refreshErrors[doc.path]"
@@ -1060,7 +1083,7 @@ watch(
                       : 'border-default bg-panel text-secondary'"
               >
                 <Cpu :size="11" />
-                {{ refreshOutcomeLabel(currentDocument.path) }}
+                {{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(currentDocument.path) }}
               </div>
               <div
                 v-if="currentDocumentRefreshWarning"
@@ -1076,6 +1099,7 @@ watch(
                 <SeekMindBadge>{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</SeekMindBadge>
               </div>
               <div class="grid gap-2 text-xs leading-5 text-muted">
+                <div>{{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(currentDocument.path) }}</div>
                 <div>{{ t("page.chunks.titlePath") }}：{{ currentDocument.file_name }}</div>
                 <div>{{ t("page.chunks.detail.imagePreview") }}：{{ isImageDocument ? t("common.available") : t("common.unavailable") }}</div>
               </div>

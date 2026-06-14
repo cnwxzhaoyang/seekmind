@@ -45,7 +45,7 @@
     "active": true,
     "targets": "all",
     "category": "Productivity",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "resources": [
       "app-resources"
     ],

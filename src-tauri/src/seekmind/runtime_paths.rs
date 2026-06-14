@@ -5,8 +5,21 @@
  */
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 pub const FASTEMBED_MODEL_CACHE_DIRNAME: &str = "models--Qdrant--bge-small-zh-v1.5";
+
+#[derive(Debug, Clone)]
+pub struct OfficeRuntime {
+    pub available: bool,
+    pub kind: String,
+    pub bin: String,
+    pub message: String,
+    pub platform: String,
+}
+
+static OFFICE_RUNTIME: OnceLock<OfficeRuntime> = OnceLock::new();
 
 pub fn env_override(names: &[&str]) -> Option<String> {
     for name in names {
@@ -201,7 +214,7 @@ pub fn vision_ocr_binary_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-pub fn office_converter_candidates() -> Vec<String> {
+fn office_converter_candidates() -> Vec<String> {
     let mut candidates = vec![std::env::var("SEEKMIND_OFFICE_BIN").ok()];
 
     if cfg!(target_os = "windows") {
@@ -227,6 +240,134 @@ pub fn office_converter_candidates() -> Vec<String> {
     }
 
     candidates.into_iter().flatten().collect()
+}
+
+fn libreoffice_converter_path() -> Option<String> {
+    office_converter_candidates()
+        .into_iter()
+        .find(|candidate| office_converter_works(candidate))
+}
+
+fn office_converter_works(candidate: &str) -> bool {
+    if candidate.trim().is_empty() {
+        return false;
+    }
+
+    Command::new(candidate)
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn detect_windows_office_runtime() -> Option<OfficeRuntime> {
+    let probe = r#"
+$apps = @()
+try {
+  $word = New-Object -ComObject Word.Application
+  $word.DisplayAlerts = 0
+  $word.Quit()
+  $apps += 'Word'
+} catch {}
+try {
+  $powerpoint = New-Object -ComObject PowerPoint.Application
+  $powerpoint.Quit()
+  $apps += 'PowerPoint'
+} catch {}
+try {
+  $excel = New-Object -ComObject Excel.Application
+  $excel.DisplayAlerts = $false
+  $excel.Quit()
+  $apps += 'Excel'
+} catch {}
+if ($apps.Count -gt 0) {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  Write-Output ($apps -join ', ')
+}
+"#;
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", probe])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let apps = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if apps.is_empty() {
+        return None;
+    }
+
+    Some(OfficeRuntime {
+        available: true,
+        kind: "windows-office-com".to_string(),
+        bin: "powershell".to_string(),
+        message: format!("Microsoft Office via PowerShell COM ({apps})"),
+        platform: std::env::consts::OS.to_string(),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn detect_macos_office_runtime() -> Option<OfficeRuntime> {
+    let textutil = PathBuf::from("/usr/bin/textutil");
+    if textutil.is_file() {
+        return Some(OfficeRuntime {
+            available: true,
+            kind: "macos-textutil".to_string(),
+            bin: textutil.display().to_string(),
+            message: "macOS textutil + native OOXML extraction".to_string(),
+            platform: std::env::consts::OS.to_string(),
+        });
+    }
+    None
+}
+
+fn unavailable_office_runtime() -> OfficeRuntime {
+    OfficeRuntime {
+        available: false,
+        kind: "unavailable".to_string(),
+        bin: String::new(),
+        message: "No compatible Office runtime detected".to_string(),
+        platform: std::env::consts::OS.to_string(),
+    }
+}
+
+fn detect_office_runtime() -> OfficeRuntime {
+    let runtime = if let Some(bin) = libreoffice_converter_path() {
+        OfficeRuntime {
+            available: true,
+            kind: "libreoffice".to_string(),
+            bin: bin.clone(),
+            message: "LibreOffice / soffice ready".to_string(),
+            platform: std::env::consts::OS.to_string(),
+        }
+    } else {
+        #[cfg(target_os = "windows")]
+        {
+            detect_windows_office_runtime().unwrap_or_else(unavailable_office_runtime)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            detect_macos_office_runtime().unwrap_or_else(unavailable_office_runtime)
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            unavailable_office_runtime()
+        }
+    };
+
+    eprintln!(
+        "[SeekMind] office runtime platform={} kind={} available={} bin={} message={}",
+        runtime.platform, runtime.kind, runtime.available, runtime.bin, runtime.message
+    );
+    runtime
+}
+
+pub fn office_runtime() -> OfficeRuntime {
+    OFFICE_RUNTIME.get_or_init(detect_office_runtime).clone()
 }
 
 pub fn writable_fastembed_cache_dir() -> PathBuf {

@@ -191,6 +191,10 @@ impl Database {
             .ensure_document_blocks_columns()
             .await
             .map_err(|error| error.to_string())?;
+        database
+            .recover_interrupted_index_task()
+            .await
+            .map_err(|error| error.to_string())?;
 
         if documents_migrated {
             database

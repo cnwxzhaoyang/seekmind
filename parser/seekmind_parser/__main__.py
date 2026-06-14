@@ -11,14 +11,21 @@ import sys
 import zipfile
 from pathlib import Path
 
+
+def configure_stdio_utf8() -> None:
+    # 修复：Rust sidecar 通过 UTF-8 管道传递 JSON，请求里包含中文路径时，
+    # Windows 默认控制台编码会把 stdin/stdout 解成 ???，导致 file_not_found 和响应乱码。
+    for stream_name in ("stdin", "stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
+
 if __package__ in (None, ""):
     package_root = Path(__file__).resolve().parents[1]
     if str(package_root) not in sys.path:
         sys.path.insert(0, str(package_root))
     from seekmind_parser.models import ParserError, request_from_dict
-    from seekmind_parser.rag.eval import rag_eval_request_from_dict, run_rag_regression
-    from seekmind_parser.rag.models import rag_request_from_dict
-    from seekmind_parser.rag.pipeline import run_rag_answer_stream
     from seekmind_parser.parser import (
         ParserException,
         embed_texts,
@@ -27,13 +34,30 @@ if __package__ in (None, ""):
     )
 else:
     from .models import ParserError, request_from_dict
-    from .rag.eval import rag_eval_request_from_dict, run_rag_regression
-    from .rag.models import rag_request_from_dict
-    from .rag.pipeline import run_rag_answer_stream
     from .parser import ParserException, embed_texts, embedding_status, parse_document
 
 
+def load_rag_runtime():
+    # 修复：embedding-status / warmup-embedding 只依赖 parser，不应该被 langgraph 等 RAG 依赖阻塞。
+    if __package__ in (None, ""):
+        from seekmind_parser.rag.eval import rag_eval_request_from_dict, run_rag_regression
+        from seekmind_parser.rag.models import rag_request_from_dict
+        from seekmind_parser.rag.pipeline import run_rag_answer_stream
+    else:
+        from .rag.eval import rag_eval_request_from_dict, run_rag_regression
+        from .rag.models import rag_request_from_dict
+        from .rag.pipeline import run_rag_answer_stream
+
+    return (
+        rag_request_from_dict,
+        run_rag_answer_stream,
+        rag_eval_request_from_dict,
+        run_rag_regression,
+    )
+
+
 def main() -> int:
+    configure_stdio_utf8()
     if len(sys.argv) >= 2 and sys.argv[1] == "warmup-embedding":
         model_name = sys.argv[2] if len(sys.argv) >= 3 else None
         return warmup_embedding(model_name)
@@ -53,6 +77,7 @@ def main() -> int:
         command = str(payload.get("command", ""))
 
         if command == "rag_answer_stream":
+            rag_request_from_dict, run_rag_answer_stream, _, _ = load_rag_runtime()
             request = rag_request_from_dict(payload)
 
             def emit_progress(event: dict) -> None:
@@ -66,6 +91,7 @@ def main() -> int:
             return 0 if response.ok else 1
 
         if command == "rag_eval":
+            _, _, rag_eval_request_from_dict, run_rag_regression = load_rag_runtime()
             request, cases = rag_eval_request_from_dict(payload)
 
             def emit_progress(event: dict) -> None:

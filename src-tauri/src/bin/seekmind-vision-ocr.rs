@@ -1,10 +1,10 @@
 /*
  * @author MorningSun
  * @CreatedDate 2026/06/06
- * @Description SeekMind bundled macOS Vision OCR helper entry point.
+ * @Description SeekMind bundled OCR helper entry point for supported desktop platforms.
  */
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if let Err(error) = seekmind_lib::run_vision_ocr_helper(&args) {
@@ -13,8 +13,8 @@ fn main() {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn main() {
-    eprintln!("[SeekMind][VisionOCR] helper is only available on macOS");
+    eprintln!("[SeekMind][VisionOCR] helper is only available on macOS and Windows");
     std::process::exit(1);
 }

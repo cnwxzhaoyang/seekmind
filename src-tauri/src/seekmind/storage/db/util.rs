@@ -36,16 +36,26 @@ pub fn sqlite_database_path() -> PathBuf {
 }
 
 pub(crate) fn normalize_directory_path(path: &str) -> String {
-    path.trim().trim_end_matches('/').to_string()
+    path.trim()
+        .trim_end_matches(['/', '\\'])
+        .to_string()
+}
+
+pub(crate) fn normalize_path_for_comparison(path: &str) -> String {
+    normalize_directory_path(path).replace('\\', "/")
+}
+
+pub(crate) fn normalized_like_prefix(path: &str) -> String {
+    format!("{}/%", normalize_path_for_comparison(path))
 }
 
 pub(crate) fn is_virtual_directory(path: &str) -> bool {
-    normalize_directory_path(path).starts_with("virtual://")
+    normalize_path_for_comparison(path).starts_with("virtual://")
 }
 
 pub(crate) fn is_path_within_dir(path: &str, dir: &str) -> bool {
-    let normalized_path = normalize_directory_path(path);
-    let normalized_dir = normalize_directory_path(dir);
+    let normalized_path = normalize_path_for_comparison(path);
+    let normalized_dir = normalize_path_for_comparison(dir);
     if normalized_path == normalized_dir {
         return true;
     }

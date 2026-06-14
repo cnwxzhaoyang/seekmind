@@ -15,7 +15,10 @@ use crate::seekmind::parser::types::PdfOcrTask;
 use crate::seekmind::storage::types::{ChunkRecord, DocumentState, ExtractedDocument};
 
 use super::rows::{BlockRow, ChunkRow, DocumentRow};
-use super::util::{current_unix_ts, is_virtual_directory, scalar_count_no_bind};
+use super::util::{
+    current_unix_ts, is_virtual_directory, normalize_path_for_comparison, normalized_like_prefix,
+    scalar_count_no_bind,
+};
 use super::Database;
 
 impl Database {
@@ -71,7 +74,8 @@ impl Database {
             .fetch_all(&self.pool)
             .await?
         } else {
-            let prefix = format!("{dir_path}/%");
+            let normalized_dir_path = normalize_path_for_comparison(dir_path);
+            let prefix = normalized_like_prefix(dir_path);
             sqlx::query_as::<_, DocumentRow>(
                 r#"
                 SELECT
@@ -84,12 +88,13 @@ impl Database {
                     COUNT(c.id) AS chunks
                 FROM documents d
                 LEFT JOIN chunks c ON c.document_id = d.id
-                WHERE d.path = ? OR d.path LIKE ?
+                WHERE REPLACE(d.path, CHAR(92), '/') = ?
+                   OR REPLACE(d.path, CHAR(92), '/') LIKE ?
                 GROUP BY d.id, d.dir_path, d.path, d.file_name, d.ext, d.modified
                 ORDER BY d.path
                 "#,
             )
-            .bind(dir_path)
+            .bind(normalized_dir_path)
             .bind(prefix)
             .fetch_all(&self.pool)
             .await?
@@ -133,15 +138,17 @@ impl Database {
             .fetch_all(&self.pool)
             .await?
         } else {
-            let prefix = format!("{dir_path}/%");
+            let normalized_dir_path = normalize_path_for_comparison(dir_path);
+            let prefix = normalized_like_prefix(dir_path);
             sqlx::query_as::<_, DocumentStateRow>(
                 r#"
                 SELECT path, file_size, modified_at, content_hash
                 FROM documents
-                WHERE path = ? OR path LIKE ?
+                WHERE REPLACE(path, CHAR(92), '/') = ?
+                   OR REPLACE(path, CHAR(92), '/') LIKE ?
                 "#,
             )
-            .bind(dir_path)
+            .bind(normalized_dir_path)
             .bind(prefix)
             .fetch_all(&self.pool)
             .await?
@@ -417,14 +424,16 @@ impl Database {
             .execute(&self.pool)
             .await?;
         } else {
-            let prefix = format!("{dir_path}/%");
+            let normalized_dir_path = normalize_path_for_comparison(dir_path);
+            let prefix = normalized_like_prefix(dir_path);
             sqlx::query(
                 r#"
                 DELETE FROM failed_files
-                WHERE file = ? OR file LIKE ?
+                WHERE REPLACE(file, CHAR(92), '/') = ?
+                   OR REPLACE(file, CHAR(92), '/') LIKE ?
                 "#,
             )
-            .bind(dir_path)
+            .bind(normalized_dir_path)
             .bind(prefix)
             .execute(&self.pool)
             .await?;
@@ -527,15 +536,17 @@ impl Database {
             .execute(&self.pool)
             .await?;
         } else {
-            let prefix = format!("{dir_path}/%");
+            let normalized_dir_path = normalize_path_for_comparison(dir_path);
+            let prefix = normalized_like_prefix(dir_path);
             // 修复：按目录批量删除时，OCR 任务表也必须按文件路径前缀一并清理。
             sqlx::query(
                 r#"
                 DELETE FROM pdf_ocr_tasks
-                WHERE document_path = ? OR document_path LIKE ?
+                WHERE REPLACE(document_path, CHAR(92), '/') = ?
+                   OR REPLACE(document_path, CHAR(92), '/') LIKE ?
                 "#,
             )
-            .bind(dir_path)
+            .bind(&normalized_dir_path)
             .bind(prefix.clone())
             .execute(&self.pool)
             .await?;
@@ -545,21 +556,23 @@ impl Database {
                 WHERE document_id IN (
                     SELECT id
                     FROM documents
-                    WHERE path = ? OR path LIKE ?
+                    WHERE REPLACE(path, CHAR(92), '/') = ?
+                       OR REPLACE(path, CHAR(92), '/') LIKE ?
                 )
                 "#,
             )
-            .bind(dir_path)
+            .bind(normalized_dir_path.clone())
             .bind(prefix.clone())
             .execute(&self.pool)
             .await?;
             sqlx::query(
                 r#"
                 DELETE FROM documents
-                WHERE path = ? OR path LIKE ?
+                WHERE REPLACE(path, CHAR(92), '/') = ?
+                   OR REPLACE(path, CHAR(92), '/') LIKE ?
                 "#,
             )
-            .bind(dir_path)
+            .bind(&normalized_dir_path)
             .bind(prefix)
             .execute(&self.pool)
             .await?;

@@ -187,7 +187,91 @@ npm run tauri:build:macos:sidecar
 
 因此产物里的 app 会优先使用冻结后的 parser sidecar；如果没有侧边可执行文件，运行时仍会回落到开发态的 Python 脚本链路。
 
-### 6. 如果要清空并重新启动开发环境
+### 6. 打包 Windows App
+
+Windows 下如果要打包带 parser sidecar 和 OCR helper 的完整桌面应用，可以用：
+
+```bash
+npm run tauri:build:windows:sidecar
+```
+
+为了和 macOS 的命令风格保持一致，也保留了一个等价入口：
+
+```bash
+npm run tauri:build:windows
+```
+
+这两条命令实际都会执行：
+
+```bash
+node scripts/build-parser-sidecar.mjs --tauri-build --target x86_64-pc-windows-msvc
+```
+
+这条构建链会先：
+
+- 用 PyInstaller 冻结 Python parser sidecar
+- 构建并打包 Windows 原生 OCR helper `vision-ocr.exe`
+- 把这些运行时资源放进 `src-tauri/app-resources/`
+- 再执行 Tauri 的 Windows 构建
+
+构建完成后，Windows 产物会优先使用：
+
+- 冻结后的 parser sidecar
+- 打包内置的 Windows OCR helper
+
+说明：
+
+- 当前默认目标是 `x86_64-pc-windows-msvc`
+- 这套命令适合在 Windows 主机上执行
+- 如果系统已安装中文 OCR 语言包，运行时状态页会显示类似 `zh-Hans-CN` 的可用语言
+
+### 6.1 Windows 打包命令更新（2026-06-14）
+
+Windows 下建议优先使用下面这条命令打完整安装包：
+
+```bash
+npm run tauri:build:windows
+```
+
+它当前等价于：
+
+```bash
+npm run tauri:build:windows:nsis
+node scripts/build-parser-sidecar.mjs --tauri-build --target x86_64-pc-windows-msvc --bundles nsis
+```
+
+为了和 macOS 的命令命名保持一致，下面这个入口也保留：
+
+```bash
+npm run tauri:build:windows:sidecar
+```
+
+如果你明确需要 MSI 安装包，可以执行：
+
+```bash
+npm run tauri:build:windows:msi
+```
+
+如果当前机器网络有代理，导致 WiX / NSIS 下载不稳定，或者你只想先验证可执行文件是否能跑通，可以执行：
+
+```bash
+npm run tauri:build:windows:portable
+```
+
+这条命令会跳过 installer bundler，但仍然会构建：
+
+- `SeekMind.exe`
+- 冻结后的 parser sidecar
+- 打包内置的 `vision-ocr.exe`
+- `fastembed` 运行时资源
+
+补充说明：
+
+- 默认目标仍然是 `x86_64-pc-windows-msvc`
+- `npm run tauri:build:windows` 现在默认优先走 `nsis`，避免被 `msi -> WiX` 单点阻塞
+- 如果要继续排查安装包网络问题，优先看 Tauri bundler 下载 NSIS / WiX 时是否被代理截断
+
+### 7. 如果要清空并重新启动开发环境
 
 ```bash
 npm run tauri:dev:fresh

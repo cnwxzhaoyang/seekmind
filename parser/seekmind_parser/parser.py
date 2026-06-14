@@ -1089,7 +1089,7 @@ def parse_document(
     content = "\n\n".join(
         block.text for block in blocks if block.text.strip() and block.section != "frontmatter"
     )
-    chunks = build_chunks(blocks, path, options, emit=emit)
+    chunks = build_chunks(blocks, path, options, emit=emit, request_id=request_id)
     progress("chunk", f"已生成 {len(chunks)} 个切片", 90, path.name, len(chunks), len(chunks))
     if options.max_chunks is not None:
         chunks = chunks[: max(int(options.max_chunks), 0)]
@@ -1211,6 +1211,41 @@ def embed_texts(
         raise parser_error("embedding_failed", normalize_embedding_error(exc)) from exc
 
 
+def fastembed_cache_dir() -> Optional[Path]:
+    cache_dir = env_value("SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR")
+    if not cache_dir:
+        return None
+    return Path(cache_dir)
+
+
+def looks_like_broken_fastembed_cache(error: Exception) -> bool:
+    message = normalize_embedding_error(error).lower()
+    return (
+        "no_suchfile" in message
+        or "file doesn't exist" in message
+        or "model_optimized.onnx" in message
+        or "load model" in message and ".onnx" in message
+    )
+
+
+def purge_fastembed_cache(cache_dir: Optional[Path]) -> bool:
+    if cache_dir is None or not cache_dir.exists():
+        return False
+
+    try:
+        # 修复：首次下载超时会留下半拉子的 HF/ONNX 缓存，后续探测会一直命中坏文件。
+        # 这里探测到典型坏缓存后主动清空并重试一次，让设置页可以自愈恢复。
+        shutil.rmtree(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[SeekMind] failed to purge broken fastembed cache dir={cache_dir}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+
+
 @lru_cache(maxsize=16)
 def get_fastembed_runtime(model_name: Optional[str] = None, eager: bool = True) -> FastEmbedRuntime:
     target_model = (model_name or DEFAULT_EMBEDDING_MODEL).strip() or DEFAULT_EMBEDDING_MODEL
@@ -1238,12 +1273,14 @@ def get_fastembed_runtime(model_name: Optional[str] = None, eager: bool = True) 
             model=None,
         )
 
-    try:
+    cache_dir = env_value("SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR")
+
+    def build_runtime() -> FastEmbedRuntime:
         model = TextEmbedding(
             model_name=target_model,
             # 修复：兼容历史的 SeekMind_FASTEMBED_CACHE_DIR，同时优先读取新的 SEEKMIND_FASTEMBED_CACHE_DIR，
             # 避免 warmup 与桌面端启动写入到两个不同模型缓存目录。
-            cache_dir=env_value("SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"),
+            cache_dir=cache_dir,
         )
         dimension = infer_embedding_dimension(model, target_model)
         return FastEmbedRuntime(
@@ -1255,7 +1292,29 @@ def get_fastembed_runtime(model_name: Optional[str] = None, eager: bool = True) 
             message="ready",
             model=model,
         )
+
+    try:
+        return build_runtime()
     except Exception as exc:  # noqa: BLE001
+        if looks_like_broken_fastembed_cache(exc) and purge_fastembed_cache(fastembed_cache_dir()):
+            print(
+                f"[SeekMind] detected broken fastembed cache for model={target_model}, cache reset and retrying",
+                file=sys.stderr,
+            )
+            try:
+                return build_runtime()
+            except Exception as retry_exc:  # noqa: BLE001
+                message = normalize_embedding_error(retry_exc)
+                return FastEmbedRuntime(
+                    available=False,
+                    provider="fastembed",
+                    model_name=target_model,
+                    model_path="",
+                    dimension=0,
+                    message=message,
+                    model=None,
+                )
+
         message = normalize_embedding_error(exc)
         return FastEmbedRuntime(
             available=False,
@@ -2438,6 +2497,7 @@ def build_chunks(
     path: Path,
     options: ParserOptions,
     emit: Optional[ProgressEmitter] = None,
+    request_id: str = "",
 ) -> List[ParsedChunk]:
     chunks: List[ParsedChunk] = []
     max_chars = max(int(options.max_chunk_chars), 120)
@@ -2510,7 +2570,7 @@ def build_chunks(
                 if emit is not None:
                     emit(
                         ParserStreamMessage(
-                            request_id="",
+                            request_id=request_id,
                             kind="event",
                             event="progress",
                             message=f"已切分 {order - 1} 个切片",

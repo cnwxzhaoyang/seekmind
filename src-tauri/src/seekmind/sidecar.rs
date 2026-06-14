@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -136,10 +137,65 @@ pub fn configure_sidecar_command(command: &mut Command) {
 
 pub fn default_python_bin() -> String {
     if cfg!(target_os = "windows") {
-        "python".to_string()
+        static WINDOWS_PYTHON_BIN: OnceLock<String> = OnceLock::new();
+        WINDOWS_PYTHON_BIN
+            .get_or_init(|| {
+                if let Some(python_bin) = detect_windows_python_bin() {
+                    eprintln!(
+                        "[SeekMind] using detected Windows Python runtime for sidecar: {}",
+                        python_bin
+                    );
+                    return python_bin;
+                }
+
+                // 修复：至少回退到 py launcher，避免 Store alias 的 python.exe 让 sidecar 误判不可用。
+                let fallback = "py".to_string();
+                eprintln!(
+                    "[SeekMind] using fallback Windows Python launcher `py` for sidecar runtime"
+                );
+                fallback
+            })
+            .clone()
     } else {
         "python3".to_string()
     }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_windows_python_bin() -> Option<String> {
+    let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let user_profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    let mut candidates = Vec::new();
+
+    if let Some(base) = local_app_data {
+        for version in ["Python314", "Python313", "Python312", "Python311", "Python310"] {
+            candidates.push(base.join("Programs").join("Python").join(version).join("python.exe"));
+        }
+    }
+
+    if let Some(base) = user_profile {
+        candidates.push(base.join("Miniconda3").join("python.exe"));
+        candidates.push(base.join("anaconda3").join("python.exe"));
+    }
+
+    for candidate in candidates.into_iter().filter(|candidate| candidate.exists()) {
+        // 修复：多版本 Python 并存时，只选择已安装 fastembed 的解释器，避免运行时继续误落到空环境。
+        let import_ready = Command::new(&candidate)
+            .args(["-c", "import fastembed"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        if import_ready {
+            return Some(candidate.display().to_string());
+        }
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_windows_python_bin() -> Option<String> {
+    None
 }
 
 pub fn resolve_timeout_ms(primary_env: &str, fallback_env: Option<&str>, default_ms: u64) -> u64 {

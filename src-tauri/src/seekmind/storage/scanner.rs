@@ -16,7 +16,7 @@ use zip::ZipArchive;
 use crate::seekmind::parser::types::{ParsedBlock, PdfOcrTask};
 use crate::seekmind::parser::types::ParserStreamEvent;
 use crate::seekmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
-use crate::seekmind::runtime_paths::office_converter_candidates;
+use crate::seekmind::runtime_paths::office_runtime;
 use crate::seekmind::vision_ocr::recognize_image_text;
 
 use super::types::{
@@ -217,8 +217,10 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
         "txt" | "md" | "markdown" | "log" | "toml" | "json" | "yaml" | "yml" | "xml" | "csv"
         | "rs" | "js" | "ts" | "tsx" | "jsx" | "py" => read_text_file(path)?,
         "html" | "htm" => strip_html_tags(&read_text_file(path)?),
-        "doc" | "ppt" | "pptx" | "xlsx" | "rtf" => extract_office_text(path)?,
+        "doc" | "ppt" | "rtf" => extract_office_text(path)?,
         "docx" => extract_docx_text(path)?,
+        "pptx" => extract_pptx_text(path)?,
+        "xlsx" => extract_xlsx_text(path)?,
         "epub" => extract_epub_text(path)?,
         "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tif" | "tiff" | "heic" => {
             extract_image_text(path)?
@@ -520,6 +522,94 @@ fn extract_docx_text(path: &Path) -> Result<String, String> {
     Ok(extract_xml_text_nodes(&document_xml))
 }
 
+fn extract_pptx_text(path: &Path) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
+    let mut slide_names = archive
+        .file_names()
+        .map(|name| name.to_string())
+        .filter(|name| name.starts_with("ppt/slides/slide") && name.ends_with(".xml"))
+        .collect::<Vec<_>>();
+    slide_names.sort();
+
+    let mut slides = Vec::new();
+    for slide_name in slide_names {
+        if let Ok(slide_xml) = read_zip_file_to_string(&mut archive, &slide_name) {
+            let text = extract_xml_text_nodes_by_tag(&slide_xml, "a:t");
+            if !text.trim().is_empty() {
+                slides.push(text);
+            }
+        }
+    }
+
+    let normalized = normalize_whitespace(&slides.join("\n\n"));
+    if normalized.is_empty() {
+        #[cfg(target_os = "windows")]
+        if office_runtime().kind == "windows-office-com" {
+            return extract_windows_powerpoint_text(path);
+        }
+
+        if let Some(converted_txt) = convert_office_document(path, "txt") {
+            let text = fs::read_to_string(&converted_txt).map_err(|error| error.to_string())?;
+            if !text.trim().is_empty() {
+                return Ok(normalize_whitespace(&text));
+            }
+        }
+
+        Err(format!("PPTX produced empty document text for {}", path.to_string_lossy()))
+    } else {
+        Ok(normalized)
+    }
+}
+
+fn extract_xlsx_text(path: &Path) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
+    let mut blocks = Vec::new();
+
+    if let Ok(shared_strings_xml) = read_zip_file_to_string(&mut archive, "xl/sharedStrings.xml") {
+        let shared_text = extract_xml_text_nodes_by_tag(&shared_strings_xml, "t");
+        if !shared_text.trim().is_empty() {
+            blocks.push(shared_text);
+        }
+    }
+
+    let mut worksheet_names = archive
+        .file_names()
+        .map(|name| name.to_string())
+        .filter(|name| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
+        .collect::<Vec<_>>();
+    worksheet_names.sort();
+
+    for worksheet_name in worksheet_names {
+        if let Ok(worksheet_xml) = read_zip_file_to_string(&mut archive, &worksheet_name) {
+            let worksheet_text = extract_xml_text_nodes_by_tag(&worksheet_xml, "t");
+            if !worksheet_text.trim().is_empty() {
+                blocks.push(worksheet_text);
+            }
+        }
+    }
+
+    let normalized = normalize_whitespace(&blocks.join("\n\n"));
+    if normalized.is_empty() {
+        #[cfg(target_os = "windows")]
+        if office_runtime().kind == "windows-office-com" {
+            return extract_windows_excel_text(path);
+        }
+
+        if let Some(converted_txt) = convert_office_document(path, "txt") {
+            let text = fs::read_to_string(&converted_txt).map_err(|error| error.to_string())?;
+            if !text.trim().is_empty() {
+                return Ok(normalize_whitespace(&text));
+            }
+        }
+
+        Err(format!("XLSX produced empty document text for {}", path.to_string_lossy()))
+    } else {
+        Ok(normalized)
+    }
+}
+
 fn extract_epub_text(path: &Path) -> Result<String, String> {
     let file = fs::File::open(path).map_err(|error| error.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
@@ -662,24 +752,6 @@ fn looks_like_textutil_error_output(text: &str) -> bool {
         || lowered.contains("the file isn't in the correct format")
 }
 
-fn office_converter_path() -> Option<String> {
-    office_converter_candidates()
-        .into_iter()
-        .find(|candidate| office_converter_works(candidate))
-}
-
-fn office_converter_works(candidate: &str) -> bool {
-    if candidate.trim().is_empty() {
-        return false;
-    }
-
-    Command::new(candidate)
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
 fn office_conversion_output_dir(path: &Path) -> PathBuf {
     let digest = Sha256::digest(path.to_string_lossy().as_bytes());
     let key = digest[..8]
@@ -694,7 +766,12 @@ fn office_conversion_output_dir(path: &Path) -> PathBuf {
 }
 
 fn convert_office_document(path: &Path, target_ext: &str) -> Option<PathBuf> {
-    let converter = office_converter_path()?;
+    let runtime = office_runtime();
+    if runtime.kind != "libreoffice" {
+        return None;
+    }
+
+    let converter = runtime.bin;
     let output_dir = office_conversion_output_dir(path);
     let stem = path.file_stem()?.to_string_lossy().to_string();
     let target_ext = target_ext.trim_start_matches('.').to_lowercase();
@@ -704,7 +781,7 @@ fn convert_office_document(path: &Path, target_ext: &str) -> Option<PathBuf> {
         return Some(expected_output);
     }
 
-    let status = Command::new(converter)
+    let status = Command::new(&converter)
         .arg("--headless")
         .arg("--nologo")
         .arg("--nofirststartwizard")
@@ -732,7 +809,174 @@ fn convert_office_document(path: &Path, target_ext: &str) -> Option<PathBuf> {
         })
 }
 
+#[cfg(target_os = "windows")]
+fn escape_powershell_literal(input: &str) -> String {
+    input.replace('\'', "''")
+}
+
+#[cfg(target_os = "windows")]
+fn run_powershell_office_script(script: &str) -> Result<String, String> {
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        return Err(normalize_whitespace(&String::from_utf8_lossy(&output.stderr)));
+    }
+
+    String::from_utf8(output.stdout).map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn extract_windows_word_text(path: &Path) -> Result<String, String> {
+    let escaped_path = escape_powershell_literal(&path.to_string_lossy());
+    let script = format!(
+        r#"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$source = '{escaped_path}'
+$word = $null
+$document = $null
+try {{
+  $word = New-Object -ComObject Word.Application
+  $word.Visible = $false
+  $word.DisplayAlerts = 0
+  $document = $word.Documents.Open($source, $false, $true)
+  Write-Output $document.Content.Text
+}} finally {{
+  if ($document -ne $null) {{ $document.Close($false) }}
+  if ($word -ne $null) {{ $word.Quit() }}
+}}
+"#
+    );
+
+    let text = run_powershell_office_script(&script)?;
+    let normalized = normalize_whitespace(&text);
+    if normalized.is_empty() {
+        Err(format!(
+            "Word COM produced empty document text for {}",
+            path.to_string_lossy()
+        ))
+    } else {
+        Ok(normalized)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_windows_powerpoint_text(path: &Path) -> Result<String, String> {
+    let escaped_path = escape_powershell_literal(&path.to_string_lossy());
+    let script = format!(
+        r#"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$source = '{escaped_path}'
+$powerpoint = $null
+$presentation = $null
+$lines = New-Object System.Collections.Generic.List[string]
+try {{
+  $powerpoint = New-Object -ComObject PowerPoint.Application
+  $presentation = $powerpoint.Presentations.Open($source, $false, $true, $false)
+  foreach ($slide in $presentation.Slides) {{
+    foreach ($shape in $slide.Shapes) {{
+      try {{
+        if ($shape.HasTextFrame -and $shape.TextFrame.HasText) {{
+          $text = $shape.TextFrame.TextRange.Text
+          if ($text -and $text.Trim().Length -gt 0) {{
+            [void]$lines.Add($text)
+          }}
+        }}
+      }} catch {{}}
+      try {{
+        if ($shape.HasTable) {{
+          for ($row = 1; $row -le $shape.Table.Rows.Count; $row++) {{
+            for ($column = 1; $column -le $shape.Table.Columns.Count; $column++) {{
+              $cellText = $shape.Table.Cell($row, $column).Shape.TextFrame.TextRange.Text
+              if ($cellText -and $cellText.Trim().Length -gt 0) {{
+                [void]$lines.Add($cellText)
+              }}
+            }}
+          }}
+        }}
+      }} catch {{}}
+    }}
+  }}
+  Write-Output ($lines -join [Environment]::NewLine)
+}} finally {{
+  if ($presentation -ne $null) {{ $presentation.Close() }}
+  if ($powerpoint -ne $null) {{ $powerpoint.Quit() }}
+}}
+"#
+    );
+
+    let text = run_powershell_office_script(&script)?;
+    let normalized = normalize_whitespace(&text);
+    if normalized.is_empty() {
+        Err(format!(
+            "PowerPoint COM produced empty document text for {}",
+            path.to_string_lossy()
+        ))
+    } else {
+        Ok(normalized)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn extract_windows_excel_text(path: &Path) -> Result<String, String> {
+    let escaped_path = escape_powershell_literal(&path.to_string_lossy());
+    let script = format!(
+        r#"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$source = '{escaped_path}'
+$excel = $null
+$workbook = $null
+$lines = New-Object System.Collections.Generic.List[string]
+try {{
+  $excel = New-Object -ComObject Excel.Application
+  $excel.Visible = $false
+  $excel.DisplayAlerts = $false
+  $workbook = $excel.Workbooks.Open($source, 0, $true)
+  foreach ($sheet in $workbook.Worksheets) {{
+    $range = $sheet.UsedRange
+    if ($null -eq $range) {{
+      continue
+    }}
+    foreach ($cell in $range.Cells) {{
+      $text = $cell.Text
+      if ($text -and $text.ToString().Trim().Length -gt 0) {{
+        [void]$lines.Add($text.ToString())
+      }}
+    }}
+  }}
+  Write-Output ($lines -join [Environment]::NewLine)
+}} finally {{
+  if ($workbook -ne $null) {{ $workbook.Close($false) }}
+  if ($excel -ne $null) {{ $excel.Quit() }}
+}}
+"#
+    );
+
+    let text = run_powershell_office_script(&script)?;
+    let normalized = normalize_whitespace(&text);
+    if normalized.is_empty() {
+        Err(format!(
+            "Excel COM produced empty document text for {}",
+            path.to_string_lossy()
+        ))
+    } else {
+        Ok(normalized)
+    }
+}
+
 fn extract_office_text(path: &Path) -> Result<String, String> {
+    let runtime = office_runtime();
+    let ext = extension(path);
+
     if let Some(converted_txt) = convert_office_document(path, "txt") {
         let text = fs::read_to_string(&converted_txt).map_err(|error| error.to_string())?;
         if !text.trim().is_empty() {
@@ -747,35 +991,63 @@ fn extract_office_text(path: &Path) -> Result<String, String> {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(target_os = "windows")]
     {
-        return extract_doc_text_with_textutil(path);
+        if runtime.kind == "windows-office-com" {
+            eprintln!(
+                "[SeekMind] office fallback runtime=windows-office-com ext={} path={}",
+                ext,
+                path.to_string_lossy()
+            );
+            return match ext.as_str() {
+                "doc" | "rtf" => extract_windows_word_text(path),
+                "ppt" => extract_windows_powerpoint_text(path),
+                "xlsx" => extract_windows_excel_text(path),
+                other => Err(format!(
+                    "Windows Office COM does not support {} for {}",
+                    other,
+                    path.to_string_lossy()
+                )),
+            };
+        }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     {
-        Err(format!(
-            "failed to extract office text for {}",
-            path.to_string_lossy()
-        ))
+        if runtime.kind == "macos-textutil" && matches!(ext.as_str(), "doc" | "rtf") {
+            eprintln!(
+                "[SeekMind] office fallback runtime=macos-textutil ext={} path={}",
+                ext,
+                path.to_string_lossy()
+            );
+            return extract_doc_text_with_textutil(path);
+        }
     }
+
+    Err(format!("failed to extract office text for {}", path.to_string_lossy()))
 }
 
 fn extract_xml_text_nodes(xml: &str) -> String {
+    extract_xml_text_nodes_by_tag(xml, "w:t")
+}
+
+fn extract_xml_text_nodes_by_tag(xml: &str, tag_name: &str) -> String {
     let mut text = String::new();
     let mut cursor = xml;
+    let open_pattern = format!("<{tag_name}");
+    let close_pattern = format!("</{tag_name}>");
 
-    while let Some(start) = cursor.find("<w:t") {
-        cursor = &cursor[start + 4..];
+    while let Some(start) = cursor.find(&open_pattern) {
+        cursor = &cursor[start + open_pattern.len()..];
         if let Some(tag_end) = cursor.find('>') {
             cursor = &cursor[tag_end + 1..];
-            if let Some(end) = cursor.find("</w:t>") {
+            if let Some(end) = cursor.find(&close_pattern) {
                 let piece = clean_docx_text(&decode_entities(&cursor[..end]));
                 if !piece.is_empty() {
                     text.push_str(&piece);
                     text.push('\n');
                 }
-                cursor = &cursor[end + 6..];
+                cursor = &cursor[end + close_pattern.len()..];
             } else {
                 break;
             }

@@ -244,6 +244,9 @@ pub struct IndexRefreshProgressView {
     pub message: String,
     pub scope: String,
     pub path: String,
+    pub parser_source: String,
+    #[serde(default)]
+    pub warning: Option<String>,
     pub status: IndexStatusView,
     pub updated_at: String,
 }

@@ -695,6 +695,10 @@ pub async fn refresh_document(
         "rust".to_string()
     };
     let use_python = parser_hint == "python";
+    eprintln!(
+        "[SeekMind] document refresh route={} path={} dir={}",
+        parser_hint, path_string, dir_string
+    );
 
     let initial_payload = super::models::DocumentRefreshProgressView {
         job_id: job_id.clone(),
@@ -737,6 +741,11 @@ pub async fn refresh_document(
                 Ok(parsed) => {
                     let (document, chunks, blocks, ocr_tasks) =
                         scanner::convert_python_document(&file, parsed);
+                    eprintln!(
+                        "[SeekMind] document refresh completed route=python path={} chunks={}",
+                        path_string,
+                        chunks.len()
+                    );
                     Ok((
                         document,
                         chunks,
@@ -762,6 +771,10 @@ pub async fn refresh_document(
                     {
                         Err(warning)
                     } else {
+                        eprintln!(
+                            "[SeekMind] document refresh fallback route=rust path={} reason={}",
+                            path_string, warning
+                        );
                         parser_warning = Some(
                             warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust："),
                         );
@@ -769,6 +782,11 @@ pub async fn refresh_document(
                         match document {
                             Ok(document) => {
                                 let chunks = scanner::chunk_document(&document);
+                                eprintln!(
+                                    "[SeekMind] document refresh completed route=rust path={} chunks={}",
+                                    path_string,
+                                    chunks.len()
+                                );
                                 Ok((
                                     document,
                                     chunks,
@@ -783,9 +801,18 @@ pub async fn refresh_document(
                 }
             }
         } else {
+            eprintln!(
+                "[SeekMind] document refresh route=rust path={} reason=python parser unavailable",
+                path_string
+            );
             match scanner::extract_document_at(&file.dir_path, &file.path) {
                 Ok(document) => {
                     let chunks = scanner::chunk_document(&document);
+                    eprintln!(
+                        "[SeekMind] document refresh completed route=rust path={} chunks={}",
+                        path_string,
+                        chunks.len()
+                    );
                     Ok((
                         document,
                         chunks,
@@ -1023,6 +1050,8 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                 message: "正在修复全文索引".to_string(),
                 scope: "fulltext-repair".to_string(),
                 path: String::new(),
+                parser_source: String::new(),
+                warning: None,
                 status,
                 updated_at: chrono::Utc::now().to_rfc3339(),
             },
@@ -1068,6 +1097,8 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                             message: format!("正在修复全文索引：{processed}/{total}"),
                             scope: "fulltext-repair".to_string(),
                             path: file_name,
+                            parser_source: String::new(),
+                            warning: None,
                             status,
                             updated_at: chrono::Utc::now().to_rfc3339(),
                         },
@@ -1107,6 +1138,8 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                     message: "全文索引修复失败".to_string(),
                     scope: "fulltext-repair".to_string(),
                     path: String::new(),
+                    parser_source: String::new(),
+                    warning: None,
                     status,
                     updated_at: chrono::Utc::now().to_rfc3339(),
                 },
@@ -1123,6 +1156,8 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                     message: "全文索引修复完成".to_string(),
                     scope: "fulltext-repair".to_string(),
                     path: String::new(),
+                    parser_source: String::new(),
+                    warning: None,
                     status,
                     updated_at: chrono::Utc::now().to_rfc3339(),
                 },
@@ -1493,6 +1528,8 @@ pub async fn refresh_index(
         message: "正在重新索引本地文档".to_string(),
         scope: "all".to_string(),
         path: String::new(),
+        parser_source: String::new(),
+        warning: None,
         status: start_status.clone(),
         updated_at: chrono::Utc::now().to_rfc3339(),
     };
@@ -1515,6 +1552,8 @@ pub async fn refresh_index(
                         message: "目录索引完成".to_string(),
                         scope: "all".to_string(),
                         path: String::new(),
+                        parser_source: String::new(),
+                        warning: None,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     },
@@ -1534,6 +1573,8 @@ pub async fn refresh_index(
                         message: format!("目录索引失败：{error}"),
                         scope: "all".to_string(),
                         path: String::new(),
+                        parser_source: String::new(),
+                        warning: None,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     },
@@ -1589,6 +1630,8 @@ pub async fn refresh_index_dir(
         message: "正在重新索引目录".to_string(),
         scope: "dir".to_string(),
         path: normalized_path.clone(),
+        parser_source: String::new(),
+        warning: None,
         status: start_status.clone(),
         updated_at: chrono::Utc::now().to_rfc3339(),
     };
@@ -1617,6 +1660,8 @@ pub async fn refresh_index_dir(
                         message: "目录索引完成".to_string(),
                         scope: "dir".to_string(),
                         path: path_for_task,
+                        parser_source: String::new(),
+                        warning: None,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     },
@@ -1636,6 +1681,8 @@ pub async fn refresh_index_dir(
                         message: format!("目录索引失败：{error}"),
                         scope: "dir".to_string(),
                         path: path_for_task,
+                        parser_source: String::new(),
+                        warning: None,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     },
@@ -1834,6 +1881,8 @@ pub async fn refresh_pdf_ocr_tasks(
         message: "正在重跑 PDF OCR".to_string(),
         scope: "pdf-ocr".to_string(),
         path: String::new(),
+        parser_source: String::new(),
+        warning: None,
         status: start_status.clone(),
         updated_at: chrono::Utc::now().to_rfc3339(),
     };
@@ -1856,6 +1905,8 @@ pub async fn refresh_pdf_ocr_tasks(
                         message: "PDF OCR 队列重跑完成".to_string(),
                         scope: "pdf-ocr".to_string(),
                         path: String::new(),
+                        parser_source: String::new(),
+                        warning: None,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     },
@@ -1875,6 +1926,8 @@ pub async fn refresh_pdf_ocr_tasks(
                         message: format!("PDF OCR 队列重跑失败：{error}"),
                         scope: "pdf-ocr".to_string(),
                         path: String::new(),
+                        parser_source: String::new(),
+                        warning: None,
                         status,
                         updated_at: chrono::Utc::now().to_rfc3339(),
                     },

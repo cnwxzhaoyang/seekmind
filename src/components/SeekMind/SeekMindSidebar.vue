@@ -7,13 +7,25 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
+import {
+  BookMarked,
+  ChevronRight,
+  Clock3,
+  FileClock,
+  Layers3,
+  MessageSquareText,
+  Search,
+  Settings,
+  ShieldCheck,
+  Star,
+  Trash2,
+} from "lucide-vue-next";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useSidebarState } from "../../composables/useSidebarState";
 import { seekMindApi } from "../../services/seekMindApi";
 import { formatSeekMindDateOnly } from "../../utils/dateFormat";
 import { listenQuickAccessUpdated } from "../../utils/quickAccessEvents";
 import brandIconUrl from "../../assets/app_icon_64x64.png";
-import SeekMindIcon from "./SeekMindIcon.vue";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -23,12 +35,12 @@ const { searchHistory, recentDocuments, favorites, loadQuickAccessData } = useQu
 const panelActionTarget = ref("");
 let unlistenQuickAccessUpdated: null | (() => void) = null;
 const items = computed(() => [
-  { key: "search", label: t("sidebar.search"), icon: "icon-search", to: "/" },
-  { key: "qa", label: t("sidebar.qa"), icon: "icon-qa", to: "/qa" },
-  { key: "collections", label: t("sidebar.collections"), icon: "icon-knowledge-base", to: "/collections" },
-  { key: "chunks", label: t("sidebar.chunks"), icon: "icon-chunk", to: "/chunks" },
-  { key: "status", label: t("sidebar.status"), icon: "icon-index-status", to: "/status" },
-  { key: "settings", label: t("sidebar.settings"), icon: "icon-settings", to: "/settings" },
+  { key: "search", label: t("sidebar.search"), icon: Search, to: "/" },
+  { key: "qa", label: t("sidebar.qa"), icon: MessageSquareText, to: "/qa" },
+  { key: "collections", label: t("sidebar.collections"), icon: BookMarked, to: "/collections" },
+  { key: "chunks", label: t("sidebar.chunks"), icon: Layers3, to: "/chunks" },
+  { key: "status", label: t("sidebar.status"), icon: ShieldCheck, to: "/status" },
+  { key: "settings", label: t("sidebar.settings"), icon: Settings, to: "/settings" },
 ]);
 
 const activeKey = computed(() => {
@@ -139,7 +151,7 @@ onBeforeUnmount(() => {
           :aria-label="t('sidebar.collapse')"
           @click="toggleSidebar"
         >
-          <SeekMindIcon icon="icon-chevron-down" :size="15" class="-rotate-90" />
+          <ChevronRight :size="15" class="shrink-0" />
         </button>
       </div>
     </div>
@@ -159,13 +171,8 @@ onBeforeUnmount(() => {
         :title="sidebarCollapsed ? item.label : undefined"
         :aria-label="item.label"
       >
-        <component
-          :is="SeekMindIcon"
-          :icon="item.icon"
-          :size="17"
-          class="shrink-0"
-          :class="activeKey === item.key ? 'text-white' : 'text-current'"
-        />
+        <!-- 修复：侧栏菜单图标改用 lucide 组件，避免 Windows 下缺失 symbol sprite / 原始 SVG 资源时整列图标不可见。 -->
+        <component :is="item.icon" :size="17" class="shrink-0" :stroke-width="2" />
         <span v-if="!sidebarCollapsed" class="min-w-0 flex-1 truncate text-left leading-none">{{ item.label }}</span>
       </RouterLink>
     </nav>
@@ -175,7 +182,7 @@ onBeforeUnmount(() => {
       <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.56fr)] gap-2 overflow-hidden pr-1">
         <section class="flex min-h-0 flex-col overflow-hidden">
           <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
-            <SeekMindIcon icon="icon-history-search" :size="12" />
+            <Clock3 :size="12" class="shrink-0" />
             {{ t("page.appSearch.section.recentSearch") }}
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto pt-2">
@@ -202,7 +209,7 @@ onBeforeUnmount(() => {
                   :disabled="panelActionTarget === `history:${item.query}`"
                   @click.stop="removeSearchHistory(item.query)"
                 >
-                  <SeekMindIcon icon="icon-delete" :size="12" />
+                  <Trash2 :size="12" class="shrink-0" />
                 </button>
               </div>
             </div>
@@ -212,7 +219,7 @@ onBeforeUnmount(() => {
         <!-- 这里把三个历史区块拆开，避免浅色/深色主题下内容贴得太紧。 -->
         <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
           <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
-            <SeekMindIcon icon="icon-history-open" :size="12" />
+            <FileClock :size="12" class="shrink-0" />
             {{ t("page.appSearch.section.recentOpen") }}
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto pt-2">
@@ -239,7 +246,7 @@ onBeforeUnmount(() => {
                   :disabled="panelActionTarget === `recent:${item.path}`"
                   @click.stop="removeRecentDocument(item.path)"
                 >
-                  <SeekMindIcon icon="icon-delete" :size="12" />
+                  <Trash2 :size="12" class="shrink-0" />
                 </button>
               </div>
             </div>
@@ -248,7 +255,7 @@ onBeforeUnmount(() => {
 
         <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
           <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
-            <SeekMindIcon icon="icon-star" :size="12" />
+            <Star :size="12" class="shrink-0" />
             {{ t("page.appSearch.section.favorites") }}
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto pt-2">
@@ -275,7 +282,7 @@ onBeforeUnmount(() => {
                   :disabled="panelActionTarget === `favorite:${item.target}`"
                   @click.stop="removeFavorite(item.target)"
                 >
-                  <SeekMindIcon icon="icon-delete" :size="12" />
+                  <Trash2 :size="12" class="shrink-0" />
                 </button>
               </div>
             </div>

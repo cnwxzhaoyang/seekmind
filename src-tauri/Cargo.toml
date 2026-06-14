@@ -29,7 +29,6 @@ notify = "8"
 dirs = "6"
 infer = "0.19"
 libc = "0.2"
-block2 = "0.6.2"
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 window-vibrancy = "0.6"
@@ -46,7 +45,13 @@ wait-timeout = "0.2"
 sha2 = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Keep Apple runtime bindings macOS-only so Windows builds do not pull in objc2 transitively.
+block2 = "0.6.2"
 objc2 = { version = "0.6.4", default-features = false, features = ["std"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSBitmapImageRep", "NSColor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSOpenPanel", "NSPanel", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "objc2-core-graphics"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSError", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGImage"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Keep Windows OCR bindings Windows-only so macOS builds stay on the existing Vision framework path.
+windows = { version = "0.61.3", features = ["Foundation", "Globalization", "Graphics_Imaging", "Media_Ocr", "Storage", "Storage_Streams", "Win32_Foundation", "Win32_System_WinRT"] }

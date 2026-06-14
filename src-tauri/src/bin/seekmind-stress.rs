@@ -406,6 +406,7 @@ fn run_search_probes(
     Ok(summaries)
 }
 
+#[cfg(unix)]
 fn process_max_rss_mb() -> f64 {
     #[allow(unsafe_code)]
     unsafe {
@@ -422,4 +423,10 @@ fn process_max_rss_mb() -> f64 {
             usage.ru_maxrss as f64 / 1024.0
         }
     }
+}
+
+#[cfg(not(unix))]
+fn process_max_rss_mb() -> f64 {
+    // 修复：Windows 构建链没有 libc::getrusage，压测工具先降级返回 0，避免平台专属 API 阻塞编译。
+    0.0
 }
