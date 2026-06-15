@@ -219,10 +219,6 @@ const refreshAfterTerminalPayload = async (path: string, payload: DocumentRefres
   }
 };
 
-const currentDocumentRefreshWarning = computed(() =>
-  currentDocument.value ? refreshWarnings.value[currentDocument.value.path] ?? "" : "",
-);
-
 const currentDocumentCitation = computed(() => {
   if (!currentDocument.value) {
     return "";
@@ -1046,14 +1042,7 @@ watch(
                   </button>
                 </div>
               </div>
-              <div class="mt-2 min-h-[56px] space-y-2">
-                <div
-                  v-if="currentDocumentRefreshWarning"
-                  class="seekmind-chunks-warning text-[11px] leading-5 text-warning"
-                >
-                  {{ currentDocumentRefreshWarning }}
-                </div>
-              </div>
+              <div class="mt-2 min-h-[24px]" />
             </template>
 
             <SeekMindDetailSection :title="t('common.overview')" :subtitle="currentDocument.path">

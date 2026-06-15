@@ -104,6 +104,14 @@ const parserSourceLabel = (source?: string | null) => {
   return t("common.unknown");
 };
 
+const indexDetailsWithParser = (details: string, parserSource?: string | null) => {
+  const parserLabel = parserSourceLabel(parserSource);
+  if (!parserLabel || parserLabel === t("common.unknown")) {
+    return details;
+  }
+  return details ? `${details} · ${parserLabel}` : parserLabel;
+};
+
 const pushLog = (entry: Omit<LogEntry, "id" | "timestamp">) => {
   const now = new Date().toISOString();
   entries.value = [
@@ -159,15 +167,16 @@ const installListeners = async () => {
     indexStatus.value = payload.status;
     const scope: LogScope = "index";
     const level: LogLevel = payload.state === "failed" ? "error" : payload.state === "completed" ? "success" : "info";
+    const details = payload.scope === "fulltext-repair"
+      ? (payload.path || t("logPanel.details.fulltextRepair"))
+      : payload.scope === "dir" && payload.path
+        ? t("logPanel.details.dir", { path: payload.path })
+        : t("logPanel.details.fullIndex");
     pushLog({
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
-      details: payload.scope === "fulltext-repair"
-        ? (payload.path || t("logPanel.details.fulltextRepair"))
-        : payload.scope === "dir" && payload.path
-          ? t("logPanel.details.dir", { path: payload.path })
-          : t("logPanel.details.fullIndex"),
+      details: indexDetailsWithParser(details, payload.parser_source),
     });
   });
 
