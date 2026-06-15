@@ -2,7 +2,7 @@
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/11
- * @Description SeekMind 统一图标组件，将交付的 SVG 资源解析为 Vue 渲染节点，避免 Windows 下 raw SVG 注入不稳定。
+ * @Description SeekMind 统一图标组件，将前端资源目录中的 SVG 解析为 Vue 渲染节点，避免 Windows 下 raw SVG 注入不稳定。
  */
 import { computed, defineComponent, h, type Component } from "vue";
 
@@ -18,7 +18,7 @@ type SvgAstNode = {
 
 type SvgAstChild = SvgAstNode | string;
 
-const iconModules = import.meta.glob<string>("../../../ui-prototype/seekmind_icons/svg/*.svg", {
+const iconModules = import.meta.glob<string>("../../assets/seekmind-icons/svg/*.svg", {
   eager: true,
   query: "?raw",
   import: "default",
