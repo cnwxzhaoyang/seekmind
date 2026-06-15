@@ -38,13 +38,15 @@ jobs:
             artifact_path: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/**
               src-tauri/app-resources/**
+            package_macos_bundle: "false"
           - label: macOS Bundle
             os: macos-latest
             build_command: npm run tauri:build:macos:sidecar
             artifact_name: seekmind-macos-bundle
             artifact_path: |
-              src-tauri/target/release/bundle/macos/**
+              dist-artifacts/seekmind-macos-bundle.zip
               src-tauri/app-resources/**
+            package_macos_bundle: "true"
 
     steps:
       - name: Checkout repository
@@ -95,9 +97,23 @@ jobs:
       - name: Build desktop bundle
         run: ${{ matrix.build_command }}
 
+      - name: Package macOS app for download
+        if: matrix.package_macos_bundle == 'true'
+        shell: bash
+        run: |
+          mkdir -p dist-artifacts
+          rm -f dist-artifacts/seekmind-macos-bundle.zip
+          # 修复：upload-artifact 默认会忽略 .dylibs、.rels 等隐藏文件，
+          # 直接上传 .app 目录会让签名后的 bundle 缺文件，下载后被 macOS 判定为“已损坏”。
+          # 这里先用 ditto 生成完整 zip，再把 zip 作为单文件上传。
+          ditto -c -k --sequesterRsrc --keepParent \
+            src-tauri/target/release/bundle/macos/SeekMind.app \
+            dist-artifacts/seekmind-macos-bundle.zip
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
+          include-hidden-files: true
