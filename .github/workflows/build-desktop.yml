@@ -6,14 +6,8 @@ name: Build Desktop
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
 
 permissions:
   contents: read
