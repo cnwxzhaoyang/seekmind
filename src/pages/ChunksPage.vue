@@ -987,15 +987,6 @@ watch(
                         <span>{{ doc.modified }}</span>
                       </div>
                       <div
-                        v-if="refreshWarnings[doc.path]"
-                        class="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
-                        :class="refreshOutcomes[doc.path] === 'python'
-                          ? 'bg-emerald-soft text-success'
-                          : 'bg-amber-soft text-warning'"
-                      >
-                        {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
-                      </div>
-                      <div
                         v-if="refreshErrors[doc.path]"
                         class="mt-1.5 rounded-[10px] bg-danger-soft px-2 py-1.5 text-[11px] leading-5 text-danger"
                       >
