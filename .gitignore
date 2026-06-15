@@ -8,8 +8,10 @@ __pycache__/
 /dist/
 /.docmind-cache/
 /.docmind-build/
-/src-tauri/app-resources/
-/src-tauri/resources/
+/src-tauri/app-resources/*
+!/src-tauri/app-resources/.gitkeep
+/src-tauri/resources/*
+!/src-tauri/resources/.gitkeep
 /.docmind-dev/
 /ui-prototype/*
 

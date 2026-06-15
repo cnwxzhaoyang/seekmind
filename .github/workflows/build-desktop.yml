@@ -66,6 +66,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Prepare Tauri resource directories
+        shell: bash
+        run: |
+          # 修复：GitHub fresh clone 不会保留空目录，先补齐 Tauri 资源目录，
+          # 避免 build.rs 在校验 bundle resources 时因为目录缺失而失败。
+          mkdir -p src-tauri/app-resources
+          mkdir -p src-tauri/resources
+
       - name: Log build host
         shell: bash
         run: |
