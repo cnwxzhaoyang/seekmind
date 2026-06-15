@@ -45,6 +45,7 @@ struct SearchResultCandidate {
     result: SearchResultView,
     raw_score: f32,
     final_score: f32,
+    semantic_only: bool,
 }
 
 impl Database {
@@ -506,7 +507,12 @@ impl Database {
             .map(|item| item.target)
             .collect::<HashSet<_>>();
 
-        let semantic_limit = limit.max(1).saturating_mul(3).max(limit.max(1));
+        // 修复：语义候选池不能只取很小的 topN，否则文档量一大时，相关语义结果会被关键词结果挤出最终列表。
+        let semantic_limit = limit
+            .max(1)
+            .saturating_mul(8)
+            .max(50)
+            .min(200);
         let semantic_result = if semantic_enabled {
             semantic_store::semantic_search_hits(self, query, semantic_limit).await
         } else {
@@ -695,6 +701,7 @@ impl Database {
                     },
                     raw_score,
                     final_score,
+                    semantic_only: semantic_score > 0.0 && keyword_score == 0.0,
                 });
             }
         }
@@ -718,8 +725,50 @@ impl Database {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        let semantic_floor = if semantic_enabled && semantic_hits.len() > 0 {
+            limit.max(1).min((limit.max(1) / 5).max(1)).min(3)
+        } else {
+            0
+        };
+        let mut selected = Vec::new();
+        if semantic_floor > 0 {
+            let semantic_reserved: Vec<_> = results
+                .iter()
+                .filter(|candidate| candidate.semantic_only)
+                .take(semantic_floor)
+                .cloned()
+                .collect();
+            selected.extend(semantic_reserved);
+        }
+
+        let selected_ids = selected
+            .iter()
+            .map(|candidate| candidate.result.id.clone())
+            .collect::<HashSet<_>>();
+
+        let mut remainder = results
+            .into_iter()
+            .filter(|candidate| !selected_ids.contains(&candidate.result.id))
+            .collect::<Vec<_>>();
+        remainder.sort_by(|left, right| {
+            right
+                .final_score
+                .partial_cmp(&left.final_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut final_candidates = selected;
+        let remaining_slots = limit.max(1).saturating_sub(final_candidates.len());
+        final_candidates.extend(remainder.into_iter().take(remaining_slots));
+        final_candidates.sort_by(|left, right| {
+            right
+                .final_score
+                .partial_cmp(&left.final_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         let mut final_results = Vec::new();
-        for (index, candidate) in results.into_iter().enumerate() {
+        for (index, candidate) in final_candidates.into_iter().enumerate() {
             let mut result = candidate.result;
             let original_rank = original_rank_map
                 .get(&result.id)
