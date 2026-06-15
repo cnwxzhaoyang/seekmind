@@ -93,6 +93,17 @@ const levelTone: Record<LogLevel, "default" | "success" | "warning" | "danger"> 
   error: "danger",
 };
 
+const parserSourceLabel = (source?: string | null) => {
+  // 修复：日志面板只展示用户能理解的链路名称，不再直接暴露内部实现名。
+  if (source === "python") {
+    return t("status.parser.python");
+  }
+  if (source === "rust") {
+    return t("status.parser.pythonFallback");
+  }
+  return t("common.unknown");
+};
+
 const pushLog = (entry: Omit<LogEntry, "id" | "timestamp">) => {
   const now = new Date().toISOString();
   entries.value = [
@@ -172,8 +183,8 @@ const installListeners = async () => {
       title: t(scopeMeta[scope].taskLabel),
       message: payload.message,
       details: payload.state === "failed"
-        ? `${payload.file_name} · ${payload.parser_source.toUpperCase()} · ${payload.message}`
-        : `${payload.file_name} · ${payload.parser_source.toUpperCase()}`,
+        ? `${payload.file_name} · ${parserSourceLabel(payload.parser_source)} · ${payload.message}`
+        : `${payload.file_name} · ${parserSourceLabel(payload.parser_source)}`,
       warning: payload.warning || undefined,
     });
   });

@@ -64,8 +64,8 @@
     "queued": "Queued",
     "noRecentRun": "No recent run",
     "parser": {
-      "python": "Python Parser",
-      "pythonFallback": "Rust Fallback"
+      "python": "Default Parser",
+      "pythonFallback": "Fallback Parser"
     },
     "localOnly": "Local Only",
     "localEffective": "Local Only",
@@ -360,8 +360,8 @@
       "noResults": "No matching results found",
       "enterQuery": "Enter a keyword to start searching.",
       "indexedDocs": "{count} documents indexed",
-      "parserPython": "Python Parser",
-      "parserRust": "Rust Fallback",
+      "parserPython": "Default Parser",
+      "parserRust": "Fallback Parser",
       "semanticHybrid": "Hybrid Search",
       "semanticFullText": "Full Text Only",
       "semanticDisabled": "Semantic Off",
@@ -440,10 +440,10 @@
       "subtitle": "Select a document by directory to see how SeekMind splits content into paragraph blocks.",
       "parserInfo": "Current parser: ",
       "parserInfo2": ". Click \"Reslice\" to use the active pipeline.",
-      "parserPython": "Python",
-      "parserRust": "Rust",
-      "badgePython": "Python Parser",
-      "badgeRust": "Rust Fallback",
+      "parserPython": "Default",
+      "parserRust": "Fallback",
+      "badgePython": "Default Parser",
+      "badgeRust": "Fallback Parser",
       "section": {
         "indexDirs": "Index Directories",
         "docList": "Documents",
@@ -493,10 +493,10 @@
       "refreshState": {
         "queued": "Queued",
         "slicing": "Slicing",
-        "pythonSlicing": "Python slicing",
-        "rustSlicing": "Rust slicing",
-        "pythonDone": "Python done",
-        "rustFallback": "Rust fallback",
+        "pythonSlicing": "Default slicing",
+        "rustSlicing": "Fallback slicing",
+        "pythonDone": "Default done",
+        "rustFallback": "Fallback",
         "failed": "Failed"
       },
       "docStats": "{docs} docs · {chunks} chunks",
@@ -635,9 +635,9 @@
         "none": "No incremental summary yet."
       },
       "parser": {
-        "enabled": "Python Enabled",
-        "available": "Python Available",
-        "pythonBin": "Python Binary",
+        "enabled": "Default Chain Enabled",
+        "available": "Default Chain Available",
+        "pythonBin": "Runtime Binary",
         "timeout": "Timeout",
         "systemLanguage": "System Language",
         "systemLanguageHint": "Locale tag: {language}",
@@ -678,7 +678,7 @@
       "errorSummary": {
         "totalErrors": "Total Errors",
         "errorType": "Error Type",
-        "pythonVersion": "Python Version",
+        "pythonVersion": "Runtime Version",
         "timeout": "Timeout"
       },
       "formatSupport": {
@@ -713,8 +713,8 @@
           "pdf": {
             "title": "PDF Text Parsing",
             "formats": "pdf",
-            "readyHint": "The Python parser pipeline is enabled, so text PDFs can be parsed into the index.",
-            "pendingHint": "No usable Python PDF parser is enabled right now, so text PDFs still depend on follow-up work."
+            "readyHint": "The default PDF parsing pipeline is enabled, so text PDFs can be parsed into the index.",
+            "pendingHint": "No usable default PDF parsing pipeline is enabled right now, so text PDFs still depend on follow-up work."
           },
           "pdfOcr": {
             "title": "Scanned PDF OCR",

@@ -742,7 +742,7 @@ pub async fn refresh_document(
                     let (document, chunks, blocks, ocr_tasks) =
                         scanner::convert_python_document(&file, parsed);
                     eprintln!(
-                        "[SeekMind] document refresh completed route=python path={} chunks={}",
+                        "[SeekMind] document refresh completed route=default path={} chunks={}",
                         path_string,
                         chunks.len()
                     );
@@ -756,11 +756,18 @@ pub async fn refresh_document(
                 }
                 Err(error) => {
                     let warning = match error {
-                        super::parser::ParserClientError::ParserFailed(parser_error) => format!(
-                            "Python 解析失败：{} ({})",
-                            parser_error.message, parser_error.code
-                        ),
-                        other => format!("Python 解析失败：{other}"),
+                        super::parser::ParserClientError::ParserFailed(parser_error) => {
+                            // 修复：对外只暴露“默认/备用”链路，不再把 Python/Rust 这样的内部实现名写进用户警告。
+                            if parser_error.code == "unsupported_file_type" {
+                                "默认解析器不支持当前文件类型，已切换到备用解析流程".to_string()
+                            } else {
+                                format!(
+                                    "默认解析器处理失败，已切换到备用解析流程：{} ({})",
+                                    parser_error.message, parser_error.code
+                                )
+                            }
+                        }
+                        other => format!("默认解析器处理失败，已切换到备用解析流程：{other}"),
                     };
                     if file
                         .path
@@ -772,18 +779,16 @@ pub async fn refresh_document(
                         Err(warning)
                     } else {
                         eprintln!(
-                            "[SeekMind] document refresh fallback route=rust path={} reason={}",
+                            "[SeekMind] document refresh fallback route=fallback path={} reason={}",
                             path_string, warning
                         );
-                        parser_warning = Some(
-                            warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust："),
-                        );
+                        parser_warning = Some(warning.clone());
                         let document = scanner::extract_document_at(&file.dir_path, &file.path);
                         match document {
                             Ok(document) => {
                                 let chunks = scanner::chunk_document(&document);
                                 eprintln!(
-                                    "[SeekMind] document refresh completed route=rust path={} chunks={}",
+                                    "[SeekMind] document refresh completed route=fallback path={} chunks={}",
                                     path_string,
                                     chunks.len()
                                 );
@@ -802,14 +807,14 @@ pub async fn refresh_document(
             }
         } else {
             eprintln!(
-                "[SeekMind] document refresh route=rust path={} reason=python parser unavailable",
+                "[SeekMind] document refresh route=fallback path={} reason=default parser unavailable",
                 path_string
             );
             match scanner::extract_document_at(&file.dir_path, &file.path) {
                 Ok(document) => {
                     let chunks = scanner::chunk_document(&document);
                     eprintln!(
-                        "[SeekMind] document refresh completed route=rust path={} chunks={}",
+                        "[SeekMind] document refresh completed route=fallback path={} chunks={}",
                         path_string,
                         chunks.len()
                     );

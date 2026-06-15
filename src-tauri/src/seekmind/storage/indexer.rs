@@ -725,7 +725,7 @@ async fn process_index_plan(
                 eprintln!(
                     "[SeekMind] indexing parse completed path={} route={} chunks={}",
                     path,
-                    actual_parser_source.clone().unwrap_or_default(),
+                    parser_route_label(actual_parser_source.as_deref()),
                     chunks.len()
                 );
                 if let Some(warning) = actual_parser_warning.clone() {
@@ -1078,6 +1078,15 @@ fn parser_event_message(event: &ParserStreamEvent, fallback: &str) -> String {
 fn trace_indexer(message: &str) {
     if std::env::var("SeekMind_TRACE_INDEXER").is_ok() {
         eprintln!("[seekmind:indexer] {message}");
+    }
+}
+
+fn parser_route_label(source: Option<&str>) -> &'static str {
+    // 修复：索引日志只保留用户可读的链路称呼，避免把内部实现名直接写到控制台输出里。
+    match source {
+        Some("python") => "default",
+        Some("rust") => "fallback",
+        _ => "unknown",
     }
 }
 

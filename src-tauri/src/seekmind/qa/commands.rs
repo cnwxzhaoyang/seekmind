@@ -686,7 +686,7 @@ pub async fn ask_question(
     if !python_client.is_configured() {
         // 迁移期明确禁用 Rust 旧链路，避免把 sidecar 缺失误导成可回退路径。
         eprintln!(
-            "[SeekMind] python qa sidecar unavailable; Rust fallback qa path has been removed"
+            "[SeekMind] default qa sidecar unavailable; fallback qa path has been removed"
         );
         let answer = build_answer_view(
             answer_id,

@@ -155,18 +155,24 @@ where
                 }
                 Err(error) => {
                     let warning = match error {
-                        ParserClientError::ParserFailed(parser_error) => format!(
-                            "Python 解析失败：{} ({})",
-                            parser_error.message, parser_error.code
-                        ),
-                        other => format!("Python 解析失败：{other}"),
+                        ParserClientError::ParserFailed(parser_error) => {
+                            // 修复：图片等文件的回退提示只保留“默认/备用”链路语义，避免把内部实现名暴露给用户。
+                            if parser_error.code == "unsupported_file_type" {
+                                "默认解析器不支持当前文件类型，已切换到备用解析流程".to_string()
+                            } else {
+                                format!(
+                                    "默认解析器处理失败，已切换到备用解析流程：{} ({})",
+                                    parser_error.message, parser_error.code
+                                )
+                            }
+                        }
+                        other => format!("默认解析器处理失败，已切换到备用解析流程：{other}"),
                     };
                     if extension(&file.path) == "pdf" {
                         return Err(warning);
                     }
 
-                    let fallback_warning =
-                        warning.replace("Python 解析失败：", "Python 解析失败，已回退 Rust：");
+                    let fallback_warning = warning.clone();
                     let document = extract_document_at(&file.dir_path, &file.path)?;
                     let chunks = chunk_document(&document);
                     return Ok((
@@ -226,7 +232,7 @@ pub fn extract_document_at(dir_path: &str, path: &Path) -> Result<ExtractedDocum
             extract_image_text(path)?
         }
         "pdf" => {
-            return Err("暂不支持 PDF 解析，请启用 Python 解析器或接入 PDF 文本提取".to_string());
+            return Err("暂不支持 PDF 解析，请启用默认解析链路或接入 PDF 文本提取".to_string());
         }
         _ => return Err(format!("不支持的文件类型: {ext}")),
     };
@@ -1251,7 +1257,7 @@ pub(crate) fn convert_python_document(
     let blocks = parsed_blocks.unwrap_or_default();
 
     eprintln!(
-        "[SeekMind] convert_python_document path={} chunks={} blocks={} ocr_tasks={}",
+        "[SeekMind] convert_document path={} chunks={} blocks={} ocr_tasks={}",
         file.path.to_string_lossy(),
         chunks.len(),
         blocks.len(),

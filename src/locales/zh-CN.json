@@ -64,8 +64,8 @@
     "queued": "已排队",
     "noRecentRun": "暂无最近运行",
     "parser": {
-      "python": "Python 解析",
-      "pythonFallback": "Rust 回退"
+      "python": "默认解析器",
+      "pythonFallback": "备用解析器"
     },
     "localOnly": "仅本地",
     "localEffective": "本地生效",
@@ -361,8 +361,8 @@
       "noResults": "没有找到相关段落",
       "enterQuery": "请输入关键词开始搜索。",
       "indexedDocs": "已索引 {count} 个文档",
-      "parserPython": "Python 解析",
-      "parserRust": "Rust 回退",
+      "parserPython": "默认解析",
+      "parserRust": "备用解析",
       "semanticHybrid": "混合检索",
       "semanticFullText": "仅全文",
       "semanticDisabled": "语义关闭",
@@ -441,10 +441,10 @@
       "subtitle": "按目录选择文档，直接查看 SeekMind 如何把内容切成段落块。",
       "parserInfo": "当前解析器：",
       "parserInfo2": "；点击\"重新切片\"会优先使用当前启用的解析链路。",
-      "parserPython": "Python",
-      "parserRust": "Rust",
-      "badgePython": "Python 解析",
-      "badgeRust": "Rust 回退",
+      "parserPython": "默认",
+      "parserRust": "备用",
+      "badgePython": "默认解析",
+      "badgeRust": "备用解析",
       "section": {
         "indexDirs": "索引目录",
         "docList": "文档列表",
@@ -494,10 +494,10 @@
       "refreshState": {
         "queued": "已排队",
         "slicing": "切片中",
-        "pythonSlicing": "Python 切片中",
-        "rustSlicing": "Rust 切片中",
-        "pythonDone": "Python 完成",
-        "rustFallback": "Rust 回退",
+        "pythonSlicing": "默认切片中",
+        "rustSlicing": "备用切片中",
+        "pythonDone": "默认完成",
+        "rustFallback": "备用",
         "failed": "已失败"
       },
       "docStats": "{docs} 文档 · {chunks} 切片",
@@ -632,9 +632,9 @@
         "none": "还没有形成最近一次增量摘要。"
       },
       "parser": {
-        "enabled": "启用 Python",
-        "available": "Python 可用",
-        "pythonBin": "Python Bin",
+        "enabled": "启用默认链路",
+        "available": "默认链路可用",
+        "pythonBin": "运行时 Bin",
         "timeout": "超时",
         "systemLanguage": "系统语言",
         "systemLanguageHint": "语言标识：{language}",
@@ -675,7 +675,7 @@
       "errorSummary": {
         "totalErrors": "总错误数",
         "errorType": "错误类型",
-        "pythonVersion": "Python 版本",
+        "pythonVersion": "运行时版本",
         "timeout": "超时设置"
       },
       "formatSupport": {
@@ -710,8 +710,8 @@
           "pdf": {
             "title": "PDF 文本解析",
             "formats": "pdf",
-            "readyHint": "Python 解析链路已启用，文本型 PDF 可直接解析入索引。",
-            "pendingHint": "当前未启用可用的 Python PDF 解析链路，文本型 PDF 仍依赖后续补齐。"
+            "readyHint": "默认 PDF 解析链路已启用，文本型 PDF 可直接解析入索引。",
+            "pendingHint": "当前未启用可用的默认 PDF 解析链路，文本型 PDF 仍依赖后续补齐。"
           },
           "pdfOcr": {
             "title": "扫描版 PDF OCR",
