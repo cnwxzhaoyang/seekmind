@@ -66,6 +66,7 @@ const maxEntries = 120;
 let unlistenIndex: null | (() => void) = null;
 let unlistenDocument: null | (() => void) = null;
 let unlistenSemantic: null | (() => void) = null;
+let unlistenStorageReset: null | (() => void) = null;
 
 function loadSavedHeight(): number {
   try {
@@ -162,6 +163,14 @@ const semanticVectorLabel = computed(() => {
     return t("logPanel.metrics.semanticUnavailable");
   }
 
+  if (
+    (indexStatus.value?.indexed_docs ?? 0) === 0 &&
+    semanticStatus.value.sqlite_chunks === 0 &&
+    semanticStatus.value.embedded_chunks === 0
+  ) {
+    return t("logPanel.metrics.semanticEmpty");
+  }
+
   if (semanticStatus.value.model.available && !semanticStatus.value.needs_rebuild) {
     return t("logPanel.metrics.semanticReady");
   }
@@ -175,6 +184,13 @@ const semanticVectorLabel = computed(() => {
 const semanticVectorTone = computed(() => {
   if (!semanticStatus.value) {
     return "warning" as const;
+  }
+  if (
+    (indexStatus.value?.indexed_docs ?? 0) === 0 &&
+    semanticStatus.value.sqlite_chunks === 0 &&
+    semanticStatus.value.embedded_chunks === 0
+  ) {
+    return "default" as const;
   }
   if (semanticStatus.value.model.available && !semanticStatus.value.needs_rebuild) {
     return "success" as const;
@@ -198,7 +214,7 @@ const bottomMetrics = computed(() => [
 ]);
 
 const installListeners = async () => {
-  if (unlistenIndex || unlistenDocument || unlistenSemantic) return;
+  if (unlistenIndex || unlistenDocument || unlistenSemantic || unlistenStorageReset) return;
 
   unlistenIndex = await listen<IndexRefreshProgressView>("seekmind:index-refresh-progress", (event) => {
     const payload = event.payload;
@@ -259,6 +275,11 @@ const installListeners = async () => {
       message: payload.message,
       details: payload.current_document || t("logPanel.details.rebuilding"),
     });
+  });
+
+  unlistenStorageReset = await listen("seekmind:storage-reset", () => {
+    // 修复：索引被清空后，底栏指标和语义状态都需要重新读取，不能继续沿用旧缓存。
+    void loadMetrics();
   });
 };
 
@@ -437,9 +458,11 @@ onBeforeUnmount(() => {
   unlistenIndex?.();
   unlistenDocument?.();
   unlistenSemantic?.();
+  unlistenStorageReset?.();
   unlistenIndex = null;
   unlistenDocument = null;
   unlistenSemantic = null;
+  unlistenStorageReset = null;
 });
 </script>
 

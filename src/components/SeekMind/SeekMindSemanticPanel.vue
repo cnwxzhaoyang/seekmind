@@ -38,6 +38,7 @@ const errorMessage = ref("");
 const semanticProbeError = ref("");
 const { infoMessage } = useInfoMessage();
 let unlistenSemanticProgress: null | (() => void) = null;
+let unlistenStorageReset: null | (() => void) = null;
 
 const buildFallbackSemanticStatus = (message: string): SemanticModelStatusView | null => {
   const fallbackModel = embeddingModels.value.find((model) => model.is_default) ?? embeddingModels.value[0];
@@ -99,6 +100,17 @@ const refreshAll = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const listenStorageReset = async () => {
+  if (unlistenStorageReset) {
+    return;
+  }
+
+  unlistenStorageReset = await listen("seekmind:storage-reset", () => {
+    // 修复：清空索引后，语义状态面板需要重新拉取状态，避免继续显示旧的可用/正常状态。
+    void refreshAll();
+  });
 };
 
 const rebuildSemanticEmbeddings = async () => {
@@ -256,12 +268,17 @@ const installSemanticProgressListener = async () => {
 onMounted(async () => {
   await refreshAll();
   await installSemanticProgressListener();
+  await listenStorageReset();
 });
 
 onBeforeUnmount(() => {
   if (unlistenSemanticProgress) {
     unlistenSemanticProgress();
     unlistenSemanticProgress = null;
+  }
+  if (unlistenStorageReset) {
+    unlistenStorageReset();
+    unlistenStorageReset = null;
   }
 });
 </script>

@@ -1024,6 +1024,7 @@
     "metrics": {
       "documents": "Indexed docs {indexed}/{total}",
       "chunks": "Built chunks {count}",
+      "semanticEmpty": "Vector store cleared",
       "semanticReady": "Vector store ready",
       "semanticRebuild": "Vector store needs rebuild",
       "semanticUnavailable": "Vector store unavailable"

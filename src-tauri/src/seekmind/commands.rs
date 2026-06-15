@@ -1949,6 +1949,7 @@ pub async fn refresh_pdf_ocr_tasks(
 
 #[tauri::command]
 pub async fn clear_all_indexes(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Database>,
 ) -> Result<IndexStatusView, String> {
     eprintln!("[SeekMind] clear_all_indexes start");
@@ -1960,6 +1961,8 @@ pub async fn clear_all_indexes(
         .get_index_status()
         .await
         .map_err(|error| error.to_string())?;
+    // 修复：清空索引后需要通知前端重新读取语义状态与底栏统计，避免继续显示旧缓存。
+    let _ = app.emit("seekmind:storage-reset", "cleared");
     eprintln!(
         "[SeekMind] clear_all_indexes ok docs={} chunks={} failed={}",
         status.indexed_docs, status.indexed_chunks, status.failed_files
