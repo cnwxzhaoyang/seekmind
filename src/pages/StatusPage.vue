@@ -11,7 +11,6 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   AlertCircle,
-  Cpu,
   Database,
   Eye,
   Copy,
@@ -52,8 +51,6 @@ const { t } = useI18n();
 
 const status = ref<IndexStatusView | null>(null);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
-const currentIndexParserSource = ref("");
-const currentIndexParserWarning = ref("");
 const loading = ref(false);
 const refreshing = ref(false);
 const importing = ref(false);
@@ -376,14 +373,6 @@ const installIndexRefreshListener = async () => {
     (event) => {
       const payload = event.payload;
       status.value = payload.status;
-      if (payload.parser_source) {
-        currentIndexParserSource.value = payload.parser_source;
-      }
-      if (payload.warning) {
-        currentIndexParserWarning.value = payload.warning;
-      } else if (payload.parser_source === "python") {
-        currentIndexParserWarning.value = "";
-      }
 
       if (payload.state === "running") {
         scheduleNextRefresh();
@@ -434,12 +423,6 @@ const scheduleNextRefresh = () => {
 
 const syncDashboardState = async () => {
   await refreshDashboard();
-  if (!status.value?.current_task) {
-    currentIndexParserSource.value = "";
-    currentIndexParserWarning.value = "";
-  } else if (status.value.current_task.warning) {
-    currentIndexParserWarning.value = status.value.current_task.warning;
-  }
   scheduleNextRefresh();
 };
 
@@ -627,20 +610,6 @@ const pendingCount = computed(() => {
   const task = status.value?.current_task;
   if (!task) return 0;
   return Math.max(task.total - task.scanned, 0);
-});
-
-const currentIndexParserLabel = computed(() => {
-  if (currentIndexParserSource.value === "python") {
-    return t("status.parser.python");
-  }
-  if (currentIndexParserSource.value === "rust") {
-    return t("status.parser.pythonFallback");
-  }
-  return t("common.unknown");
-});
-
-const currentIndexParserTone = computed(() => {
-  return currentIndexParserSource.value === "python" ? "success" : "warning";
 });
 
 const errorTypeList = computed(() => {
@@ -1274,34 +1243,12 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="dir-tree-toolbar">
-              <!-- 目录拖拽提示保留为说明区，按钮已合并到上方一排图标操作。 -->
               <div
                 class="drop-zone"
                 :class="dragActive ? 'drop-zone-active' : ''"
               >
                 <UploadCloud :size="14" />
                 <span>{{ dragActive ? t("page.library.dropActive") : t("page.library.dropHint") }}</span>
-              </div>
-              <div
-                v-if="status?.current_task"
-                class="mt-3 flex flex-wrap items-center gap-2"
-              >
-                <span class="seekmind-item-meta">{{ t("page.status.progress.currentParser") }}</span>
-                <span
-                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-                  :class="currentIndexParserTone === 'success'
-                    ? 'border-emerald-soft bg-emerald-soft text-success'
-                    : 'border-amber-soft bg-amber-soft text-warning'"
-                >
-                  <Cpu :size="11" />
-                  {{ currentIndexParserLabel }}
-                </span>
-              </div>
-              <div
-                v-if="currentIndexParserWarning"
-                class="mt-2 text-[11px] leading-5 text-warning"
-              >
-                {{ currentIndexParserWarning }}
               </div>
             </div>
 
