@@ -146,14 +146,20 @@ const loadMetrics = async () => {
 };
 
 const semanticWeightLabel = computed(() => Math.round((indexSettings.value?.semantic_weight ?? 0.25) * 100));
-const sqliteLabel = computed(() => `SQLite: ${indexStatus.value?.indexed_docs ?? 0}/${indexStatus.value?.scanned_docs ?? 0}`);
-const tantivyLabel = computed(() => `Tantivy: ${indexStatus.value?.indexed_chunks ?? 0}`);
+const sqliteLabel = computed(() => t("logPanel.metrics.documents", {
+  indexed: indexStatus.value?.indexed_docs ?? 0,
+  total: indexStatus.value?.scanned_docs ?? 0,
+}));
+const tantivyLabel = computed(() => t("logPanel.metrics.chunks", {
+  count: indexStatus.value?.indexed_chunks ?? 0,
+}));
 const sidebarStats = computed(() => [
   { label: t("sidebar.statsDirs"), value: quickDirs.value.length },
   { label: t("sidebar.statsRecent"), value: recentDocuments.value.length },
   { label: t("sidebar.statsFavorites"), value: favorites.value.length },
 ]);
 const bottomMetrics = computed(() => [
+  // 修复：底栏指标改成用户可理解的业务口径，避免直接暴露 SQLite / Tantivy 实现名。
   { key: "sqlite", label: sqliteLabel.value, tone: "success" as const },
   { key: "tantivy", label: tantivyLabel.value, tone: "default" as const },
   { key: "weight", label: t("page.appSearch.semanticWeight", { weight: semanticWeightLabel.value }), tone: "default" as const },

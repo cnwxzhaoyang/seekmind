@@ -1021,6 +1021,10 @@
       "document": "Chunk",
       "semantic": "Semantic"
     },
+    "metrics": {
+      "documents": "Indexed docs {indexed}/{total}",
+      "chunks": "Built chunks {count}"
+    },
     "details": {
       "fullIndex": "Full index",
       "fulltextRepair": "Full-text index repair",

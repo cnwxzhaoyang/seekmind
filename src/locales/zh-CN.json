@@ -1010,6 +1010,10 @@
       "document": "切片",
       "semantic": "语义"
     },
+    "metrics": {
+      "documents": "已入库文档 {indexed}/{total}",
+      "chunks": "已建切片 {count}"
+    },
     "empty": "暂无日志，执行索引、切片或语义任务后会自动显示事件。",
     "clear": "清空",
     "export": "导出日志",

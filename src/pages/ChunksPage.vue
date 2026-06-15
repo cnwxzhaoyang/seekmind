@@ -870,11 +870,7 @@ watch(
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <div class="hidden sm:block text-xs text-muted">
-          {{ t("page.chunks.parserInfo") }}
-          <span class="font-medium text-secondary">{{ parserRuntime?.active === "python" ? t("page.chunks.parserPython") : t("page.chunks.parserRust") }}</span>
-          {{ t("page.chunks.parserInfo2") }}
-        </div>
+        <!-- 修复：右上角只保留可识别的解析链路标识，解释文案下沉到日志即可。 -->
         <SeekMindBadge :tone="parserRuntime?.active === 'python' ? 'success' : 'warning'">
           <Cpu class="mr-1" :size="13" />
           {{ parserRuntime?.active === 'python' ? t("page.chunks.badgePython") : t("page.chunks.badgeRust") }}
