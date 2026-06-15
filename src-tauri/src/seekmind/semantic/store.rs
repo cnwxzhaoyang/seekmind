@@ -7,7 +7,8 @@
 
 use chrono::Utc;
 use sqlx::Row;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::seekmind::models::{
     EmbeddingModelView, SemanticDebugHitView, SemanticDebugView, SemanticModelStatusView,
@@ -16,7 +17,7 @@ use crate::seekmind::search::{normalize_query, rewrite_query_terms, rewrite_sear
 use crate::seekmind::storage::types::{ChunkRecord, ExtractedDocument};
 use crate::seekmind::storage::Database;
 
-use super::client::PythonSemanticClient;
+use super::client::{PythonSemanticClient, SemanticStatus};
 use super::embedding::{cosine_similarity, normalize_embedding_text, text_hash, vector_norm};
 
 type SemanticProgressEmitter =
@@ -24,6 +25,40 @@ type SemanticProgressEmitter =
 
 const SEMANTIC_SOURCE_REBUILD: &str = "rebuild";
 const CURRENT_VECTOR_INDEX_SCHEMA_VERSION: i64 = 1;
+const EMBEDDING_RUNTIME_STATUS_CACHE_TTL: Duration = Duration::from_secs(60);
+
+#[derive(Debug, Clone)]
+struct CachedEmbeddingRuntimeStatus {
+    model_name: String,
+    checked_at: Instant,
+    status: SemanticStatus,
+}
+
+static EMBEDDING_RUNTIME_STATUS_CACHE: OnceLock<Mutex<Option<CachedEmbeddingRuntimeStatus>>> =
+    OnceLock::new();
+
+fn cached_embedding_runtime_status(model_name: &str) -> Option<SemanticStatus> {
+    let cache = EMBEDDING_RUNTIME_STATUS_CACHE.get_or_init(|| Mutex::new(None));
+    let guard = cache.lock().ok()?;
+    let cached = guard.as_ref()?;
+    if cached.model_name == model_name
+        && cached.checked_at.elapsed() <= EMBEDDING_RUNTIME_STATUS_CACHE_TTL
+    {
+        return Some(cached.status.clone());
+    }
+    None
+}
+
+fn remember_embedding_runtime_status(model_name: &str, status: &SemanticStatus) {
+    let cache = EMBEDDING_RUNTIME_STATUS_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(CachedEmbeddingRuntimeStatus {
+            model_name: model_name.to_string(),
+            checked_at: Instant::now(),
+            status: status.clone(),
+        });
+    }
+}
 
 fn emit_semantic_progress(
     emitter: Option<&SemanticProgressEmitter>,
@@ -139,6 +174,7 @@ pub async fn get_embedding_model_status(
                 "[SeekMind] semantic probe ok model={} available={} message={}",
                 model.name, status.available, status.message
             );
+            remember_embedding_runtime_status(&model.name, &status);
             sync_model_runtime(database, &model.id, status.available, &status.message).await?;
         }
         Err(error) => {
@@ -566,16 +602,18 @@ pub async fn upsert_document_embeddings(
 ) -> Result<(), String> {
     let model = load_default_model(database).await?;
     let client = PythonSemanticClient::from_env();
-    let runtime_status = client
-        .embedding_status(Some(&model.name))
-        .map_err(|error| error.to_string())?;
-    sync_model_runtime(
-        database,
-        &model.id,
-        runtime_status.available,
-        &runtime_status.message,
-    )
-    .await?;
+    let runtime_status = match cached_embedding_runtime_status(&model.name) {
+        Some(status) => status,
+        None => {
+            // 修复：索引批量写入时避免每个文档都重新启动 Python sidecar 做 embedding runtime 探测。
+            let status = client
+                .embedding_status(Some(&model.name))
+                .map_err(|error| error.to_string())?;
+            remember_embedding_runtime_status(&model.name, &status);
+            sync_model_runtime(database, &model.id, status.available, &status.message).await?;
+            status
+        }
+    };
     let model = load_default_model(database).await?;
     if !model.enabled || !model.available {
         return Err(format!("embedding 模型不可用: {}", runtime_status.message));

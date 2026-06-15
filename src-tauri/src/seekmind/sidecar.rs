@@ -14,6 +14,7 @@ use std::os::unix::fs::symlink;
 use flate2::read::GzDecoder;
 use tar::Archive;
 
+use crate::seekmind::process_utils::configure_hidden_child_process;
 use crate::seekmind::runtime_paths::{
     bundled_fastembed_cache_archive, bundled_fastembed_cache_dir, bundled_vision_ocr_binary_path,
     env_override, fastembed_model_cache_dir, writable_fastembed_cache_dir,
@@ -112,6 +113,8 @@ impl PythonSidecarRuntime {
 }
 
 pub fn configure_sidecar_command(command: &mut Command) {
+    configure_hidden_child_process(command);
+
     let cache_dir = ensure_fastembed_cache_dir();
     eprintln!(
         "[SeekMind] semantic sidecar cache dir={}",
@@ -180,7 +183,9 @@ fn detect_windows_python_bin() -> Option<String> {
 
     for candidate in candidates.into_iter().filter(|candidate| candidate.exists()) {
         // 修复：多版本 Python 并存时，只选择已安装 fastembed 的解释器，避免运行时继续误落到空环境。
-        let import_ready = Command::new(&candidate)
+        let mut command = Command::new(&candidate);
+        configure_hidden_child_process(&mut command);
+        let import_ready = command
             .args(["-c", "import fastembed"])
             .output()
             .map(|output| output.status.success())

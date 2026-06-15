@@ -16,6 +16,9 @@ use zip::ZipArchive;
 use crate::seekmind::parser::types::{ParsedBlock, PdfOcrTask};
 use crate::seekmind::parser::types::ParserStreamEvent;
 use crate::seekmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
+use crate::seekmind::process_utils::configure_hidden_child_process;
+#[cfg(target_os = "windows")]
+use crate::seekmind::process_utils::run_hidden_powershell_script;
 use crate::seekmind::runtime_paths::office_runtime;
 use crate::seekmind::vision_ocr::recognize_image_text;
 
@@ -787,7 +790,9 @@ fn convert_office_document(path: &Path, target_ext: &str) -> Option<PathBuf> {
         return Some(expected_output);
     }
 
-    let status = Command::new(&converter)
+    let mut command = Command::new(&converter);
+    configure_hidden_child_process(&mut command);
+    let status = command
         .arg("--headless")
         .arg("--nologo")
         .arg("--nofirststartwizard")
@@ -822,17 +827,7 @@ fn escape_powershell_literal(input: &str) -> String {
 
 #[cfg(target_os = "windows")]
 fn run_powershell_office_script(script: &str) -> Result<String, String> {
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .output()
-        .map_err(|error| error.to_string())?;
+    let (_, output) = run_hidden_powershell_script(script)?;
 
     if !output.status.success() {
         return Err(normalize_whitespace(&String::from_utf8_lossy(&output.stderr)));

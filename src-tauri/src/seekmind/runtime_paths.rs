@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use crate::seekmind::process_utils::configure_hidden_child_process;
+#[cfg(target_os = "windows")]
+use crate::seekmind::process_utils::run_hidden_powershell_script;
+
 pub const FASTEMBED_MODEL_CACHE_DIRNAME: &str = "models--Qdrant--bge-small-zh-v1.5";
 
 #[derive(Debug, Clone)]
@@ -253,7 +257,9 @@ fn office_converter_works(candidate: &str) -> bool {
         return false;
     }
 
-    Command::new(candidate)
+    let mut command = Command::new(candidate);
+    configure_hidden_child_process(&mut command);
+    command
         .arg("--version")
         .output()
         .map(|output| output.status.success())
@@ -287,12 +293,14 @@ if ($apps.Count -gt 0) {
 }
 "#;
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", probe])
-        .output()
-        .ok()?;
+    let (powershell, output) = run_hidden_powershell_script(probe).ok()?;
 
     if !output.status.success() {
+        eprintln!(
+            "[SeekMind] office runtime COM probe failed powershell={} stderr={}",
+            powershell.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
         return None;
     }
 
@@ -304,7 +312,7 @@ if ($apps.Count -gt 0) {
     Some(OfficeRuntime {
         available: true,
         kind: "windows-office-com".to_string(),
-        bin: "powershell".to_string(),
+        bin: powershell.display().to_string(),
         message: format!("Microsoft Office via PowerShell COM ({apps})"),
         platform: std::env::consts::OS.to_string(),
     })
@@ -330,7 +338,9 @@ fn unavailable_office_runtime() -> OfficeRuntime {
         available: false,
         kind: "unavailable".to_string(),
         bin: String::new(),
-        message: "No compatible Office runtime detected".to_string(),
+        // 修复：Office runtime 不存在时只是降级到有限文本提取，不应让状态文案看起来像主流程失败。
+        message: "No compatible Office runtime detected; legacy .doc/.ppt files will fall back to limited text extraction"
+            .to_string(),
         platform: std::env::consts::OS.to_string(),
     }
 }

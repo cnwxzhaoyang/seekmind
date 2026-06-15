@@ -1458,7 +1458,10 @@ onBeforeUnmount(() => {
                 <span class="stat-icon scanned" aria-hidden="true"><SvgIcon icon="icon-info" size="sm" /></span>
                 <div class="stat-content">
                   <div class="stat-label">{{ t("page.status.errorSummary.pythonVersion") }}</div>
-                  <div class="stat-value">{{ parserRuntime?.python_bin || "-" }}</div>
+                  <!-- Windows 下 Python 安装路径可能很长，这里截断显示并保留完整值提示。 -->
+                  <div class="stat-value health-value-truncate" :title="parserRuntime?.python_bin || '-'">
+                    {{ parserRuntime?.python_bin || "-" }}
+                  </div>
                 </div>
               </div>
               <div class="stat-item health-metric">
