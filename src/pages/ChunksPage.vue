@@ -4,7 +4,7 @@
  * @Description 切片页面，展示文档切片、预览与局部刷新操作。
  */
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { AlertCircle, ClipboardCopy, Cpu, Eye, FileText, Layers3, RefreshCw, ScanText, SquareArrowOutUpRight, Trash2, X } from "lucide-vue-next";
@@ -65,6 +65,7 @@ const lastRoutePath = ref("");
 const refreshJobResolvers = new Map<string, (payload: DocumentRefreshProgressView) => void>();
 const refreshJobBufferedEvents = new Map<string, DocumentRefreshProgressView>();
 const refreshJobPaths = new Map<string, string>();
+let chunksPageActivatedOnce = false;
 
 const contextMenuDoc = ref<DocumentView | null>(null);
 const contextMenuPosition = ref({ x: 0, y: 0 });
@@ -278,6 +279,23 @@ const resolveDirFromPath = (path?: string | string[]) => {
 
 const loadDirs = async () => {
   dirs.value = await seekMindApi.listIndexDirs();
+};
+
+const refreshDirSelection = async (reason: string) => {
+  console.info("[SeekMind] chunks refresh dir selection", {
+    reason,
+    routePath: getRouteTargetPath(),
+  });
+
+  try {
+    await loadDirs();
+    await syncSelection(true);
+  } catch (error) {
+    console.error("[SeekMind] refreshDirSelection failed", {
+      reason,
+      error,
+    });
+  }
 };
 
 const loadParserRuntime = async () => {
@@ -839,14 +857,28 @@ onMounted(() => {
   void (async () => {
     try {
       await loadParserRuntime();
-      await loadDirs();
-      await syncSelection(true);
+      await refreshDirSelection("mounted");
       routeSyncReady.value = true;
     } finally {
       loading.value = false;
     }
   })();
   void installRefreshProgressListener();
+});
+
+onActivated(() => {
+  // 修复：ChunksPage 被 KeepAlive 缓存后，切换回页面不会再次触发 onMounted，
+  // 如果前面在状态页新增了目录，这里必须重新拉一次目录并同步当前选择。
+  if (!chunksPageActivatedOnce) {
+    chunksPageActivatedOnce = true;
+    return;
+  }
+
+  if (!routeSyncReady.value) {
+    return;
+  }
+
+  void refreshDirSelection("activated");
 });
 
 onBeforeUnmount(() => {
