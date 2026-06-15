@@ -223,10 +223,6 @@ const currentDocumentRefreshWarning = computed(() =>
   currentDocument.value ? refreshWarnings.value[currentDocument.value.path] ?? "" : "",
 );
 
-const currentDocumentRefreshOutcome = computed(() =>
-  currentDocument.value ? refreshOutcomes.value[currentDocument.value.path] ?? "idle" : "idle",
-);
-
 const currentDocumentCitation = computed(() => {
   if (!currentDocument.value) {
     return "";
@@ -729,46 +725,6 @@ const refreshOutcomeLabel = (path: string) => {
   return "";
 };
 
-const actualParserLabel = (path?: string) => {
-  if (!path) {
-    return t("common.unknown");
-  }
-  const outcome = refreshOutcomes.value[path];
-  if (outcome === "python") {
-    return t("status.parser.python");
-  }
-  if (outcome === "rust") {
-    return t("status.parser.pythonFallback");
-  }
-  if (refreshStates.value[path] === "running") {
-    const source = refreshActiveSources.value[path];
-    if (source === "python") {
-      return t("status.parser.python");
-    }
-    if (source === "rust") {
-      return t("status.parser.pythonFallback");
-    }
-  }
-  return t("common.unknown");
-};
-
-const refreshOutcomeTone = (path?: string) => {
-  if (!path) {
-    return "default" as const;
-  }
-  const outcome = refreshOutcomes.value[path];
-  if (outcome === "python") {
-    return "success" as const;
-  }
-  if (outcome === "rust") {
-    return "warning" as const;
-  }
-  if (outcome === "failed") {
-    return "danger" as const;
-  }
-  return "default" as const;
-};
-
 const chunkContextMenuItems = computed<ContextMenuItem[]>(() => {
   const doc = contextMenuDoc.value;
   if (!doc) return [];
@@ -1044,15 +1000,6 @@ watch(
                         {{ refreshOutcomes[doc.path] === 'python' ? t("page.chunks.refreshState.pythonDone") : t("page.chunks.refreshState.rustFallback") }}
                       </div>
                       <div
-                        v-else-if="refreshOutcomes[doc.path] === 'python' || refreshOutcomes[doc.path] === 'rust'"
-                        class="mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
-                        :class="refreshOutcomes[doc.path] === 'python'
-                          ? 'bg-emerald-soft text-success'
-                          : 'bg-amber-soft text-warning'"
-                      >
-                        {{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(doc.path) }}
-                      </div>
-                      <div
                         v-if="refreshErrors[doc.path]"
                         class="mt-1.5 rounded-[10px] bg-danger-soft px-2 py-1.5 text-[11px] leading-5 text-danger"
                       >
@@ -1101,20 +1048,6 @@ watch(
               </div>
               <div class="mt-2 min-h-[56px] space-y-2">
                 <div
-                  v-if="currentDocumentRefreshOutcome !== 'idle'"
-                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-                  :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                    ? 'border-emerald-soft bg-emerald-soft text-success'
-                    : refreshOutcomeTone(currentDocument.path) === 'warning'
-                      ? 'border-amber-soft bg-amber-soft text-warning'
-                      : refreshOutcomeTone(currentDocument.path) === 'danger'
-                        ? 'border-rose-soft bg-rose-soft text-danger'
-                        : 'border-default bg-panel text-secondary'"
-                >
-                  <Cpu :size="11" />
-                  {{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(currentDocument.path) }}
-                </div>
-                <div
                   v-if="currentDocumentRefreshWarning"
                   class="seekmind-chunks-warning text-[11px] leading-5 text-warning"
                 >
@@ -1129,7 +1062,6 @@ watch(
                 <SeekMindBadge>{{ t("page.chunks.chunkStats", { count: currentDocument.chunks }) }}</SeekMindBadge>
               </div>
               <div class="grid gap-2 text-xs leading-5 text-muted">
-                <div>{{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(currentDocument.path) }}</div>
                 <div>{{ t("page.chunks.titlePath") }}：{{ currentDocument.file_name }}</div>
                 <div>{{ t("page.chunks.detail.imagePreview") }}：{{ isImageDocument ? t("common.available") : t("common.unavailable") }}</div>
               </div>
