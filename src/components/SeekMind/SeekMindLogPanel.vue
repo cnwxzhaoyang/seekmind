@@ -205,7 +205,10 @@ const semanticVectorTone = computed(() => {
   return "danger" as const;
 });
 const semanticVectorSummaryLabel = computed(() => {
-  // 修复：语义底栏需要同时展示向量化进度和当前状态，避免只看到“正常/待重建”而不知道库里实际有多少向量。
+  // 修复：正常态只展示向量化进度，避免底栏出现重复的“正常”状态词。
+  if (semanticVectorLabel.value === t("logPanel.metrics.semanticReady")) {
+    return semanticVectorProgressLabel.value;
+  }
   return `${semanticVectorProgressLabel.value} · ${semanticVectorLabel.value}`;
 });
 const sidebarStats = computed(() => [
