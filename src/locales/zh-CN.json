@@ -1013,6 +1013,7 @@
     "metrics": {
       "documents": "已入库文档 {indexed}/{total}",
       "chunks": "已建切片 {count}",
+      "semanticProgress": "已向量化 {embedded}/{total}",
       "semanticEmpty": "向量库已清空",
       "semanticReady": "向量库正常",
       "semanticRebuild": "向量库待重建",
