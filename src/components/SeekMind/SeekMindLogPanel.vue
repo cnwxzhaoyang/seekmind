@@ -8,9 +8,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
+import { ChevronsUpDown, FileText, Loader2, Trash2 } from "lucide-vue-next";
 import SeekMindToast from "./SeekMindToast.vue";
 import SeekMindBadge from "./SeekMindBadge.vue";
-import SeekMindIcon from "./SeekMindIcon.vue";
 import { useQuickAccessData } from "../../composables/useQuickAccessData";
 import { useInfoMessage } from "../../composables/useInfoMessage";
 import { seekMindApi } from "../../services/seekMindApi";
@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
     />
 
     <div
-      class="flex h-7 w-full flex-nowrap items-center justify-between gap-3 overflow-x-auto px-3 text-left"
+      class="group flex h-7 w-full flex-nowrap items-center justify-between gap-3 overflow-x-auto px-3 text-left transition-colors hover:bg-surface-hover"
       role="button"
       tabindex="0"
       @click="toggleExpanded"
@@ -415,8 +415,14 @@ onBeforeUnmount(() => {
     >
       <div class="flex min-w-0 shrink-0 items-center gap-3 whitespace-nowrap">
         <div class="flex min-w-0 items-center gap-2 whitespace-nowrap">
-          <SeekMindIcon icon="icon-index-status" :size="14" class="text-dim" />
-          <div class="truncate text-[11px] font-medium text-secondary">{{ t("logPanel.title") }}</div>
+          <!-- 修复：底栏标题区改成明确的按钮胶囊，并使用跨平台稳定的 lucide 图标，避免 Windows 下自定义 SVG 偶发不显示。 -->
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-default bg-surface px-2.5 py-1 text-[11px] font-medium text-secondary shadow-sm transition group-hover:border-accent/40 group-hover:bg-surface-hover group-hover:text-primary">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent-soft text-accent">
+              <FileText :size="13" />
+            </span>
+            <span class="truncate">{{ t("logPanel.title") }}</span>
+            <ChevronsUpDown :size="12" class="text-dim" />
+          </span>
         </div>
         <!-- 修复：底 bar 中状态与操作分组展示，避免“信息”和“动作”混在一列。 -->
         <div class="hidden lg:flex items-center gap-2 whitespace-nowrap">
