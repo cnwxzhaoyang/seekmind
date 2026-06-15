@@ -64,8 +64,8 @@
     "queued": "已排队",
     "noRecentRun": "暂无最近运行",
     "parser": {
-      "python": "默认解析器",
-      "pythonFallback": "备用解析器"
+      "python": "主链路",
+      "pythonFallback": "备用链路"
     },
     "localOnly": "仅本地",
     "localEffective": "本地生效",
@@ -361,8 +361,8 @@
       "noResults": "没有找到相关段落",
       "enterQuery": "请输入关键词开始搜索。",
       "indexedDocs": "已索引 {count} 个文档",
-      "parserPython": "默认解析",
-      "parserRust": "备用解析",
+      "parserPython": "主链路",
+      "parserRust": "备用链路",
       "semanticHybrid": "混合检索",
       "semanticFullText": "仅全文",
       "semanticDisabled": "语义关闭",
@@ -441,10 +441,10 @@
       "subtitle": "按目录选择文档，直接查看 SeekMind 如何把内容切成段落块。",
       "parserInfo": "当前解析器：",
       "parserInfo2": "；点击\"重新切片\"会优先使用当前启用的解析链路。",
-      "parserPython": "默认",
+      "parserPython": "主链路",
       "parserRust": "备用",
-      "badgePython": "默认解析",
-      "badgeRust": "备用解析",
+      "badgePython": "主链路",
+      "badgeRust": "备用链路",
       "section": {
         "indexDirs": "索引目录",
         "docList": "文档列表",
@@ -494,10 +494,10 @@
       "refreshState": {
         "queued": "已排队",
         "slicing": "切片中",
-        "pythonSlicing": "默认切片中",
-        "rustSlicing": "备用切片中",
-        "pythonDone": "默认完成",
-        "rustFallback": "备用",
+        "pythonSlicing": "主链路",
+        "rustSlicing": "备用链路",
+        "pythonDone": "主链路",
+        "rustFallback": "备用链路",
         "failed": "已失败"
       },
       "docStats": "{docs} 文档 · {chunks} 切片",
@@ -632,8 +632,8 @@
         "none": "还没有形成最近一次增量摘要。"
       },
       "parser": {
-        "enabled": "启用默认链路",
-        "available": "默认链路可用",
+        "enabled": "启用主链路",
+        "available": "主链路可用",
         "pythonBin": "运行时 Bin",
         "timeout": "超时",
         "systemLanguage": "系统语言",

@@ -64,8 +64,8 @@
     "queued": "Queued",
     "noRecentRun": "No recent run",
     "parser": {
-      "python": "Default Parser",
-      "pythonFallback": "Fallback Parser"
+      "python": "Primary",
+      "pythonFallback": "Fallback"
     },
     "localOnly": "Local Only",
     "localEffective": "Local Only",
@@ -360,8 +360,8 @@
       "noResults": "No matching results found",
       "enterQuery": "Enter a keyword to start searching.",
       "indexedDocs": "{count} documents indexed",
-      "parserPython": "Default Parser",
-      "parserRust": "Fallback Parser",
+      "parserPython": "Primary",
+      "parserRust": "Fallback",
       "semanticHybrid": "Hybrid Search",
       "semanticFullText": "Full Text Only",
       "semanticDisabled": "Semantic Off",
@@ -440,10 +440,10 @@
       "subtitle": "Select a document by directory to see how SeekMind splits content into paragraph blocks.",
       "parserInfo": "Current parser: ",
       "parserInfo2": ". Click \"Reslice\" to use the active pipeline.",
-      "parserPython": "Default",
+      "parserPython": "Primary",
       "parserRust": "Fallback",
-      "badgePython": "Default Parser",
-      "badgeRust": "Fallback Parser",
+      "badgePython": "Primary",
+      "badgeRust": "Fallback",
       "section": {
         "indexDirs": "Index Directories",
         "docList": "Documents",
@@ -493,9 +493,9 @@
       "refreshState": {
         "queued": "Queued",
         "slicing": "Slicing",
-        "pythonSlicing": "Default slicing",
-        "rustSlicing": "Fallback slicing",
-        "pythonDone": "Default done",
+        "pythonSlicing": "Primary",
+        "rustSlicing": "Fallback",
+        "pythonDone": "Primary",
         "rustFallback": "Fallback",
         "failed": "Failed"
       },
@@ -635,8 +635,8 @@
         "none": "No incremental summary yet."
       },
       "parser": {
-        "enabled": "Default Chain Enabled",
-        "available": "Default Chain Available",
+        "enabled": "Primary Enabled",
+        "available": "Primary Available",
         "pythonBin": "Runtime Binary",
         "timeout": "Timeout",
         "systemLanguage": "System Language",
