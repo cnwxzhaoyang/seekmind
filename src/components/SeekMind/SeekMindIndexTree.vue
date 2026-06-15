@@ -1,7 +1,12 @@
+<!--
+  @author MorningSun
+  @CreatedDate 2026/06/15
+  @Description 通用索引目录树组件，负责目录节点展示、展开收起与上下文菜单交互。
+-->
 <script setup lang="ts">
 import { computed } from "vue";
+import { Folder, FolderOpen } from "lucide-vue-next";
 import type { VisibleIndexDirRow } from "../../composables/useIndexDirTree";
-import SeekMindIcon from "./SeekMindIcon.vue";
 
 const props = withDefaults(defineProps<{
   rows: VisibleIndexDirRow[];
@@ -85,11 +90,13 @@ const handleContextMenu = (row: VisibleIndexDirRow, event: MouseEvent) => {
         :aria-expanded="row.expanded"
         @click.stop="emit('toggle', row.dir.path, !row.expanded)"
       >
-        <SeekMindIcon v-if="row.expanded" icon="icon-folder" :size="15" />
-        <SeekMindIcon v-else icon="icon-folder" :size="15" />
+        <!-- 修复：Windows WebView 下目录树左侧 raw SVG 文件夹图标偶现空白，
+             这里统一改用 lucide 组件，保证“当前目录”等节点在 Windows / macOS 都稳定可见。 -->
+        <FolderOpen v-if="row.expanded" :size="15" />
+        <Folder v-else :size="15" />
       </button>
       <span v-else class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-muted">
-        <SeekMindIcon icon="icon-folder" :size="15" />
+        <Folder :size="15" />
       </span>
 
       <div class="seekmind-item-title min-w-0 flex-1 truncate">

@@ -1,0 +1,90 @@
+# Author: MorningSun
+# CreatedDate: 2026/06/15
+# Description: GitHub Actions 桌面端自动构建工作流，负责 Windows / macOS 的检查、打包与产物上传。
+
+name: Build Desktop
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows NSIS
+            os: windows-latest
+            build_command: npm run tauri:build:windows:nsis
+            artifact_name: seekmind-windows-nsis
+            artifact_path: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/**
+              src-tauri/app-resources/**
+          - label: macOS Bundle
+            os: macos-latest
+            build_command: npm run tauri:build:macos:sidecar
+            artifact_name: seekmind-macos-bundle
+            artifact_path: |
+              src-tauri/target/release/bundle/macos/**
+              src-tauri/app-resources/**
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: parser/requirements.txt
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Log build host
+        shell: bash
+        run: |
+          echo "[SeekMind] github_ref=${GITHUB_REF}"
+          echo "[SeekMind] runner_os=${RUNNER_OS}"
+          echo "[SeekMind] node=$(node --version)"
+          echo "[SeekMind] python=$(python --version 2>&1)"
+          echo "[SeekMind] rustc=$(rustc --version)"
+          echo "[SeekMind] cargo=$(cargo --version)"
+
+      - name: Run frontend and Rust checks
+        run: npm run check:all
+
+      - name: Build desktop bundle
+        run: ${{ matrix.build_command }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
