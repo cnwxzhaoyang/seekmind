@@ -35,18 +35,12 @@ jobs:
             os: windows-latest
             build_command: npm run tauri:build:windows:nsis
             artifact_name: seekmind-windows-nsis
-            artifact_path: |
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/**
-              src-tauri/app-resources/**
-            package_macos_bundle: "false"
+            artifact_path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
           - label: macOS Bundle
             os: macos-latest
             build_command: npm run tauri:build:macos:sidecar
             artifact_name: seekmind-macos-bundle
-            artifact_path: |
-              dist-artifacts/seekmind-macos-bundle.zip
-              src-tauri/app-resources/**
-            package_macos_bundle: "true"
+            artifact_path: dist-artifacts/seekmind-macos-bundle.zip
 
     steps:
       - name: Checkout repository
@@ -98,7 +92,7 @@ jobs:
         run: ${{ matrix.build_command }}
 
       - name: Package macOS app for download
-        if: matrix.package_macos_bundle == 'true'
+        if: matrix.os == 'macos-latest'
         shell: bash
         run: |
           mkdir -p dist-artifacts
@@ -116,4 +110,3 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
-          include-hidden-files: true
