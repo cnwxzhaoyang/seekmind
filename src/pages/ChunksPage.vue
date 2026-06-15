@@ -1099,25 +1099,27 @@ watch(
                   </button>
                 </div>
               </div>
-              <div
-                v-if="currentDocumentRefreshOutcome !== 'idle'"
-                class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-                :class="refreshOutcomeTone(currentDocument.path) === 'success'
-                  ? 'border-emerald-soft bg-emerald-soft text-success'
-                  : refreshOutcomeTone(currentDocument.path) === 'warning'
-                    ? 'border-amber-soft bg-amber-soft text-warning'
-                    : refreshOutcomeTone(currentDocument.path) === 'danger'
-                      ? 'border-rose-soft bg-rose-soft text-danger'
-                      : 'border-default bg-panel text-secondary'"
-              >
-                <Cpu :size="11" />
-                {{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(currentDocument.path) }}
-              </div>
-              <div
-                v-if="currentDocumentRefreshWarning"
-                class="mt-2 text-[11px] leading-5 text-warning"
-              >
-                {{ currentDocumentRefreshWarning }}
+              <div class="mt-2 min-h-[56px] space-y-2">
+                <div
+                  v-if="currentDocumentRefreshOutcome !== 'idle'"
+                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  :class="refreshOutcomeTone(currentDocument.path) === 'success'
+                    ? 'border-emerald-soft bg-emerald-soft text-success'
+                    : refreshOutcomeTone(currentDocument.path) === 'warning'
+                      ? 'border-amber-soft bg-amber-soft text-warning'
+                      : refreshOutcomeTone(currentDocument.path) === 'danger'
+                        ? 'border-rose-soft bg-rose-soft text-danger'
+                        : 'border-default bg-panel text-secondary'"
+                >
+                  <Cpu :size="11" />
+                  {{ t("page.chunks.detail.actualParser") }}锛歿{ actualParserLabel(currentDocument.path) }}
+                </div>
+                <div
+                  v-if="currentDocumentRefreshWarning"
+                  class="seekmind-chunks-warning text-[11px] leading-5 text-warning"
+                >
+                  {{ currentDocumentRefreshWarning }}
+                </div>
               </div>
             </template>
 
@@ -1233,3 +1235,13 @@ watch(
     />
   </div>
 </template>
+
+<style scoped>
+.seekmind-chunks-warning {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-word;
+}
+</style>
