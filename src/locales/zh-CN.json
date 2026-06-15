@@ -1012,7 +1012,10 @@
     },
     "metrics": {
       "documents": "已入库文档 {indexed}/{total}",
-      "chunks": "已建切片 {count}"
+      "chunks": "已建切片 {count}",
+      "semanticReady": "向量库正常",
+      "semanticRebuild": "向量库待重建",
+      "semanticUnavailable": "向量库不可用"
     },
     "empty": "暂无日志，执行索引、切片或语义任务后会自动显示事件。",
     "clear": "清空",

@@ -21,6 +21,7 @@ import type {
   IndexSettingsView,
   IndexStatusView,
   SemanticRebuildProgressView,
+  SemanticModelStatusView,
 } from "../../types/SeekMind";
 
 const HEADER_H = 28;
@@ -59,6 +60,7 @@ const exporting = ref(false);
 const exportTone = ref<"success" | "error">("success");
 const indexStatus = ref<IndexStatusView | null>(null);
 const indexSettings = ref<IndexSettingsView | null>(null);
+const semanticStatus = ref<SemanticModelStatusView | null>(null);
 const appRuntime = ref<AppRuntimeInfoView | null>(null);
 const maxEntries = 120;
 let unlistenIndex: null | (() => void) = null;
@@ -135,14 +137,16 @@ const formatEntryTimestamp = (timestamp: string) => {
 
 const loadMetrics = async () => {
   // 修复：日志导出依赖运行摘要，但面板初始化不能因为单个元数据接口失败而中断。
-  const [status, settings, runtime] = await Promise.allSettled([
+  const [status, settings, runtime, semantic] = await Promise.allSettled([
     seekMindApi.getIndexStatus(),
     seekMindApi.getIndexSettings(),
     seekMindApi.getAppRuntimeInfo(),
+    seekMindApi.getEmbeddingModelStatus(),
   ]);
   if (status.status === "fulfilled") indexStatus.value = status.value;
   if (settings.status === "fulfilled") indexSettings.value = settings.value;
   if (runtime.status === "fulfilled") appRuntime.value = runtime.value;
+  if (semantic.status === "fulfilled") semanticStatus.value = semantic.value;
 };
 
 const semanticWeightLabel = computed(() => Math.round((indexSettings.value?.semantic_weight ?? 0.25) * 100));
@@ -153,6 +157,33 @@ const sqliteLabel = computed(() => t("logPanel.metrics.documents", {
 const tantivyLabel = computed(() => t("logPanel.metrics.chunks", {
   count: indexStatus.value?.indexed_chunks ?? 0,
 }));
+const semanticVectorLabel = computed(() => {
+  if (!semanticStatus.value) {
+    return t("logPanel.metrics.semanticUnavailable");
+  }
+
+  if (semanticStatus.value.model.available && !semanticStatus.value.needs_rebuild) {
+    return t("logPanel.metrics.semanticReady");
+  }
+
+  if (semanticStatus.value.model.available) {
+    return t("logPanel.metrics.semanticRebuild");
+  }
+
+  return t("logPanel.metrics.semanticUnavailable");
+});
+const semanticVectorTone = computed(() => {
+  if (!semanticStatus.value) {
+    return "warning" as const;
+  }
+  if (semanticStatus.value.model.available && !semanticStatus.value.needs_rebuild) {
+    return "success" as const;
+  }
+  if (semanticStatus.value.model.available) {
+    return "warning" as const;
+  }
+  return "danger" as const;
+});
 const sidebarStats = computed(() => [
   { label: t("sidebar.statsDirs"), value: quickDirs.value.length },
   { label: t("sidebar.statsRecent"), value: recentDocuments.value.length },
@@ -162,6 +193,7 @@ const bottomMetrics = computed(() => [
   // 修复：底栏指标改成用户可理解的业务口径，避免直接暴露 SQLite / Tantivy 实现名。
   { key: "sqlite", label: sqliteLabel.value, tone: "success" as const },
   { key: "tantivy", label: tantivyLabel.value, tone: "default" as const },
+  { key: "semantic", label: semanticVectorLabel.value, tone: semanticVectorTone.value },
   { key: "weight", label: t("page.appSearch.semanticWeight", { weight: semanticWeightLabel.value }), tone: "default" as const },
 ]);
 

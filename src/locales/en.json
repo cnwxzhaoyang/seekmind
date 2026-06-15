@@ -1023,7 +1023,10 @@
     },
     "metrics": {
       "documents": "Indexed docs {indexed}/{total}",
-      "chunks": "Built chunks {count}"
+      "chunks": "Built chunks {count}",
+      "semanticReady": "Vector store ready",
+      "semanticRebuild": "Vector store needs rebuild",
+      "semanticUnavailable": "Vector store unavailable"
     },
     "details": {
       "fullIndex": "Full index",
