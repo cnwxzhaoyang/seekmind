@@ -240,6 +240,19 @@ const installListeners = async () => {
     const payload = event.payload;
     const scope: LogScope = "semantic";
     const level: LogLevel = payload.state === "failed" ? "error" : payload.state === "completed" ? "success" : "info";
+    // 修复：语义重建完成后，底栏状态要跟着终态事件刷新，不能一直停留在“待重建”。
+    if (payload.source === "rebuild" && payload.state !== "running") {
+      semanticStatus.value = {
+        model: payload.model,
+        sqlite_chunks: payload.total_chunks,
+        embedded_chunks: payload.embedded_chunks,
+        needs_rebuild: payload.state !== "completed",
+        last_indexed_at: payload.updated_at,
+        last_error: payload.last_error,
+        index_status: payload.state,
+      };
+      void loadMetrics();
+    }
     pushLog({
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
