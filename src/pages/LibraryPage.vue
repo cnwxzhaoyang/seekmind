@@ -12,6 +12,7 @@ import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu
 import SeekMindIndexTree from "../components/SeekMind/SeekMindIndexTree.vue";
 import SeekMindTaskCard from "../components/SeekMind/SeekMindTaskCard.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import { useIndexDirs } from "../composables/useIndexDirs";
 import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
@@ -27,7 +28,6 @@ import type {
 
 const { t } = useI18n();
 
-const dirs = ref<IndexDirView[]>([]);
 const status = ref<IndexStatusView | null>(null);
 const loading = ref(false);
 const refreshing = ref(false);
@@ -44,6 +44,7 @@ let unlistenIndexRefreshProgress: null | (() => void) = null;
 let unlistenDocumentRefreshProgress: null | (() => void) = null;
 let unlistenFileDrop: null | (() => void) = null;
 
+const { dirs, refreshIndexDirs } = useIndexDirs();
 const {
   visibleRows: visibleDirRows,
   setExpanded: setDirExpanded,
@@ -97,7 +98,7 @@ const loadDirs = async () => {
   errorMessage.value = "";
 
   try {
-    dirs.value = await seekMindApi.listIndexDirs();
+    await refreshIndexDirs("library:load");
   } catch (error) {
     errorMessage.value = formatSeekMindError(error, t("page.library.title"));
     console.error("[SeekMind] loadDirs failed", error);
@@ -158,7 +159,7 @@ const installIndexRefreshListener = async () => {
       }
 
       if (payload.state !== "running") {
-        void loadDirs();
+        void refreshIndexDirs("library:index-refresh");
         void loadStatus();
       }
     },
@@ -485,8 +486,8 @@ const importDroppedPaths = async (paths: string[]) => {
       (file) => file.is_virtual || !dirsToRefresh.includes(file.dir_path),
     );
     if (filesToRefresh.length > 0) {
-      await processImportedFiles(filesToRefresh);
-    }
+    await processImportedFiles(filesToRefresh);
+  }
 
     const summaryParts = [
       t("page.library.info.importedDirs", { count: result.added_dirs.length }),

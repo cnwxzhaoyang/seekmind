@@ -21,12 +21,12 @@ import SeekMindMarkdownRenderer from "../components/SeekMind/SeekMindMarkdownRen
 import SplitPane from "../components/SplitPane.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import { useIndexDirs } from "../composables/useIndexDirs";
 import { buildDocumentLocationParts, formatDocumentCitation, resolveDocumentTitlePath } from "../utils/citation";
 import type {
   ChunkView,
   DocumentRefreshProgressView,
   DocumentView,
-  IndexDirView,
   ParserRuntimeView,
   PreviewBlockView,
 } from "../types/SeekMind";
@@ -36,7 +36,6 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const dirs = ref<IndexDirView[]>([]);
 const documents = ref<DocumentView[]>([]);
 const chunks = ref<ChunkView[]>([]);
 const selectedDirPath = ref("");
@@ -73,6 +72,7 @@ const contextMenuVisible = ref(false);
 
 let unlistenRefreshProgress: null | (() => void) = null;
 
+const { dirs, refreshIndexDirs } = useIndexDirs();
 const {
   visibleRows: chunkDirRows,
   expandAncestors: expandChunkDirAncestors,
@@ -277,10 +277,6 @@ const resolveDirFromPath = (path?: string | string[]) => {
   return candidate ?? "";
 };
 
-const loadDirs = async () => {
-  dirs.value = await seekMindApi.listIndexDirs();
-};
-
 const refreshDirSelection = async (reason: string) => {
   console.info("[SeekMind] chunks refresh dir selection", {
     reason,
@@ -288,7 +284,7 @@ const refreshDirSelection = async (reason: string) => {
   });
 
   try {
-    await loadDirs();
+    await refreshIndexDirs(reason);
     await syncSelection(true);
   } catch (error) {
     console.error("[SeekMind] refreshDirSelection failed", {

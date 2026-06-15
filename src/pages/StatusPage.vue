@@ -33,6 +33,7 @@ import SeekMindContextMenu from "../components/SeekMind/SeekMindContextMenu.vue"
 import SeekMindFailedFilesPanel from "../components/SeekMind/SeekMindFailedFilesPanel.vue";
 import type { ContextMenuItem } from "../components/SeekMind/SeekMindContextMenu.vue";
 import { useIndexDirTree } from "../composables/useIndexDirTree";
+import { useIndexDirs } from "../composables/useIndexDirs";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { formatDirectoryCitation } from "../utils/citation";
 import type { VisibleIndexDirRow } from "../composables/useIndexDirTree";
@@ -50,7 +51,6 @@ import type {
 const { t } = useI18n();
 
 const status = ref<IndexStatusView | null>(null);
-const dirs = ref<IndexDirView[]>([]);
 const parserRuntime = ref<ParserRuntimeView | null>(null);
 const currentIndexParserSource = ref("");
 const currentIndexParserWarning = ref("");
@@ -88,6 +88,7 @@ let unlistenIndexRefreshProgress: null | (() => void) = null;
 let unlistenDocumentRefreshProgress: null | (() => void) = null;
 let unlistenFileDrop: null | (() => void) = null;
 
+const { dirs, refreshIndexDirs } = useIndexDirs();
 const { visibleRows: visibleDirRows, setExpanded: setDirExpanded } =
   useIndexDirTree(dirs);
 
@@ -157,7 +158,7 @@ const copyText = async (text: string, successMessage: string) => {
 
 const loadDirs = async () => {
   try {
-    dirs.value = await seekMindApi.listIndexDirs();
+    await refreshIndexDirs("status:load");
   } catch (error) {
     errorMessage.value = formatSeekMindError(
       error,
