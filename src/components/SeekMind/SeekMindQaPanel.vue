@@ -317,7 +317,7 @@ const buildSettingsPayload = (): QaSettingsView => ({
 const saveSettings = async () => {
   saving.value = true;
   errorMessage.value = "";
-  infoMessage.value = "";
+  saveMessage.value = "";
 
   try {
     const settings = await seekMindApi.saveQaSettings(buildSettingsPayload());
@@ -338,7 +338,7 @@ const saveSettings = async () => {
 const testConnection = async () => {
   testing.value = true;
   errorMessage.value = "";
-  infoMessage.value = "";
+  saveMessage.value = "";
   connectionResult.value = null;
 
   try {

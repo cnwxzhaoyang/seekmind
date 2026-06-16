@@ -7,6 +7,7 @@ use crate::seekmind::models::{
 use crate::seekmind::semantic::store;
 use crate::seekmind::storage::Database;
 use tauri::Emitter;
+use serde_json::json;
 
 #[tauri::command]
 pub async fn get_embedding_model_status(
@@ -51,7 +52,13 @@ pub async fn rebuild_semantic_embeddings(
     let initial_payload = SemanticRebuildProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
-        message: "正在准备语义模型".to_string(),
+        code: "semantic.rebuild.running".to_string(),
+        params: json!({
+            "source": "rebuild",
+            "phase": "prepare",
+            "total_chunks": start_status.sqlite_chunks,
+        }),
+        message: "semantic.rebuild.running".to_string(),
         source: "rebuild".to_string(),
         model: start_status.model.clone(),
         total_chunks: start_status.sqlite_chunks,
@@ -83,7 +90,13 @@ pub async fn rebuild_semantic_embeddings(
                     SemanticRebuildProgressView {
                         job_id: task_job_id,
                         state: "failed".to_string(),
-                        message: "语义向量重建失败".to_string(),
+                        code: "semantic.rebuild.failed".to_string(),
+                        params: json!({
+                            "source": "rebuild",
+                            "phase": "failed",
+                            "error": error.to_string(),
+                        }),
+                        message: "semantic.rebuild.failed".to_string(),
                         source: "rebuild".to_string(),
                         model: failure_model,
                         total_chunks: 0,

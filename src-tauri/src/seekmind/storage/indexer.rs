@@ -10,6 +10,7 @@ use crate::seekmind::parser::types::ParserStreamEvent;
 use crate::seekmind::storage::scanner;
 use crate::seekmind::storage::types::{DocumentState, IndexSettings, ParserSource};
 use crate::seekmind::storage::Database;
+use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{mpsc, Arc};
@@ -225,7 +226,7 @@ pub async fn rebuild_pdf_ocr_queue(
                     .get_index_status()
                     .await
                     .map_err(|error| error.to_string())?;
-                let message = if let Some(warning) = warning {
+                let _message = if let Some(ref warning) = warning {
                     format!("PDF OCR 重跑完成，存在提示：{warning}")
                 } else {
                     "PDF OCR 重跑完成".to_string()
@@ -233,7 +234,13 @@ pub async fn rebuild_pdf_ocr_queue(
                 on_progress(IndexRefreshProgressView {
                     job_id: job_id.to_string(),
                     state: "running".to_string(),
-                    message,
+                    code: "index.pdfOcr.running".to_string(),
+                    params: json!({
+                        "scope": "pdf-ocr",
+                        "path": path.clone(),
+                        "warning": warning.clone(),
+                    }),
+                    message: "index.pdfOcr.running".to_string(),
                     scope: "pdf-ocr".to_string(),
                     path: path.clone(),
                     parser_source: String::new(),
@@ -258,7 +265,13 @@ pub async fn rebuild_pdf_ocr_queue(
                 on_progress(IndexRefreshProgressView {
                     job_id: job_id.to_string(),
                     state: "running".to_string(),
-                    message: format!("PDF OCR 重跑失败：{error}"),
+                    code: "index.pdfOcr.running".to_string(),
+                    params: json!({
+                        "scope": "pdf-ocr",
+                        "path": path.clone(),
+                        "error": error.to_string(),
+                    }),
+                    message: "index.pdfOcr.running".to_string(),
                     scope: "pdf-ocr".to_string(),
                     path: path.clone(),
                     parser_source: String::new(),
@@ -297,7 +310,9 @@ pub async fn rebuild_pdf_ocr_queue(
     on_progress(IndexRefreshProgressView {
         job_id: job_id.to_string(),
         state: "completed".to_string(),
-        message: "PDF OCR 队列重跑完成".to_string(),
+        code: "index.pdfOcr.completed".to_string(),
+        params: json!({ "scope": "pdf-ocr" }),
+        message: "index.pdfOcr.completed".to_string(),
         scope: "pdf-ocr".to_string(),
         path: String::new(),
         parser_source: String::new(),
@@ -782,10 +797,18 @@ async fn process_index_plan(
         .await?;
         if let Some(actual_parser_source) = actual_parser_source {
             let status_snapshot = database.get_index_status().await?;
+            let code = index_progress_code(&scope, "running");
             on_progress(IndexRefreshProgressView {
                 job_id: job_id.to_string(),
                 state: "running".to_string(),
-                message: String::new(),
+                    code: code.clone(),
+                    params: json!({
+                        "scope": scope,
+                        "path": path.clone(),
+                        "parser_source": actual_parser_source,
+                        "warning": actual_parser_warning,
+                }),
+                message: code,
                 scope: scope.to_string(),
                 path: path.clone(),
                 parser_source: actual_parser_source,
@@ -947,14 +970,21 @@ async fn emit_index_progress(
     scope: &str,
     path: &str,
     state: &str,
-    message: &str,
+    _message: &str,
     on_progress: &IndexProgressEmitter,
 ) -> Result<(), sqlx::Error> {
     let status = database.get_index_status().await?;
+    let code = index_progress_code(scope, state);
     on_progress(IndexRefreshProgressView {
         job_id: job_id.to_string(),
         state: state.to_string(),
-        message: message.to_string(),
+        code: code.clone(),
+        params: json!({
+            "scope": scope,
+            "path": path,
+            "state": state,
+        }),
+        message: code,
         scope: scope.to_string(),
         path: path.to_string(),
         parser_source: String::new(),
@@ -963,6 +993,15 @@ async fn emit_index_progress(
         updated_at: chrono::Utc::now().to_rfc3339(),
     });
     Ok(())
+}
+
+fn index_progress_code(scope: &str, state: &str) -> String {
+    match scope {
+        "pdf-ocr" => format!("index.pdfOcr.{state}"),
+        "dir" => format!("index.dir.{state}"),
+        "fulltext-repair" => format!("index.fulltextRepair.{state}"),
+        _ => format!("index.all.{state}"),
+    }
 }
 
 fn spawn_parser_progress_forwarder(
@@ -1022,10 +1061,19 @@ fn spawn_parser_progress_forwarder(
                     .await;
 
                 if let Ok(status) = database.get_index_status().await {
+                    let code = parser_event_code(&event.stage);
                     on_progress(IndexRefreshProgressView {
                         job_id,
                         state: "running".to_string(),
-                        message: details_for_task,
+                        code,
+                        params: json!({
+                            "scope": scope.clone(),
+                            "path": path.clone(),
+                            "stage": event.stage,
+                            "current": event.current,
+                            "warning": warning_for_task,
+                        }),
+                        message: parser_event_code(&event.stage),
                         scope,
                         path,
                         parser_source: event.parser_source,
@@ -1080,6 +1128,18 @@ fn parser_event_message(event: &ParserStreamEvent, fallback: &str) -> String {
         }
         "done" => "解析完成".to_string(),
         _ => fallback.to_string(),
+    }
+}
+
+fn parser_event_code(stage: &str) -> String {
+    match stage {
+        "start" => "index.parser.start".to_string(),
+        "extract" => "index.parser.extract".to_string(),
+        "normalize" => "index.parser.normalize".to_string(),
+        "ocr_queue" => "index.parser.ocrQueue".to_string(),
+        "chunk" => "index.parser.chunk".to_string(),
+        "done" => "index.parser.done".to_string(),
+        _ => "index.parser.unknown".to_string(),
     }
 }
 

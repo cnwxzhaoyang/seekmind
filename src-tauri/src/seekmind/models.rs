@@ -4,6 +4,7 @@
  * @Description SeekMind 前后端交互视图模型。
  */
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct IndexDirView {
@@ -222,6 +223,10 @@ pub struct DocumentRefreshStartView {
 pub struct DocumentRefreshProgressView {
     pub job_id: String,
     pub state: String,
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub params: Value,
     pub message: String,
     pub path: String,
     pub file_name: String,
@@ -241,6 +246,10 @@ pub struct IndexRefreshStartView {
 pub struct IndexRefreshProgressView {
     pub job_id: String,
     pub state: String,
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub params: Value,
     pub message: String,
     pub scope: String,
     pub path: String,
@@ -596,6 +605,10 @@ pub struct SemanticModelStatusView {
 pub struct SemanticRebuildProgressView {
     pub job_id: String,
     pub state: String,
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub params: Value,
     pub message: String,
     pub source: String,
     pub model: EmbeddingModelView,

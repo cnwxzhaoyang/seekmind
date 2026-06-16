@@ -6,6 +6,7 @@
  */
 use chrono::Utc;
 use sqlx::Row;
+use serde_json::json;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -78,7 +79,7 @@ fn emit_semantic_embedding_progress(
     base_processed: usize,
     base_embedded: usize,
     document_path: &str,
-    message: String,
+    _message: String,
     current_chunk: String,
     processed_in_doc: usize,
 ) {
@@ -87,7 +88,23 @@ fn emit_semantic_embedding_progress(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id: job_id.to_string(),
             state: "running".to_string(),
-            message,
+            code: if source == "document" {
+                "semantic.document.running".to_string()
+            } else {
+                "semantic.rebuild.running".to_string()
+            },
+            params: json!({
+                "source": source,
+                "document": document_path,
+                "current_chunk": current_chunk,
+                "processed_in_doc": processed_in_doc,
+                "total_chunks": total_chunks,
+            }),
+            message: if source == "document" {
+                "semantic.document.running".to_string()
+            } else {
+                "semantic.rebuild.running".to_string()
+            },
             source: source.to_string(),
             model: model.clone(),
             total_chunks,
@@ -362,7 +379,13 @@ async fn legacy_rebuild_all_embeddings(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id: job_id.clone(),
             state: "running".to_string(),
-            message: "正在准备语义模型".to_string(),
+            code: "semantic.rebuild.running".to_string(),
+            params: json!({
+                "source": SEMANTIC_SOURCE_REBUILD,
+                "phase": "prepare",
+                "total_chunks": total_chunks,
+            }),
+            message: "semantic.rebuild.running".to_string(),
             source: SEMANTIC_SOURCE_REBUILD.to_string(),
             model: model.clone(),
             total_chunks,
@@ -453,7 +476,13 @@ async fn legacy_rebuild_all_embeddings(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id,
             state: "completed".to_string(),
-            message: "语义向量重建完成".to_string(),
+            code: "semantic.rebuild.completed".to_string(),
+            params: json!({
+                "source": SEMANTIC_SOURCE_REBUILD,
+                "phase": "completed",
+                "total_chunks": total_chunks,
+            }),
+            message: "semantic.rebuild.completed".to_string(),
             source: SEMANTIC_SOURCE_REBUILD.to_string(),
             model: load_default_model(database).await?,
             total_chunks,
@@ -514,7 +543,13 @@ async fn sqlite_vec_rebuild_all_embeddings(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id: job_id.clone(),
             state: "running".to_string(),
-            message: "正在准备语义模型".to_string(),
+            code: "semantic.rebuild.running".to_string(),
+            params: json!({
+                "source": SEMANTIC_SOURCE_REBUILD,
+                "phase": "prepare",
+                "total_chunks": total_chunks,
+            }),
+            message: "semantic.rebuild.running".to_string(),
             source: SEMANTIC_SOURCE_REBUILD.to_string(),
             model: model.clone(),
             total_chunks,
@@ -605,7 +640,14 @@ async fn sqlite_vec_rebuild_all_embeddings(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id,
             state: "completed".to_string(),
-            message: "语义向量重建完成".to_string(),
+            code: "semantic.rebuild.completed".to_string(),
+            params: json!({
+                "source": SEMANTIC_SOURCE_REBUILD,
+                "phase": "completed",
+                "total_chunks": total_chunks,
+                "document": current_document_path.clone(),
+            }),
+            message: "semantic.rebuild.completed".to_string(),
             source: SEMANTIC_SOURCE_REBUILD.to_string(),
             model: load_default_model(database).await?,
             total_chunks,
@@ -654,7 +696,14 @@ async fn upsert_document_embeddings_from_rows(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id: job_id.to_string(),
             state: "running".to_string(),
-            message: format!("正在处理 {file_name}"),
+            code: "semantic.document.running".to_string(),
+            params: json!({
+                "source": source,
+                "phase": "prepare",
+                "document": document_path,
+                "file_name": file_name,
+            }),
+            message: "semantic.document.running".to_string(),
             source: source.to_string(),
             model: model.clone(),
             total_chunks,
@@ -805,7 +854,14 @@ async fn sqlite_vec_upsert_document_embeddings_from_rows(
         crate::seekmind::models::SemanticRebuildProgressView {
             job_id: job_id.to_string(),
             state: "running".to_string(),
-            message: format!("正在处理 {file_name}"),
+            code: "semantic.document.running".to_string(),
+            params: json!({
+                "source": source,
+                "phase": "prepare",
+                "document": document_path,
+                "file_name": file_name,
+            }),
+            message: "semantic.document.running".to_string(),
             source: source.to_string(),
             model: model.clone(),
             total_chunks,

@@ -196,6 +196,8 @@ export interface DocumentRefreshStartView {
 export interface DocumentRefreshProgressView {
   job_id: string;
   state: string;
+  code: string;
+  params: Record<string, unknown>;
   message: string;
   path: string;
   file_name: string;
@@ -213,6 +215,8 @@ export interface IndexRefreshStartView {
 export interface IndexRefreshProgressView {
   job_id: string;
   state: string;
+  code: string;
+  params: Record<string, unknown>;
   message: string;
   scope: string;
   path: string;
@@ -550,6 +554,8 @@ export interface SemanticRebuildStartView {
 export interface SemanticRebuildProgressView {
   job_id: string;
   state: string;
+  code: string;
+  params: Record<string, unknown>;
   message: string;
   source: 'rebuild' | 'document';
   model: EmbeddingModelView;

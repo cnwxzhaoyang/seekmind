@@ -17,6 +17,7 @@ use crate::seekmind::sidecar::default_python_bin;
 use crate::seekmind::storage::{db::sqlite_database_path, fulltext::fulltext_index_dir};
 use crate::seekmind::vision_ocr::has_chinese_vision_language;
 use serde::Deserialize;
+use serde_json::json;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -711,7 +712,13 @@ pub async fn refresh_document(
     let initial_payload = super::models::DocumentRefreshProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
-        message: "正在重新切片文档".to_string(),
+        code: "document.running".to_string(),
+        params: json!({
+            "path": path_string.clone(),
+            "file_name": file_name.clone(),
+            "parser_source": parser_hint.clone(),
+        }),
+        message: "document.running".to_string(),
         path: path_string.clone(),
         file_name: file_name.clone(),
         parser_source: parser_hint.clone(),
@@ -736,6 +743,15 @@ pub async fn refresh_document(
                     super::models::DocumentRefreshProgressView {
                         job_id: task_job_id.clone(),
                         state: "running".to_string(),
+                        code: "document.running".to_string(),
+                        params: json!({
+                            "path": path_string.clone(),
+                            "file_name": file_name.clone(),
+                            "parser_source": "python",
+                            "stage": event.stage,
+                            "current": event.current,
+                            "warning": event.warning,
+                        }),
                         message,
                         path: path_string.clone(),
                         file_name: file_name.clone(),
@@ -853,23 +869,33 @@ pub async fn refresh_document(
                         .get_index_status()
                         .await
                         .unwrap_or_else(|_| task_start_status.clone());
-                    let _ = emit_app.emit(
-                        "seekmind:document-refresh-progress",
-                        super::models::DocumentRefreshProgressView {
-                            job_id: task_job_id.clone(),
-                            state: "failed".to_string(),
-                            message: format!("文档切片失败：{reason}"),
-                            path: path_string.clone(),
-                            file_name: file_name.clone(),
-                            parser_source: match source {
+                        let _ = emit_app.emit(
+                    "seekmind:document-refresh-progress",
+                    super::models::DocumentRefreshProgressView {
+                        job_id: task_job_id.clone(),
+                        state: "failed".to_string(),
+                        code: "document.failed".to_string(),
+                        params: json!({
+                            "path": path_string.clone(),
+                            "file_name": file_name.clone(),
+                            "reason": reason,
+                            "parser_source": match source {
+                                super::storage::types::ParserSource::Python => "python",
+                                super::storage::types::ParserSource::Rust => "rust",
+                            },
+                        }),
+                        message: "document.failed".to_string(),
+                        path: path_string.clone(),
+                        file_name: file_name.clone(),
+                        parser_source: match source {
                                 super::storage::types::ParserSource::Python => "python".to_string(),
                                 super::storage::types::ParserSource::Rust => "rust".to_string(),
                             },
-                            warning: None,
-                            status,
-                            updated_at: chrono::Utc::now().to_rfc3339(),
-                        },
-                    );
+                        warning: None,
+                        status,
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                );
                     return;
                 }
 
@@ -900,7 +926,12 @@ pub async fn refresh_document(
                                         crate::seekmind::models::SemanticRebuildProgressView {
                                             job_id: task_job_id.clone(),
                                             state: "failed".to_string(),
-                                            message: "单文档语义向量更新已跳过".to_string(),
+                                            code: "semantic.document.failed".to_string(),
+                                            params: json!({
+                                                "document": path_string.clone(),
+                                                "reason": warning,
+                                            }),
+                                            message: "semantic.document.failed".to_string(),
                                             source: "document".to_string(),
                                             model: semantic_status.model,
                                             total_chunks: semantic_status.sqlite_chunks,
@@ -926,7 +957,12 @@ pub async fn refresh_document(
                                         crate::seekmind::models::SemanticRebuildProgressView {
                                             job_id: task_job_id.clone(),
                                             state: "failed".to_string(),
-                                            message: "单文档语义向量更新失败".to_string(),
+                                            code: "semantic.document.failed".to_string(),
+                                            params: json!({
+                                                "document": path_string.clone(),
+                                                "reason": error,
+                                            }),
+                                            message: "semantic.document.failed".to_string(),
                                             source: "document".to_string(),
                                             model: semantic_status.model,
                                             total_chunks: semantic_status.sqlite_chunks,
@@ -956,17 +992,30 @@ pub async fn refresh_document(
                     .await
                     .unwrap_or_else(|_| task_start_status.clone());
                 let warning = parser_warning;
-                let message = if warning.is_some() {
-                    "文档切片完成，但已从 Python 回退到 Rust".to_string()
-                } else {
-                    "文档切片完成".to_string()
-                };
                 let _ = emit_app.emit(
                     "seekmind:document-refresh-progress",
                     super::models::DocumentRefreshProgressView {
                         job_id: task_job_id.clone(),
                         state: "completed".to_string(),
-                        message,
+                        code: if warning.is_some() {
+                            "document.completedWithWarning".to_string()
+                        } else {
+                            "document.completed".to_string()
+                        },
+                        params: json!({
+                            "path": path_string.clone(),
+                            "file_name": file_name.clone(),
+                            "parser_source": match source {
+                                super::storage::types::ParserSource::Python => "python",
+                                super::storage::types::ParserSource::Rust => "rust",
+                            },
+                            "warning": warning.clone(),
+                        }),
+                        message: if warning.is_some() {
+                            "document.completedWithWarning".to_string()
+                        } else {
+                            "document.completed".to_string()
+                        },
                         path: path_string.clone(),
                         file_name: file_name.clone(),
                         parser_source: match source {
@@ -993,7 +1042,14 @@ pub async fn refresh_document(
                     super::models::DocumentRefreshProgressView {
                         job_id: task_job_id,
                         state: "failed".to_string(),
-                        message: format!("文档切片失败：{reason}"),
+                        code: "document.failed".to_string(),
+                        params: json!({
+                            "path": path_string.clone(),
+                            "file_name": file_name.clone(),
+                            "reason": reason,
+                            "parser_source": parser_hint.clone(),
+                        }),
+                        message: "document.failed".to_string(),
                         path: path_string,
                         file_name,
                         parser_source: parser_hint,
@@ -1060,7 +1116,9 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
             super::models::IndexRefreshProgressView {
                 job_id: job_id.clone(),
                 state: "running".to_string(),
-                message: "正在修复全文索引".to_string(),
+                code: "index.fulltextRepair.running".to_string(),
+                params: json!({ "scope": "fulltext-repair" }),
+                message: "index.fulltextRepair.running".to_string(),
                 scope: "fulltext-repair".to_string(),
                 path: String::new(),
                 parser_source: String::new(),
@@ -1107,7 +1165,14 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                         super::models::IndexRefreshProgressView {
                             job_id,
                             state: "running".to_string(),
-                            message: format!("正在修复全文索引：{processed}/{total}"),
+                            code: "index.fulltextRepair.running".to_string(),
+                            params: json!({
+                                "scope": "fulltext-repair",
+                                "processed": processed,
+                                "total": total,
+                                "file_name": file_name.clone(),
+                            }),
+                            message: "index.fulltextRepair.running".to_string(),
                             scope: "fulltext-repair".to_string(),
                             path: file_name,
                             parser_source: String::new(),
@@ -1148,7 +1213,9 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                 super::models::IndexRefreshProgressView {
                     job_id: job_id.clone(),
                     state: "failed".to_string(),
-                    message: "全文索引修复失败".to_string(),
+                    code: "index.fulltextRepair.failed".to_string(),
+                    params: json!({ "scope": "fulltext-repair" }),
+                    message: "index.fulltextRepair.failed".to_string(),
                     scope: "fulltext-repair".to_string(),
                     path: String::new(),
                     parser_source: String::new(),
@@ -1166,7 +1233,9 @@ pub async fn repair_fulltext_index_if_needed(app: tauri::AppHandle, database: Da
                 super::models::IndexRefreshProgressView {
                     job_id: job_id.clone(),
                     state: "completed".to_string(),
-                    message: "全文索引修复完成".to_string(),
+                    code: "index.fulltextRepair.completed".to_string(),
+                    params: json!({ "scope": "fulltext-repair" }),
+                    message: "index.fulltextRepair.completed".to_string(),
                     scope: "fulltext-repair".to_string(),
                     path: String::new(),
                     parser_source: String::new(),
@@ -1538,7 +1607,9 @@ pub async fn refresh_index(
     let initial_payload = super::models::IndexRefreshProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
-        message: "正在重新索引本地文档".to_string(),
+        code: "index.all.running".to_string(),
+        params: json!({ "scope": "all" }),
+        message: "index.all.running".to_string(),
         scope: "all".to_string(),
         path: String::new(),
         parser_source: String::new(),
@@ -1562,7 +1633,9 @@ pub async fn refresh_index(
                     super::models::IndexRefreshProgressView {
                         job_id: task_job_id,
                         state: "completed".to_string(),
-                        message: "目录索引完成".to_string(),
+                        code: "index.all.completed".to_string(),
+                        params: json!({ "scope": "all" }),
+                        message: "index.all.completed".to_string(),
                         scope: "all".to_string(),
                         path: String::new(),
                         parser_source: String::new(),
@@ -1583,7 +1656,12 @@ pub async fn refresh_index(
                     super::models::IndexRefreshProgressView {
                         job_id: task_job_id,
                         state: "failed".to_string(),
-                        message: format!("目录索引失败：{error}"),
+                        code: "index.all.failed".to_string(),
+                        params: json!({
+                            "scope": "all",
+                            "error": error.to_string(),
+                        }),
+                        message: "index.all.failed".to_string(),
                         scope: "all".to_string(),
                         path: String::new(),
                         parser_source: String::new(),
@@ -1640,7 +1718,12 @@ pub async fn refresh_index_dir(
     let initial_payload = super::models::IndexRefreshProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
-        message: "正在重新索引目录".to_string(),
+        code: "index.dir.running".to_string(),
+        params: json!({
+            "scope": "dir",
+            "path": normalized_path.clone(),
+        }),
+        message: "index.dir.running".to_string(),
         scope: "dir".to_string(),
         path: normalized_path.clone(),
         parser_source: String::new(),
@@ -1670,7 +1753,12 @@ pub async fn refresh_index_dir(
                     super::models::IndexRefreshProgressView {
                         job_id: task_job_id,
                         state: "completed".to_string(),
-                        message: "目录索引完成".to_string(),
+                        code: "index.dir.completed".to_string(),
+                        params: json!({
+                            "scope": "dir",
+                            "path": path_for_task.clone(),
+                        }),
+                        message: "index.dir.completed".to_string(),
                         scope: "dir".to_string(),
                         path: path_for_task,
                         parser_source: String::new(),
@@ -1691,7 +1779,13 @@ pub async fn refresh_index_dir(
                     super::models::IndexRefreshProgressView {
                         job_id: task_job_id,
                         state: "failed".to_string(),
-                        message: format!("目录索引失败：{error}"),
+                        code: "index.dir.failed".to_string(),
+                        params: json!({
+                            "scope": "dir",
+                            "path": path_for_task.clone(),
+                            "error": error.to_string(),
+                        }),
+                        message: "index.dir.failed".to_string(),
                         scope: "dir".to_string(),
                         path: path_for_task,
                         parser_source: String::new(),
@@ -1891,7 +1985,9 @@ pub async fn refresh_pdf_ocr_tasks(
     let initial_payload = super::models::IndexRefreshProgressView {
         job_id: job_id.clone(),
         state: "running".to_string(),
-        message: "正在重跑 PDF OCR".to_string(),
+        code: "index.pdfOcr.running".to_string(),
+        params: json!({ "scope": "pdf-ocr" }),
+        message: "index.pdfOcr.running".to_string(),
         scope: "pdf-ocr".to_string(),
         path: String::new(),
         parser_source: String::new(),
@@ -1916,7 +2012,9 @@ pub async fn refresh_pdf_ocr_tasks(
                     super::models::IndexRefreshProgressView {
                         job_id: task_job_id,
                         state: "completed".to_string(),
-                        message: "PDF OCR 队列重跑完成".to_string(),
+                        code: "index.pdfOcr.completed".to_string(),
+                        params: json!({ "scope": "pdf-ocr" }),
+                        message: "index.pdfOcr.completed".to_string(),
                         scope: "pdf-ocr".to_string(),
                         path: String::new(),
                         parser_source: String::new(),
@@ -1937,7 +2035,12 @@ pub async fn refresh_pdf_ocr_tasks(
                     super::models::IndexRefreshProgressView {
                         job_id: task_job_id,
                         state: "failed".to_string(),
-                        message: format!("PDF OCR 队列重跑失败：{error}"),
+                        code: "index.pdfOcr.failed".to_string(),
+                        params: json!({
+                            "scope": "pdf-ocr",
+                            "error": error.to_string(),
+                        }),
+                        message: "index.pdfOcr.failed".to_string(),
                         scope: "pdf-ocr".to_string(),
                         path: String::new(),
                         parser_source: String::new(),

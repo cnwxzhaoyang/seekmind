@@ -1011,18 +1011,15 @@
       "document": "Chunk Task",
       "semantic": "Semantic Task"
     },
-    "empty": "No logs yet. Events appear automatically after running index, chunk, or semantic tasks.",
-    "clear": "Clear",
-    "export": "Export Logs",
-    "table": {
-      "content": "Content",
-      "date": "Date"
-    },
-    "events": "{count} events",
     "scope": {
       "index": "Index",
       "document": "Chunk",
       "semantic": "Semantic"
+    },
+    "state": {
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
     },
     "metrics": {
       "documents": "Indexed docs {indexed}/{total}",
@@ -1033,12 +1030,106 @@
       "semanticRebuild": "Vector store needs rebuild",
       "semanticUnavailable": "Vector store unavailable"
     },
+    "messages": {
+      "index": {
+        "all": {
+          "running": "Re-indexing local documents",
+          "completed": "Local indexing completed",
+          "failed": "Local indexing failed"
+        },
+        "dir": {
+          "running": "Re-indexing directory",
+          "completed": "Directory indexing completed",
+          "failed": "Directory indexing failed"
+        },
+        "pdfOcr": {
+          "running": "Re-running PDF OCR",
+          "completed": "PDF OCR queue re-run completed",
+          "failed": "PDF OCR re-run failed"
+        },
+        "fulltextRepair": {
+          "running": "Repairing full-text index",
+          "completed": "Full-text index repair completed",
+          "failed": "Full-text index repair failed"
+        },
+        "parser": {
+          "start": "Parsing started",
+          "extract": "Extracting content blocks",
+          "normalize": "Organizing content blocks",
+          "ocrQueue": "Queueing OCR",
+          "chunk": "Generating chunks",
+          "done": "Parsing completed",
+          "unknown": "Parsing"
+        }
+      },
+      "document": {
+        "running": "Parsing and indexing document",
+        "completed": "Document chunking completed",
+        "completedWithWarning": "Document chunking completed with fallback warning",
+        "failed": "Document chunking failed"
+      },
+      "semantic": {
+        "rebuild": {
+          "running": "Rebuilding semantic vectors",
+          "completed": "Semantic vector rebuild completed",
+          "failed": "Semantic vector rebuild failed"
+        },
+        "document": {
+          "running": "Updating semantic vectors for current document",
+          "completed": "Semantic vectors for current document updated",
+          "failed": "Semantic vectors for current document failed"
+        }
+      }
+    },
+    "exported": "Exported logs: {path}",
+    "exportFailed": "Failed to export logs",
+    "empty": "No logs yet. Events appear automatically after running index, chunk, or semantic tasks.",
+    "clear": "Clear",
+    "export": "Export Logs",
+    "table": {
+      "content": "Content",
+      "date": "Date"
+    },
+    "events": "{count} events",
     "details": {
       "fullIndex": "Full index",
       "fulltextRepair": "Full-text index repair",
       "rebuilding": "Rebuilding embeddings",
+      "file": "File: {path}",
+      "semanticDocument": "Document: {path}",
+      "semanticChunk": "Current chunk: {path}",
       "dir": "Dir: {path}",
       "fallback": "fallback"
+    },
+    "exportMarkdown": {
+      "title": "SeekMind Log Export",
+      "generatedAt": "Generated at",
+      "application": "Application",
+      "buildMode": "Build mode",
+      "platform": "Platform",
+      "dataDir": "Data directory",
+      "cacheDir": "Cache directory",
+      "sqlite": "SQLite",
+      "fullTextIndex": "Full-text index",
+      "summary": "Current summary",
+      "eventCount": "Event count",
+      "indexedDocs": "Indexed docs",
+      "indexedChunks": "Indexed chunks",
+      "scannedDocs": "Scanned docs",
+      "pdfOcrTasks": "PDF OCR tasks",
+      "failedFiles": "Failed files",
+      "currentTask": "Current task",
+      "currentDir": "Current directory",
+      "currentFile": "Current file",
+      "semanticSearch": "Semantic search",
+      "semanticWeight": "Semantic weight",
+      "semanticThreshold": "Semantic threshold",
+      "events": "Log events",
+      "noEvents": "No log events yet",
+      "level": "Level",
+      "message": "Message",
+      "details": "Details",
+      "warning": "Warning"
     }
   },
   "onboarding": {

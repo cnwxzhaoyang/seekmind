@@ -32,7 +32,7 @@ const HEIGHT_MAX = 500;
 const HEIGHT_DEFAULT = 200;
 const STORAGE_KEY = "seekmind.logPanel.height";
 
-const { t } = useI18n();
+const { t, te, locale } = useI18n();
 const { quickDirs, recentDocuments, favorites } = useQuickAccessData();
 const { infoMessage: exportInfoMessage } = useInfoMessage();
 
@@ -107,12 +107,128 @@ const parserSourceLabel = (source?: string | null) => {
   return t("common.unknown");
 };
 
+const leafName = (value?: string | null) => {
+  if (!value) return "";
+  return value.split(/[\\/]/).filter(Boolean).pop() || value;
+};
+
+const indexLogMessage = (scope: string, state: string) => {
+  if (scope === "pdf-ocr") {
+    if (state === "completed") return t("logPanel.messages.indexPdfOcr.completed");
+    if (state === "failed") return t("logPanel.messages.indexPdfOcr.failed");
+    return t("logPanel.messages.indexPdfOcr.running");
+  }
+  if (scope === "dir") {
+    if (state === "completed") return t("logPanel.messages.indexDir.completed");
+    if (state === "failed") return t("logPanel.messages.indexDir.failed");
+    return t("logPanel.messages.indexDir.running");
+  }
+  if (scope === "fulltext-repair") {
+    if (state === "completed") return t("logPanel.messages.fulltextRepair.completed");
+    if (state === "failed") return t("logPanel.messages.fulltextRepair.failed");
+    return t("logPanel.messages.fulltextRepair.running");
+  }
+  if (state === "completed") return t("logPanel.messages.indexAll.completed");
+  if (state === "failed") return t("logPanel.messages.indexAll.failed");
+  return t("logPanel.messages.indexAll.running");
+};
+
+const indexEventCode = (scope: string, state: string) => {
+  if (scope === "pdf-ocr") return `index.pdfOcr.${state}`;
+  if (scope === "dir") return `index.dir.${state}`;
+  if (scope === "fulltext-repair") return `index.fulltextRepair.${state}`;
+  return `index.all.${state}`;
+};
+
+const documentLogMessage = (state: string, warning?: string | null) => {
+  if (state === "completed") {
+    return warning ? t("logPanel.messages.documentCompletedWithWarning") : t("logPanel.messages.documentCompleted");
+  }
+  if (state === "failed") {
+    return t("logPanel.messages.documentFailed");
+  }
+  return t("logPanel.messages.documentRunning");
+};
+
+const documentEventCode = (state: string, warning?: string | null) => {
+  if (state === "completed" && warning) return "document.completedWithWarning";
+  return `document.${state}`;
+};
+
+const semanticLogMessage = (source: string, state: string) => {
+  if (source === "document") {
+    if (state === "completed") return t("logPanel.messages.semanticDocumentCompleted");
+    if (state === "failed") return t("logPanel.messages.semanticDocumentFailed");
+    return t("logPanel.messages.semanticDocumentRunning");
+  }
+  if (state === "completed") return t("logPanel.messages.semanticRebuildCompleted");
+  if (state === "failed") return t("logPanel.messages.semanticRebuildFailed");
+  return t("logPanel.messages.semanticRebuildRunning");
+};
+
+const semanticEventCode = (source: string, state: string) => {
+  if (source === "document") return `semantic.document.${state}`;
+  return `semantic.rebuild.${state}`;
+};
+
+const translateLogMessage = (code: string, params: Record<string, unknown>, fallback: string) => {
+  const key = `logPanel.messages.${code}`;
+  // 修复：日志文本统一走前端 i18n，Rust 侧只负责传状态码和参数。
+  return te(key) ? t(key, params) : fallback;
+};
+
+const taskStateLabel = (state?: string | null) => {
+  if (state === "completed") return t("logPanel.state.completed");
+  if (state === "failed") return t("logPanel.state.failed");
+  if (state === "running") return t("logPanel.state.running");
+  return state || t("common.unknown");
+};
+
 const indexDetailsWithParser = (details: string, parserSource?: string | null) => {
   const parserLabel = parserSourceLabel(parserSource);
   if (!parserLabel || parserLabel === t("common.unknown")) {
     return details;
   }
   return details ? `${details} · ${parserLabel}` : parserLabel;
+};
+
+const indexDetailsLabel = (payload: IndexRefreshProgressView) => {
+  const params = payload.params as Record<string, unknown>;
+  const fileNameParam = typeof params.file_name === "string" ? params.file_name : "";
+  const currentParam = typeof params.current === "string" ? params.current : "";
+  const currentPath =
+    leafName(payload.path) ||
+    leafName(fileNameParam) ||
+    leafName(currentParam) ||
+    leafName(payload.status.current_task?.current_file || "");
+  if (payload.scope === "dir" && payload.path) {
+    return t("logPanel.details.dir", { path: payload.path });
+  }
+  if (payload.scope === "fulltext-repair") {
+    return t("logPanel.details.fulltextRepair");
+  }
+  if (currentPath) {
+    return t("logPanel.details.file", { path: currentPath });
+  }
+  return t("logPanel.details.fullIndex");
+};
+
+const semanticDetailsLabel = (payload: SemanticRebuildProgressView) => {
+  const params = payload.params as Record<string, unknown>;
+  const currentDocument = typeof params.document === "string" ? params.document : payload.current_document;
+  const currentChunk = typeof params.current_chunk === "string" ? params.current_chunk : payload.current_chunk;
+  const documentLabel = currentDocument ? t("logPanel.details.semanticDocument", { path: leafName(currentDocument) }) : "";
+  const chunkLabel = currentChunk ? t("logPanel.details.semanticChunk", { path: currentChunk }) : "";
+  if (documentLabel && chunkLabel) {
+    return `${documentLabel} · ${chunkLabel}`;
+  }
+  if (documentLabel) {
+    return documentLabel;
+  }
+  if (chunkLabel) {
+    return chunkLabel;
+  }
+  return t("logPanel.details.rebuilding");
 };
 
 const pushLog = (entry: Omit<LogEntry, "id" | "timestamp">) => {
@@ -125,7 +241,7 @@ const pushLog = (entry: Omit<LogEntry, "id" | "timestamp">) => {
 
 const formatEntryTimestamp = (timestamp: string) => {
   const date = new Date(timestamp);
-  return date.toLocaleString([], {
+  return date.toLocaleString(locale.value, {
     hour12: false,
     year: "numeric",
     month: "2-digit",
@@ -232,15 +348,16 @@ const installListeners = async () => {
     indexStatus.value = payload.status;
     const scope: LogScope = "index";
     const level: LogLevel = payload.state === "failed" ? "error" : payload.state === "completed" ? "success" : "info";
-    const details = payload.scope === "fulltext-repair"
-      ? (payload.path || t("logPanel.details.fulltextRepair"))
-      : payload.scope === "dir" && payload.path
-        ? t("logPanel.details.dir", { path: payload.path })
-        : t("logPanel.details.fullIndex");
+    const message = translateLogMessage(
+      payload.code || indexEventCode(payload.scope, payload.state),
+      payload.params || {},
+      payload.message || indexLogMessage(payload.scope, payload.state),
+    );
+    const details = indexDetailsLabel(payload);
     pushLog({
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
-      message: payload.message,
+      message,
       details: indexDetailsWithParser(details, payload.parser_source),
     });
   });
@@ -252,13 +369,17 @@ const installListeners = async () => {
       payload.state === "failed" ? "error"
         : payload.warning ? "warning"
           : payload.state === "completed" ? "success" : "info";
+    const message = translateLogMessage(
+      payload.code || documentEventCode(payload.state, payload.warning),
+      payload.params || {},
+      payload.message || documentLogMessage(payload.state, payload.warning),
+    );
     pushLog({
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
-      message: payload.message,
-      details: payload.state === "failed"
-        ? `${payload.file_name} · ${parserSourceLabel(payload.parser_source)} · ${payload.message}`
-        : `${payload.file_name} · ${parserSourceLabel(payload.parser_source)}`,
+      message,
+      // 修复：失败分支不直接透出 Rust 侧原文，只保留可国际化的文件信息和链路信息。
+      details: `${payload.file_name} · ${parserSourceLabel(payload.parser_source)}`,
       warning: payload.warning || undefined,
     });
   });
@@ -282,11 +403,16 @@ const installListeners = async () => {
         void loadMetrics();
       }
     }
+    const message = translateLogMessage(
+      payload.code || semanticEventCode(payload.source, payload.state),
+      payload.params || {},
+      payload.message || semanticLogMessage(payload.source, payload.state),
+    );
     pushLog({
       scope, level,
       title: t(scopeMeta[scope].taskLabel),
-      message: payload.message,
-      details: payload.current_document || t("logPanel.details.rebuilding"),
+      message,
+      details: semanticDetailsLabel(payload),
     });
   });
 
@@ -319,62 +445,62 @@ const buildExportContent = () => {
   const settings = indexSettings.value;
 
   const lines: string[] = [
-    "# SeekMind 日志导出",
+    `# ${t("logPanel.exportMarkdown.title")}`,
     "",
-    `- 生成时间: ${generatedAt}`,
+    `- ${t("logPanel.exportMarkdown.generatedAt")}: ${generatedAt}`,
   ];
 
   if (runtime) {
-    lines.push(`- 应用: ${runtime.app_name} ${runtime.app_version}`);
-    lines.push(`- 构建模式: ${runtime.build_mode}`);
-    lines.push(`- 平台: ${runtime.target_os} / ${runtime.target_arch}`);
-    lines.push(`- 数据目录: ${runtime.data_dir}`);
-    lines.push(`- 缓存目录: ${runtime.cache_dir}`);
-    lines.push(`- SQLite: ${runtime.sqlite_path}`);
-    lines.push(`- 全文索引: ${runtime.tantivy_dir}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.application")}: ${runtime.app_name} ${runtime.app_version}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.buildMode")}: ${runtime.build_mode}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.platform")}: ${runtime.target_os} / ${runtime.target_arch}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.dataDir")}: ${runtime.data_dir}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.cacheDir")}: ${runtime.cache_dir}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.sqlite")}: ${runtime.sqlite_path}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.fullTextIndex")}: ${runtime.tantivy_dir}`);
   }
 
   lines.push("");
-  lines.push("## 当前运行摘要");
-  lines.push(`- 日志事件数: ${entries.value.length}`);
+  lines.push(`## ${t("logPanel.exportMarkdown.summary")}`);
+  lines.push(`- ${t("logPanel.exportMarkdown.eventCount")}: ${entries.value.length}`);
   lines.push(`- ${sqliteLabel.value}`);
   lines.push(`- ${tantivyLabel.value}`);
   lines.push(`- ${t("page.appSearch.semanticWeight", { weight: semanticWeightLabel.value })}`);
 
   if (status) {
-    lines.push(`- 已索引文档: ${status.indexed_docs}`);
-    lines.push(`- 已索引切片: ${status.indexed_chunks}`);
-    lines.push(`- 扫描文档: ${status.scanned_docs}`);
-    lines.push(`- PDF OCR 任务: ${status.pdf_ocr_tasks}`);
-    lines.push(`- 失败文件: ${status.failed_files}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.indexedDocs")}: ${status.indexed_docs}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.indexedChunks")}: ${status.indexed_chunks}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.scannedDocs")}: ${status.scanned_docs}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.pdfOcrTasks")}: ${status.pdf_ocr_tasks}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.failedFiles")}: ${status.failed_files}`);
     if (status.current_task) {
-      lines.push(`- 当前任务: ${status.current_task.label} · ${status.current_task.state}`);
-      lines.push(`- 当前目录: ${status.current_task.current_dir || "-"}`);
-      lines.push(`- 当前文件: ${status.current_task.current_file || "-"}`);
+      lines.push(`- ${t("logPanel.exportMarkdown.currentTask")}: ${status.current_task.label} · ${taskStateLabel(status.current_task.state)}`);
+      lines.push(`- ${t("logPanel.exportMarkdown.currentDir")}: ${status.current_task.current_dir || "-"}`);
+      lines.push(`- ${t("logPanel.exportMarkdown.currentFile")}: ${status.current_task.current_file || "-"}`);
     }
   }
 
   if (settings) {
-    lines.push(`- 语义搜索: ${settings.semantic_search_enabled ? "启用" : "关闭"}`);
-    lines.push(`- 语义权重: ${Math.round(settings.semantic_weight * 100)}%`);
-    lines.push(`- 语义阈值: ${Math.round(settings.semantic_threshold * 100)}%`);
+    lines.push(`- ${t("logPanel.exportMarkdown.semanticSearch")}: ${settings.semantic_search_enabled ? t("common.enabled") : t("common.disabled")}`);
+    lines.push(`- ${t("logPanel.exportMarkdown.semanticWeight")}: ${Math.round(settings.semantic_weight * 100)}%`);
+    lines.push(`- ${t("logPanel.exportMarkdown.semanticThreshold")}: ${Math.round(settings.semantic_threshold * 100)}%`);
   }
 
   lines.push("");
-  lines.push("## 日志事件");
+  lines.push(`## ${t("logPanel.exportMarkdown.events")}`);
   if (entries.value.length === 0) {
-    lines.push("- 暂无日志事件");
+    lines.push(`- ${t("logPanel.exportMarkdown.noEvents")}`);
   } else {
     entries.value
       .slice()
       .reverse()
       .forEach((entry) => {
         lines.push(`### [${formatExportTimestamp(entry.timestamp)}] ${t(scopeMeta[entry.scope].label)} / ${entry.title}`);
-        lines.push(`- 级别: ${entry.level}`);
-        lines.push(`- 消息: ${entry.message}`);
-        lines.push(`- 详情: ${entry.details}`);
+        lines.push(`- ${t("logPanel.exportMarkdown.level")}: ${entry.level}`);
+        lines.push(`- ${t("logPanel.exportMarkdown.message")}: ${entry.message}`);
+        lines.push(`- ${t("logPanel.exportMarkdown.details")}: ${entry.details}`);
         if (entry.warning) {
-          lines.push(`- 警告: ${entry.warning}`);
+          lines.push(`- ${t("logPanel.exportMarkdown.warning")}: ${entry.warning}`);
         }
         lines.push("");
       });
@@ -401,11 +527,11 @@ const exportLogs = async () => {
     const savedPath = await seekMindApi.exportLogMarkdown(filePath, content);
     console.info(`[SeekMind] log export saved to ${filePath}`);
     exportTone.value = "success";
-    exportInfoMessage.value = `已导出日志：${savedPath}`;
+    exportInfoMessage.value = t("logPanel.exported", { path: savedPath });
   } catch (error) {
     console.error("[SeekMind] log export failed", error);
     exportTone.value = "error";
-    exportInfoMessage.value = error instanceof Error ? error.message : "导出日志失败";
+    exportInfoMessage.value = error instanceof Error ? error.message : t("logPanel.exportFailed");
   } finally {
     exporting.value = false;
   }

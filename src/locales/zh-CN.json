@@ -986,7 +986,7 @@
       "cleared": "已清空全部索引",
       "confirmClear": "确认清空全部索引？这不会删除原始文件，只会清理本地索引数据。",
       "confirmRemoveDir": "确认删除索引目录？\n{path}",
-      "language": "界面语言",
+      "language": "语言",
       "languageSystem": "跟随系统",
       "languageCurrent": "当前语言",
       "theme": "主题",
@@ -1013,6 +1013,11 @@
       "document": "切片",
       "semantic": "语义"
     },
+    "state": {
+      "running": "进行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
     "metrics": {
       "documents": "已入库文档 {indexed}/{total}",
       "chunks": "已建切片 {count}",
@@ -1022,6 +1027,59 @@
       "semanticRebuild": "向量库待重建",
       "semanticUnavailable": "向量库不可用"
     },
+    "messages": {
+      "index": {
+        "all": {
+          "running": "正在重新索引本地文档",
+          "completed": "本地索引完成",
+          "failed": "本地索引失败"
+        },
+        "dir": {
+          "running": "正在重新索引目录",
+          "completed": "目录索引完成",
+          "failed": "目录索引失败"
+        },
+        "pdfOcr": {
+          "running": "正在重跑 PDF OCR",
+          "completed": "PDF OCR 队列重跑完成",
+          "failed": "PDF OCR 重跑失败"
+        },
+        "fulltextRepair": {
+          "running": "正在修复全文索引",
+          "completed": "全文索引修复完成",
+          "failed": "全文索引修复失败"
+        },
+        "parser": {
+          "start": "正在开始解析",
+          "extract": "正在提取内容块",
+          "normalize": "正在整理内容块",
+          "ocrQueue": "正在排队 OCR",
+          "chunk": "正在生成切片",
+          "done": "解析完成",
+          "unknown": "解析中"
+        }
+      },
+      "document": {
+        "running": "正在解析并索引文档",
+        "completed": "文档切片完成",
+        "completedWithWarning": "文档切片完成，存在回退提示",
+        "failed": "文档切片失败"
+      },
+      "semantic": {
+        "rebuild": {
+          "running": "正在重建语义向量",
+          "completed": "语义向量重建完成",
+          "failed": "语义向量重建失败"
+        },
+        "document": {
+          "running": "正在更新当前文档的语义向量",
+          "completed": "当前文档语义向量更新完成",
+          "failed": "当前文档语义向量更新失败"
+        }
+      }
+    },
+    "exported": "已导出日志：{path}",
+    "exportFailed": "导出日志失败",
     "empty": "暂无日志，执行索引、切片或语义任务后会自动显示事件。",
     "clear": "清空",
     "export": "导出日志",
@@ -1034,8 +1092,41 @@
       "fullIndex": "全量索引",
       "fulltextRepair": "全文索引修复",
       "rebuilding": "正在重建向量",
+      "file": "文件：{path}",
+      "semanticDocument": "文档：{path}",
+      "semanticChunk": "当前块：{path}",
       "dir": "目录：{path}",
       "fallback": "回退"
+    },
+    "exportMarkdown": {
+      "title": "SeekMind 日志导出",
+      "generatedAt": "生成时间",
+      "application": "应用",
+      "buildMode": "构建模式",
+      "platform": "平台",
+      "dataDir": "数据目录",
+      "cacheDir": "缓存目录",
+      "sqlite": "SQLite",
+      "fullTextIndex": "全文索引",
+      "summary": "当前运行摘要",
+      "eventCount": "日志事件数",
+      "indexedDocs": "已索引文档",
+      "indexedChunks": "已索引切片",
+      "scannedDocs": "扫描文档",
+      "pdfOcrTasks": "PDF OCR 任务",
+      "failedFiles": "失败文件",
+      "currentTask": "当前任务",
+      "currentDir": "当前目录",
+      "currentFile": "当前文件",
+      "semanticSearch": "语义搜索",
+      "semanticWeight": "语义权重",
+      "semanticThreshold": "语义阈值",
+      "events": "日志事件",
+      "noEvents": "暂无日志事件",
+      "level": "级别",
+      "message": "消息",
+      "details": "详情",
+      "warning": "警告"
     }
   },
   "onboarding": {
