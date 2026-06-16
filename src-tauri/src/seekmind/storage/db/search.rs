@@ -10,6 +10,7 @@ use crate::seekmind::models::{
 };
 use crate::seekmind::search::{normalize_query, rewrite_query_terms, rewrite_search_text};
 use crate::seekmind::semantic::store as semantic_store;
+use crate::seekmind::storage::fulltext::SearchHit;
 use crate::seekmind::storage::types::{ChunkRecord, ExtractedDocument};
 
 use super::collections::favorite_result_target;
@@ -539,6 +540,10 @@ impl Database {
             .filter(|hit| hit.score >= semantic_threshold)
             .collect();
         let semantic_filtered_count = semantic_candidate_count.saturating_sub(semantic_hits.len());
+        let semantic_hit_map = semantic_hits
+            .iter()
+            .map(|hit| (hit.chunk_id.clone(), hit.score))
+            .collect::<HashMap<_, _>>();
 
         if keyword_hits.is_empty() && semantic_hits.is_empty() {
             return Ok(SearchDebugData {
@@ -764,8 +769,9 @@ impl Database {
             right
                 .final_score
                 .partial_cmp(&left.final_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            .unwrap_or(std::cmp::Ordering::Equal)
         });
+        let final_candidates_snapshot = final_candidates.clone();
 
         let mut final_results = Vec::new();
         for (index, candidate) in final_candidates.into_iter().enumerate() {
@@ -781,6 +787,36 @@ impl Database {
             final_results.push(result);
         }
         final_results.truncate(limit.max(1));
+
+        if search_trace_enabled() {
+            let merged_sources = chunk_ids
+                .iter()
+                .map(|chunk_id| {
+                    let mut sources = Vec::new();
+                    if keyword_score_map.contains_key(chunk_id) {
+                        sources.push("keyword");
+                    }
+                    if semantic_hit_map.contains_key(chunk_id) {
+                        sources.push("vector");
+                    }
+                    let source = if sources.is_empty() {
+                        "unknown".to_string()
+                    } else {
+                        sources.join("+")
+                    };
+                    (chunk_id.clone(), source)
+                })
+                .collect::<Vec<_>>();
+            log_search_trace(
+                query,
+                &keyword_hits,
+                &semantic_candidates,
+                &semantic_hits,
+                &merged_sources,
+                &final_candidates_snapshot,
+                &final_results,
+            );
+        }
 
         Ok(SearchDebugData {
             hits: final_results,
@@ -929,6 +965,103 @@ impl Database {
         }
 
         Ok(result)
+    }
+}
+
+fn search_trace_enabled() -> bool {
+    // 修复：开发环境需要可读的检索链路日志，但正式版本不应默认污染控制台。
+    cfg!(debug_assertions) || std::env::var_os("SEEKMIND_SEARCH_TRACE").is_some()
+}
+
+fn format_score(value: f32) -> String {
+    if (value - value.round()).abs() < 0.005 {
+        format!("{value:.0}")
+    } else if value.abs() >= 10.0 {
+        format!("{value:.2}")
+    } else {
+        format!("{value:.3}")
+    }
+}
+
+fn top_hit_lines<T, F>(items: &[T], mapper: F) -> Vec<String>
+where
+    F: Fn(&T) -> (String, f32),
+{
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let (id, score) = mapper(item);
+            format!("  {}. {} score={}", index + 1, id, format_score(score))
+        })
+        .collect()
+}
+
+fn final_result_lines(results: &[SearchResultView]) -> Vec<String> {
+    results
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            format!(
+                "  {}. {} score={} origin={}",
+                index + 1,
+                item.id,
+                format_score(item.score),
+                item.match_origin
+            )
+        })
+        .collect()
+}
+
+fn log_search_trace(
+    query: &str,
+    keyword_hits: &[SearchHit],
+    semantic_candidates: &[crate::seekmind::models::SemanticDebugHitView],
+    semantic_hits: &[crate::seekmind::models::SemanticDebugHitView],
+    merged_sources: &[(String, String)],
+    after_filter_candidates: &[SearchResultCandidate],
+    final_results: &[SearchResultView],
+) {
+    eprintln!("[SeekMind] search trace");
+    eprintln!("query = {query}");
+
+    eprintln!("keyword_top_k:");
+    for line in top_hit_lines(keyword_hits, |hit| (hit.chunk_id.clone(), hit.score)) {
+        eprintln!("{line}");
+    }
+
+    eprintln!("vector_top_k:");
+    for line in top_hit_lines(semantic_candidates, |hit| (hit.chunk_id.clone(), hit.score)) {
+        eprintln!("{line}");
+    }
+
+    eprintln!("merged:");
+    for (index, (chunk_id, source)) in merged_sources.iter().enumerate() {
+        eprintln!("  {}. {} source={}", index + 1, chunk_id, source);
+    }
+
+    eprintln!("after_filter:");
+    for (index, candidate) in after_filter_candidates.iter().enumerate() {
+        eprintln!(
+            "  {}. {} score={} final_score={} semantic_only={}",
+            index + 1,
+            candidate.result.id,
+            format_score(candidate.raw_score),
+            format_score(candidate.final_score),
+            candidate.semantic_only
+        );
+    }
+
+    eprintln!("final:");
+    for line in final_result_lines(final_results) {
+        eprintln!("{line}");
+    }
+
+    if !semantic_hits.is_empty() {
+        eprintln!("semantic_after_filter:");
+        for line in top_hit_lines(semantic_hits, |hit| (hit.chunk_id.clone(), hit.score)) {
+            eprintln!("{line}");
+        }
     }
 }
 
