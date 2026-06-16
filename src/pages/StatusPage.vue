@@ -1390,9 +1390,9 @@ onBeforeUnmount(() => {
                   :style="{ width: indexProgressPercent + '%' }"
                 ></div>
               </div>
-              <div class="progress-current">
+              <div class="progress-current" :title="status?.current_task?.current_file ?? '-'">
                 {{ t("page.status.progress.currentFile") }}：
-                <span class="file-name-highlight">{{
+                <span class="file-name-highlight truncate-inline">{{
                   status?.current_task?.current_file ?? "-"
                 }}</span>
               </div>
@@ -2187,11 +2187,21 @@ onBeforeUnmount(() => {
 .progress-current {
   font-size: 12px;
   color: var(--color-text-secondary);
+  min-width: 0;
 }
 
 .file-name-highlight {
   color: var(--color-accent);
   font-weight: 500;
+}
+
+.truncate-inline {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 索引进度：保持为紧凑的卡片行，和索引统计一致。 */

@@ -344,13 +344,13 @@ onBeforeUnmount(() => {
         <div class="mt-3 grid gap-3 text-sm text-secondary md:grid-cols-2">
           <div>
             <div class="seekmind-item-meta">{{ t("semantic.currentDirDoc") }}</div>
-            <div class="mt-1 break-all text-primary">
+            <div class="mt-1 truncate text-primary" :title="semanticRebuildProgress.current_document || t('semantic.none')">
               {{ semanticRebuildProgress.current_document || t("semantic.none") }}
             </div>
           </div>
           <div>
             <div class="seekmind-item-meta">{{ t("semantic.currentChunk") }}</div>
-            <div class="mt-1 break-all text-primary">
+            <div class="mt-1 truncate text-primary" :title="semanticRebuildProgress.current_chunk || t('semantic.none')">
               {{ semanticRebuildProgress.current_chunk || t("semantic.none") }}
             </div>
           </div>
