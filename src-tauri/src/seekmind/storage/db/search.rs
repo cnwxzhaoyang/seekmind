@@ -44,9 +44,12 @@ pub(crate) struct SearchDebugData {
 #[derive(Debug, Clone)]
 struct SearchResultCandidate {
     result: SearchResultView,
+    document_key: String,
     raw_score: f32,
     final_score: f32,
-    semantic_only: bool,
+    keyword_rank: Option<usize>,
+    semantic_rank: Option<usize>,
+    rrf_score: f32,
 }
 
 impl Database {
@@ -541,10 +544,6 @@ impl Database {
             .filter(|hit| hit.score >= semantic_threshold)
             .collect();
         let semantic_filtered_count = semantic_candidate_count.saturating_sub(semantic_hits.len());
-        let semantic_hit_map = semantic_hits
-            .iter()
-            .map(|hit| (hit.chunk_id.clone(), hit.score))
-            .collect::<HashMap<_, _>>();
 
         if keyword_hits.is_empty() && semantic_hits.is_empty() {
             return Ok(SearchDebugData {
@@ -572,13 +571,17 @@ impl Database {
         }
 
         let mut keyword_score_map = HashMap::<String, f32>::new();
-        for hit in &keyword_hits {
+        let mut keyword_rank_map = HashMap::<String, usize>::new();
+        for (index, hit) in keyword_hits.iter().enumerate() {
             keyword_score_map.insert(hit.chunk_id.clone(), hit.score);
+            keyword_rank_map.insert(hit.chunk_id.clone(), index + 1);
         }
 
         let mut semantic_score_map = HashMap::<String, f32>::new();
-        for hit in &semantic_hits {
+        let mut semantic_rank_map = HashMap::<String, usize>::new();
+        for (index, hit) in semantic_hits.iter().enumerate() {
             semantic_score_map.insert(hit.chunk_id.clone(), hit.score);
+            semantic_rank_map.insert(hit.chunk_id.clone(), index + 1);
         }
 
         let mut chunk_ids = keyword_hits
@@ -599,13 +602,24 @@ impl Database {
             rows_by_id.insert(row.id.clone(), row);
         }
 
-        let mut results = Vec::new();
         let normalized_terms = normalize_query(query);
         let now = current_unix_ts();
-        for chunk_id in chunk_ids.clone() {
-            if let Some(row) = rows_by_id.remove(&chunk_id) {
-                let keyword_score = keyword_score_map.get(&chunk_id).copied().unwrap_or(0.0);
-                let semantic_score = semantic_score_map.get(&chunk_id).copied().unwrap_or(0.0);
+        // 修复：混合检索不能继续沿用“关键词结果先入队”的拼接策略，RRF 先把两路召回统一到同一排名尺度。
+        let rrf_k = 60.0_f32;
+        let keyword_rrf_weight = 0.7_f32;
+        let vector_rrf_weight = 1.0_f32;
+        let mut candidates = Vec::new();
+        for chunk_id in &chunk_ids {
+            if let Some(row) = rows_by_id.remove(chunk_id) {
+                let keyword_score = keyword_score_map.get(chunk_id).copied().unwrap_or(0.0);
+                let semantic_score = semantic_score_map.get(chunk_id).copied().unwrap_or(0.0);
+                let keyword_rank = keyword_rank_map.get(chunk_id).copied();
+                let semantic_rank = semantic_rank_map.get(chunk_id).copied();
+                let fusion_score =
+                    keyword_rank.map(|rank| keyword_rrf_weight / (rrf_k + rank as f32)).unwrap_or(0.0)
+                        + semantic_rank
+                            .map(|rank| vector_rrf_weight / (rrf_k + rank as f32))
+                            .unwrap_or(0.0);
                 let title_score = if row.heading.trim().is_empty() {
                     0.0
                 } else if super::contains_all_terms(&row.heading, &normalized_terms) {
@@ -663,26 +677,26 @@ impl Database {
                     row.modified_at,
                     now,
                 );
-                let base_score = if keyword_score > 0.0 {
-                    keyword_score + semantic_score.max(0.0) * semantic_weight
-                } else {
-                    semantic_score.max(0.0)
-                };
                 let chunk_weight = row.score.clamp(0.25, 1.0);
-                let raw_score =
-                    super::boosted_search_score(base_score * chunk_weight, &match_origin, row.modified_at, now);
+                let raw_score = super::boosted_search_score(
+                    fusion_score * chunk_weight,
+                    &match_origin,
+                    row.modified_at,
+                    now,
+                );
                 let weighted_title_score = title_score * settings.title_weight;
                 let weighted_filename_score = filename_score * settings.filename_weight;
                 let weighted_preference_score = preference_score * settings.preference_weight;
                 let final_score =
                     raw_score + weighted_preference_score + weighted_title_score + weighted_filename_score;
                 let mut rank_reason = rank_reason;
-                rank_reason.base_score = base_score;
+                rank_reason.base_score = fusion_score;
                 rank_reason.raw_score = raw_score;
                 rank_reason.title_score = weighted_title_score;
                 rank_reason.filename_score = weighted_filename_score;
                 rank_reason.preference_score = weighted_preference_score;
-                results.push(SearchResultCandidate {
+                let document_key = row.path.clone();
+                candidates.push(SearchResultCandidate {
                     result: SearchResultView {
                         id: row.id,
                         file_name: row.file_name,
@@ -703,80 +717,62 @@ impl Database {
                         score: final_score,
                         rank_reason,
                         preview_blocks: preview_blocks_by_chunk_id
-                            .remove(&chunk_id)
+                            .remove(chunk_id)
                             .unwrap_or_default(),
                     },
+                    document_key,
                     raw_score,
                     final_score,
-                    semantic_only: semantic_score > 0.0 && keyword_score == 0.0,
+                    keyword_rank,
+                    semantic_rank,
+                    rrf_score: fusion_score,
                 });
             }
         }
 
-        let mut original_rank_map = HashMap::<String, usize>::new();
-        let mut original_order = results.clone();
-        original_order.sort_by(|left, right| {
+        let mut ranked_candidates = candidates.clone();
+        ranked_candidates.sort_by(|left, right| {
             right
-                .raw_score
-                .partial_cmp(&left.raw_score)
+                .final_score
+                .partial_cmp(&left.final_score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        for (index, candidate) in original_order.iter().enumerate() {
+        let ranked_candidates_snapshot = ranked_candidates.clone();
+
+        let mut original_rank_map = HashMap::<String, usize>::new();
+        for (index, candidate) in ranked_candidates.iter().enumerate() {
             original_rank_map.insert(candidate.result.id.clone(), index + 1);
         }
 
-        results.sort_by(|left, right| {
-            right
-                .final_score
-                .partial_cmp(&left.final_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let semantic_floor = if semantic_enabled && semantic_hits.len() > 0 {
-            limit.max(1).min((limit.max(1) / 5).max(1)).min(3)
-        } else {
-            0
-        };
+        let same_document_cap = same_document_cap(limit.max(1));
         let mut selected = Vec::new();
-        if semantic_floor > 0 {
-            let semantic_reserved: Vec<_> = results
-                .iter()
-                .filter(|candidate| candidate.semantic_only)
-                .take(semantic_floor)
-                .cloned()
-                .collect();
-            selected.extend(semantic_reserved);
+        let mut overflow = Vec::new();
+        let mut document_counts = HashMap::<String, usize>::new();
+        for candidate in ranked_candidates.into_iter() {
+            let count = document_counts.entry(candidate.document_key.clone()).or_insert(0);
+            if *count < same_document_cap {
+                *count += 1;
+                selected.push(candidate);
+            } else {
+                overflow.push(candidate);
+            }
         }
 
-        let selected_ids = selected
-            .iter()
-            .map(|candidate| candidate.result.id.clone())
-            .collect::<HashSet<_>>();
-
-        let mut remainder = results
-            .into_iter()
-            .filter(|candidate| !selected_ids.contains(&candidate.result.id))
-            .collect::<Vec<_>>();
-        remainder.sort_by(|left, right| {
+        // 修复：最终结果需要保留一定文档多样性，避免同一文档在 TopN 中连续刷屏。
+        let result_limit = limit.max(1);
+        if selected.len() < result_limit {
+            selected.extend(overflow.into_iter().take(result_limit - selected.len()));
+        }
+        selected.sort_by(|left, right| {
             right
                 .final_score
                 .partial_cmp(&left.final_score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-
-        let mut final_candidates = selected;
-        let remaining_slots = limit.max(1).saturating_sub(final_candidates.len());
-        final_candidates.extend(remainder.into_iter().take(remaining_slots));
-        final_candidates.sort_by(|left, right| {
-            right
-                .final_score
-                .partial_cmp(&left.final_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let final_candidates_snapshot = final_candidates.clone();
+        let final_candidates_snapshot = selected.clone();
 
         let mut final_results = Vec::new();
-        for (index, candidate) in final_candidates.into_iter().enumerate() {
+        for (index, candidate) in selected.into_iter().enumerate() {
             let mut result = candidate.result;
             let original_rank = original_rank_map
                 .get(&result.id)
@@ -788,7 +784,7 @@ impl Database {
             result.rank_reason.rank_delta = original_rank as isize - final_rank as isize;
             final_results.push(result);
         }
-        final_results.truncate(limit.max(1));
+        final_results.truncate(result_limit);
 
         if search_trace_enabled() {
             let merged_sources = chunk_ids_snapshot
@@ -798,7 +794,7 @@ impl Database {
                     if keyword_score_map.contains_key(chunk_id) {
                         sources.push("keyword");
                     }
-                    if semantic_hit_map.contains_key(chunk_id) {
+                    if semantic_score_map.contains_key(chunk_id) {
                         sources.push("vector");
                     }
                     let source = if sources.is_empty() {
@@ -815,6 +811,7 @@ impl Database {
                 &semantic_candidates_snapshot,
                 &semantic_hits,
                 &merged_sources,
+                &ranked_candidates_snapshot,
                 &final_candidates_snapshot,
                 &final_results,
             );
@@ -985,6 +982,28 @@ fn format_score(value: f32) -> String {
     }
 }
 
+fn format_optional_rank(rank: Option<usize>) -> String {
+    rank.map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn candidate_source_label(keyword_rank: Option<usize>, semantic_rank: Option<usize>) -> &'static str {
+    match (keyword_rank, semantic_rank) {
+        (Some(_), Some(_)) => "keyword+vector",
+        (Some(_), None) => "keyword",
+        (None, Some(_)) => "vector",
+        (None, None) => "unknown",
+    }
+}
+
+fn same_document_cap(limit: usize) -> usize {
+    if limit <= 5 {
+        2
+    } else {
+        3
+    }
+}
+
 fn top_hit_lines<T, F>(items: &[T], mapper: F) -> Vec<String>
 where
     F: Fn(&T) -> (String, f32),
@@ -1015,13 +1034,35 @@ fn final_result_lines(results: &[SearchResultView]) -> Vec<String> {
         .collect()
 }
 
+fn final_candidate_lines(candidates: &[SearchResultCandidate]) -> Vec<String> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| {
+            format!(
+                "  {}. {} doc={} source={} keyword_rank={} vector_rank={} rrf={} raw_score={} final_score={}",
+                index + 1,
+                candidate.result.id,
+                candidate.document_key,
+                candidate_source_label(candidate.keyword_rank, candidate.semantic_rank),
+                format_optional_rank(candidate.keyword_rank),
+                format_optional_rank(candidate.semantic_rank),
+                format_score(candidate.rrf_score),
+                format_score(candidate.raw_score),
+                format_score(candidate.final_score),
+            )
+        })
+        .collect()
+}
+
 fn log_search_trace(
     query: &str,
     keyword_hits: &[SearchHit],
     semantic_candidates: &[crate::seekmind::models::SemanticDebugHitView],
     semantic_hits: &[crate::seekmind::models::SemanticDebugHitView],
     merged_sources: &[(String, String)],
-    after_filter_candidates: &[SearchResultCandidate],
+    ranked_candidates: &[SearchResultCandidate],
+    final_candidates: &[SearchResultCandidate],
     final_results: &[SearchResultView],
 ) {
     eprintln!("[SeekMind] search trace");
@@ -1043,15 +1084,13 @@ fn log_search_trace(
     }
 
     eprintln!("after_filter:");
-    for (index, candidate) in after_filter_candidates.iter().enumerate() {
-        eprintln!(
-            "  {}. {} score={} final_score={} semantic_only={}",
-            index + 1,
-            candidate.result.id,
-            format_score(candidate.raw_score),
-            format_score(candidate.final_score),
-            candidate.semantic_only
-        );
+    for line in final_candidate_lines(ranked_candidates) {
+        eprintln!("{line}");
+    }
+
+    eprintln!("final_ranked:");
+    for line in final_candidate_lines(final_candidates) {
+        eprintln!("{line}");
     }
 
     eprintln!("final:");
