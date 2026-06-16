@@ -535,6 +535,7 @@ impl Database {
             semantic_fallback_reason.clone()
         };
         let semantic_candidate_count = semantic_candidates.len();
+        let semantic_candidates_snapshot = semantic_candidates.clone();
         let semantic_hits: Vec<_> = semantic_candidates
             .into_iter()
             .filter(|hit| hit.score >= semantic_threshold)
@@ -589,6 +590,7 @@ impl Database {
                 chunk_ids.push(hit.chunk_id.clone());
             }
         }
+        let chunk_ids_snapshot = chunk_ids.clone();
 
         let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
         let mut preview_blocks_by_chunk_id = self.fetch_preview_blocks_for_search_rows(&rows).await?;
@@ -600,7 +602,7 @@ impl Database {
         let mut results = Vec::new();
         let normalized_terms = normalize_query(query);
         let now = current_unix_ts();
-        for chunk_id in chunk_ids {
+        for chunk_id in chunk_ids.clone() {
             if let Some(row) = rows_by_id.remove(&chunk_id) {
                 let keyword_score = keyword_score_map.get(&chunk_id).copied().unwrap_or(0.0);
                 let semantic_score = semantic_score_map.get(&chunk_id).copied().unwrap_or(0.0);
@@ -789,7 +791,7 @@ impl Database {
         final_results.truncate(limit.max(1));
 
         if search_trace_enabled() {
-            let merged_sources = chunk_ids
+            let merged_sources = chunk_ids_snapshot
                 .iter()
                 .map(|chunk_id| {
                     let mut sources = Vec::new();
@@ -810,7 +812,7 @@ impl Database {
             log_search_trace(
                 query,
                 &keyword_hits,
-                &semantic_candidates,
+                &semantic_candidates_snapshot,
                 &semantic_hits,
                 &merged_sources,
                 &final_candidates_snapshot,
