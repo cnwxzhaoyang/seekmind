@@ -129,6 +129,41 @@ const onCopyReason = (reason: string) => emit("copyReason", reason);
 </template>
 
 <style scoped>
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 0;
+}
+
+.card-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.card-head-copy h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+}
+
+.card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(47, 129, 255, 0.12);
+  color: var(--color-accent);
+}
+
 .failed-files-count {
   margin-left: auto;
   min-width: 30px;
