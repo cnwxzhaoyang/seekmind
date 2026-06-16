@@ -127,8 +127,11 @@ impl PythonQaClient {
     pub fn from_env() -> Self {
         // 修复：问答 sidecar 入口统一复用 parser runtime 解析，同时修正历史的 SEEKMIND_parser 路径拼写错误。
         let runtime = PythonSidecarRuntime::from_env("parser/seekmind_parser/__main__.py");
-        let timeout_ms =
-            resolve_timeout_ms("SEEKMIND_QA_TIMEOUT_MS", Some("SEEKMIND_PARSER_TIMEOUT_MS"), 300_000);
+        let timeout_ms = resolve_timeout_ms(
+            "SEEKMIND_QA_TIMEOUT_MS",
+            Some("SEEKMIND_PARSER_TIMEOUT_MS"),
+            300_000,
+        );
 
         Self {
             runtime,
@@ -152,8 +155,8 @@ impl PythonQaClient {
             return Err(QaClientError::NotConfigured);
         }
 
-        let payload = serde_json::to_vec(request)
-            .map_err(|error| QaClientError::Io(error.to_string()))?;
+        let payload =
+            serde_json::to_vec(request).map_err(|error| QaClientError::Io(error.to_string()))?;
         let mut child = self
             .spawn_command()?
             .stdin(Stdio::piped())

@@ -117,7 +117,10 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(super::qa_session_row_to_view).collect())
+        Ok(rows
+            .into_iter()
+            .map(super::qa_session_row_to_view)
+            .collect())
     }
 
     pub async fn list_qa_messages(
@@ -142,7 +145,10 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(super::qa_message_row_to_view).collect())
+        Ok(rows
+            .into_iter()
+            .map(super::qa_message_row_to_view)
+            .collect())
     }
 
     pub async fn list_qa_messages_recent(
@@ -167,7 +173,10 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(super::qa_message_row_to_view).collect())
+        Ok(rows
+            .into_iter()
+            .map(super::qa_message_row_to_view)
+            .collect())
     }
 
     pub async fn remove_qa_session(&self, session_id: &str) -> Result<(), sqlx::Error> {

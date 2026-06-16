@@ -3,7 +3,6 @@
  * @CreatedDate 2026/06/05
  * @Description SeekMind 索引任务、checkpoint 与运行态数据库逻辑。
  */
-
 use sqlx::Row;
 
 use crate::seekmind::models::{CurrentTaskView, FailedFileView};

@@ -3,7 +3,6 @@
  * @CreatedDate 2026/06/05
  * @Description SeekMind SQLite schema / migration 逻辑。
  */
-
 use uuid::Uuid;
 
 use crate::seekmind::semantic::store::clear_all_embeddings;
@@ -14,7 +13,6 @@ use super::{default_network_proxy_settings, default_qa_settings, Database};
 use sqlx::Row;
 
 const CURRENT_VECTOR_INDEX_SCHEMA_VERSION: i64 = 1;
-
 impl Database {
     pub(crate) async fn init_schema(&self) -> Result<(), sqlx::Error> {
         let statements = [
@@ -199,6 +197,24 @@ impl Database {
                 created_at INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL DEFAULT 0
             )
+            "#,
+            concat!(
+                r#"
+            CREATE TABLE IF NOT EXISTS chunk_embedding_meta (
+                rowid INTEGER PRIMARY KEY,
+                chunk_id TEXT NOT NULL UNIQUE,
+                document_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                text_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'ready',
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            )
+            "#
+            ),
+            r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embedding_vec
+            USING vec0(embedding float[512])
             "#,
             r#"
             CREATE TABLE IF NOT EXISTS vector_index_meta (
@@ -605,7 +621,9 @@ impl Database {
             "[SeekMind] vector index schema migration model_id={} from={} to={}",
             model_id, schema_version, CURRENT_VECTOR_INDEX_SCHEMA_VERSION
         );
-        clear_all_embeddings(self).await.map_err(sqlx::Error::Protocol)?;
+        clear_all_embeddings(self)
+            .await
+            .map_err(sqlx::Error::Protocol)?;
         sqlx::query(
             r#"
             UPDATE vector_index_meta

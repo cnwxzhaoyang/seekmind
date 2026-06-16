@@ -13,8 +13,8 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
-use crate::seekmind::parser::types::{ParsedBlock, PdfOcrTask};
 use crate::seekmind::parser::types::ParserStreamEvent;
+use crate::seekmind::parser::types::{ParsedBlock, PdfOcrTask};
 use crate::seekmind::parser::{ParsedDocument, ParserClientError, PythonParserClient};
 use crate::seekmind::process_utils::configure_hidden_child_process;
 #[cfg(target_os = "windows")]
@@ -351,7 +351,10 @@ fn is_supported_file(path: &Path, settings: &IndexSettings) -> bool {
 }
 
 fn is_image_extension(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tif" | "tiff" | "heic")
+    matches!(
+        ext,
+        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tif" | "tiff" | "heic"
+    )
 }
 
 fn extension(path: &Path) -> String {
@@ -565,7 +568,10 @@ fn extract_pptx_text(path: &Path) -> Result<String, String> {
             }
         }
 
-        Err(format!("PPTX produced empty document text for {}", path.to_string_lossy()))
+        Err(format!(
+            "PPTX produced empty document text for {}",
+            path.to_string_lossy()
+        ))
     } else {
         Ok(normalized)
     }
@@ -613,7 +619,10 @@ fn extract_xlsx_text(path: &Path) -> Result<String, String> {
             }
         }
 
-        Err(format!("XLSX produced empty document text for {}", path.to_string_lossy()))
+        Err(format!(
+            "XLSX produced empty document text for {}",
+            path.to_string_lossy()
+        ))
     } else {
         Ok(normalized)
     }
@@ -830,7 +839,9 @@ fn run_powershell_office_script(script: &str) -> Result<String, String> {
     let (_, output) = run_hidden_powershell_script(script)?;
 
     if !output.status.success() {
-        return Err(normalize_whitespace(&String::from_utf8_lossy(&output.stderr)));
+        return Err(normalize_whitespace(&String::from_utf8_lossy(
+            &output.stderr,
+        )));
     }
 
     String::from_utf8(output.stdout).map_err(|error| error.to_string())
@@ -1025,7 +1036,10 @@ fn extract_office_text(path: &Path) -> Result<String, String> {
         }
     }
 
-    Err(format!("failed to extract office text for {}", path.to_string_lossy()))
+    Err(format!(
+        "failed to extract office text for {}",
+        path.to_string_lossy()
+    ))
 }
 
 fn extract_xml_text_nodes(xml: &str) -> String {
@@ -1186,7 +1200,12 @@ fn truncate_snippet(input: &str, limit: usize) -> String {
 pub(crate) fn convert_python_document(
     file: &DiscoveredFile,
     parsed: ParsedDocument,
-) -> (ExtractedDocument, Vec<ChunkRecord>, Vec<ParsedBlock>, Vec<PdfOcrTask>) {
+) -> (
+    ExtractedDocument,
+    Vec<ChunkRecord>,
+    Vec<ParsedBlock>,
+    Vec<PdfOcrTask>,
+) {
     let ParsedDocument {
         title: _,
         file_type: _,
@@ -1288,10 +1307,8 @@ mod tests {
 
     #[test]
     fn extracts_epub_chapters_in_spine_order() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "seekmind-epub-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("seekmind-epub-test-{}", uuid::Uuid::new_v4()));
         let epub_path = temp_dir.with_extension("epub");
 
         fs::create_dir_all(&temp_dir).expect("failed to create temp dir");
@@ -1339,8 +1356,7 @@ mod tests {
                 .expect("failed to write chapter1");
             writer
                 .write_all(
-                    "<html><body><h1>第一章</h1><p>EPUB 第一段内容。</p></body></html>"
-                        .as_bytes(),
+                    "<html><body><h1>第一章</h1><p>EPUB 第一段内容。</p></body></html>".as_bytes(),
                 )
                 .expect("failed to write chapter1 html");
 
@@ -1349,8 +1365,7 @@ mod tests {
                 .expect("failed to write chapter2");
             writer
                 .write_all(
-                    "<html><body><h1>第二章</h1><p>EPUB 第二段内容。</p></body></html>"
-                        .as_bytes(),
+                    "<html><body><h1>第二章</h1><p>EPUB 第二段内容。</p></body></html>".as_bytes(),
                 )
                 .expect("failed to write chapter2 html");
 

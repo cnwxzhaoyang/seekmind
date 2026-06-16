@@ -103,7 +103,12 @@ fn execute(options: &StressOptions) -> Result<StressReport, String> {
         fs::create_dir_all(&corpus_root)
             .map_err(|error| format!("create corpus {}: {error}", corpus_root.display()))?;
 
-        let created_files = generate_corpus(&corpus_root, size, options.files_per_dir, options.file_words)?;
+        let created_files = generate_corpus(
+            &corpus_root,
+            size,
+            options.files_per_dir,
+            options.file_words,
+        )?;
         let directories = count_directories(&corpus_root)?;
 
         let run_root = options.workspace.join(format!("run-{size}"));
@@ -219,7 +224,10 @@ fn parse_args(args: Vec<String>) -> Result<StressOptions, String> {
             }
             "--files-per-dir" => {
                 index += 1;
-                files_per_dir = parse_usize(next_arg(&args, index, "--files-per-dir")?, "--files-per-dir")?;
+                files_per_dir = parse_usize(
+                    next_arg(&args, index, "--files-per-dir")?,
+                    "--files-per-dir",
+                )?;
             }
             "--file-words" => {
                 index += 1;
@@ -227,7 +235,8 @@ fn parse_args(args: Vec<String>) -> Result<StressOptions, String> {
             }
             "--query-limit" => {
                 index += 1;
-                query_limit = parse_usize(next_arg(&args, index, "--query-limit")?, "--query-limit")?;
+                query_limit =
+                    parse_usize(next_arg(&args, index, "--query-limit")?, "--query-limit")?;
             }
             "--cleanup" => {
                 cleanup = true;
@@ -378,13 +387,7 @@ fn run_search_probes(
     size: usize,
     query_limit: usize,
 ) -> Result<Vec<QueryHitSummary>, String> {
-    let queries = [
-        "索引",
-        "搜索",
-        "WBS",
-        "测试",
-        "集成",
-    ];
+    let queries = ["索引", "搜索", "WBS", "测试", "集成"];
     let mut summaries = Vec::with_capacity(queries.len());
     for query in queries {
         let started = Instant::now();

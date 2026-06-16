@@ -134,7 +134,9 @@ pub fn configure_sidecar_command(command: &mut Command) {
         command.env("SEEKMIND_VISION_OCR_BIN", &binary);
         command.env("SEEKMIND_VISION_OCR_LANGS", languages.join(","));
     } else {
-        eprintln!("[SeekMind] bundled Vision OCR helper not found; PDF OCR may be unavailable in sandbox");
+        eprintln!(
+            "[SeekMind] bundled Vision OCR helper not found; PDF OCR may be unavailable in sandbox"
+        );
     }
 }
 
@@ -171,8 +173,19 @@ fn detect_windows_python_bin() -> Option<String> {
     let mut candidates = Vec::new();
 
     if let Some(base) = local_app_data {
-        for version in ["Python314", "Python313", "Python312", "Python311", "Python310"] {
-            candidates.push(base.join("Programs").join("Python").join(version).join("python.exe"));
+        for version in [
+            "Python314",
+            "Python313",
+            "Python312",
+            "Python311",
+            "Python310",
+        ] {
+            candidates.push(
+                base.join("Programs")
+                    .join("Python")
+                    .join(version)
+                    .join("python.exe"),
+            );
         }
     }
 
@@ -181,7 +194,10 @@ fn detect_windows_python_bin() -> Option<String> {
         candidates.push(base.join("anaconda3").join("python.exe"));
     }
 
-    for candidate in candidates.into_iter().filter(|candidate| candidate.exists()) {
+    for candidate in candidates
+        .into_iter()
+        .filter(|candidate| candidate.exists())
+    {
         // 修复：多版本 Python 并存时，只选择已安装 fastembed 的解释器，避免运行时继续误落到空环境。
         let mut command = Command::new(&candidate);
         configure_hidden_child_process(&mut command);
@@ -250,10 +266,7 @@ fn ensure_fastembed_cache_dir() -> PathBuf {
 
     let model_cache_dir = fastembed_model_cache_dir(&cache_dir);
     if model_cache_dir.exists() {
-        eprintln!(
-            "[SeekMind] fastembed cache hit dir={}",
-            cache_dir.display()
-        );
+        eprintln!("[SeekMind] fastembed cache hit dir={}", cache_dir.display());
     } else if let Some(archive) = bundled_fastembed_cache_archive() {
         match extract_fastembed_cache_archive(&archive, &cache_dir) {
             Ok(()) => {
@@ -311,8 +324,10 @@ pub fn prepare_fastembed_cache_for_runtime() {
 pub fn log_fastembed_cache_diagnostics() {
     let cache_dir = writable_fastembed_cache_dir();
     let model_cache_exists = fastembed_model_cache_dir(&cache_dir).exists();
-    let configured_override =
-        env_override(&["SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"]);
+    let configured_override = env_override(&[
+        "SEEKMIND_FASTEMBED_CACHE_DIR",
+        "SeekMind_FASTEMBED_CACHE_DIR",
+    ]);
     let bundled_cache_dir = bundled_fastembed_cache_dir();
     let bundled_cache_archive = bundled_fastembed_cache_archive();
     let parser_sidecar = resolve_bundled_sidecar("seekmind-parser");

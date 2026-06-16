@@ -4,7 +4,6 @@
  * @CreatedDate 2026/06/12
  * @Description 语义模型状态、向量重建与语义检索存储逻辑。
  */
-
 use chrono::Utc;
 use sqlx::Row;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -19,6 +18,7 @@ use crate::seekmind::storage::Database;
 
 use super::client::{PythonSemanticClient, SemanticStatus};
 use super::embedding::{cosine_similarity, normalize_embedding_text, text_hash, vector_norm};
+use super::vector_store::{resolve_vector_store_backend, VectorStoreBackend};
 
 type SemanticProgressEmitter =
     Arc<dyn Fn(crate::seekmind::models::SemanticRebuildProgressView) + Send + Sync>;
@@ -161,6 +161,18 @@ struct SemanticSearchRow {
     vector_json: String,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct SqliteVecSearchRow {
+    chunk_id: String,
+    document_path: String,
+    file_name: String,
+    heading: String,
+    snippet: String,
+    paragraph: Option<i64>,
+    page: Option<i64>,
+    distance: f32,
+}
+
 pub async fn get_embedding_model_status(
     database: &Database,
 ) -> Result<SemanticModelStatusView, String> {
@@ -283,6 +295,185 @@ pub async fn rebuild_all_embeddings(
     job_id: String,
     progress: Option<SemanticProgressEmitter>,
 ) -> Result<SemanticModelStatusView, String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => {
+            sqlite_vec_rebuild_all_embeddings(database, job_id, progress).await
+        }
+        VectorStoreBackend::LegacyJson => {
+            legacy_rebuild_all_embeddings(database, job_id, progress).await
+        }
+        backend => {
+            // 修复：当前只接入 sqlite-vec，其他后端先回退到已验证的 JSON 实现。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for rebuild yet, using legacy-json",
+                backend.label()
+            );
+            legacy_rebuild_all_embeddings(database, job_id, progress).await
+        }
+    }
+}
+
+async fn legacy_rebuild_all_embeddings(
+    database: &Database,
+    job_id: String,
+    progress: Option<SemanticProgressEmitter>,
+) -> Result<SemanticModelStatusView, String> {
+    let model = load_default_model(database).await?;
+    let client = PythonSemanticClient::from_env();
+    if !model.available {
+        return Err("embedding 模型不可用，请先确认语义面板显示为可用".to_string());
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            d.id AS document_id,
+            d.path AS document_path,
+            d.file_name AS file_name,
+            d.content_hash AS content_hash,
+            c.id AS chunk_id,
+            c.heading AS heading,
+            c.snippet AS snippet,
+            c.paragraph AS paragraph,
+            c.page AS page
+        FROM documents d
+        INNER JOIN chunks c ON c.document_id = d.id
+        ORDER BY d.path, c.rowid
+        "#,
+    )
+    .fetch_all(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let total_chunks = rows.len();
+    let mut processed_chunks = 0usize;
+    let mut embedded_chunks = 0usize;
+    let mut current_document_id = String::new();
+    let mut current_document_path = String::new();
+    let mut current_file_name = String::new();
+    let mut document_chunks: Vec<(String, String, String, String)> = Vec::new();
+
+    eprintln!(
+        "[SeekMind] sqlite-vec rebuild start model={} total_chunks={} job_id={}",
+        model.name, total_chunks, job_id
+    );
+    emit_semantic_progress(
+        progress.as_ref(),
+        crate::seekmind::models::SemanticRebuildProgressView {
+            job_id: job_id.clone(),
+            state: "running".to_string(),
+            message: "正在准备语义模型".to_string(),
+            source: SEMANTIC_SOURCE_REBUILD.to_string(),
+            model: model.clone(),
+            total_chunks,
+            processed_chunks,
+            embedded_chunks,
+            current_document: String::new(),
+            current_chunk: String::new(),
+            percent: 0,
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
+
+    client
+        .embed_texts(&["SeekMind semantic warmup".to_string()], Some(&model.name))
+        .map_err(|error| error.to_string())?;
+
+    clear_all_embeddings(database).await?;
+
+    for row in rows {
+        let document_id: String = row
+            .try_get("document_id")
+            .map_err(|error| error.to_string())?;
+        let document_path: String = row
+            .try_get("document_path")
+            .map_err(|error| error.to_string())?;
+        let file_name_value: String = row
+            .try_get("file_name")
+            .map_err(|error| error.to_string())?;
+        let chunk_id: String = row.try_get("chunk_id").map_err(|error| error.to_string())?;
+        let heading: String = row.try_get("heading").unwrap_or_default();
+        let snippet: String = row.try_get("snippet").unwrap_or_default();
+
+        if current_document_id.is_empty() {
+            current_document_id = document_id.clone();
+            current_document_path = document_path.clone();
+            current_file_name = file_name_value.clone();
+        }
+
+        if current_document_id != document_id {
+            upsert_document_embeddings_from_rows(
+                database,
+                &current_document_id,
+                &current_document_path,
+                &current_file_name,
+                &document_chunks,
+                &model,
+                &client,
+                &job_id,
+                SEMANTIC_SOURCE_REBUILD,
+                progress.as_ref(),
+                total_chunks,
+                &mut processed_chunks,
+                &mut embedded_chunks,
+            )
+            .await?;
+            current_document_id = document_id.clone();
+            current_document_path = document_path.clone();
+            current_file_name = file_name_value.clone();
+            document_chunks.clear();
+        }
+
+        document_chunks.push((chunk_id, file_name_value, heading, snippet));
+    }
+
+    if !current_document_id.is_empty() {
+        upsert_document_embeddings_from_rows(
+            database,
+            &current_document_id,
+            &current_document_path,
+            &current_file_name,
+            &document_chunks,
+            &model,
+            &client,
+            &job_id,
+            SEMANTIC_SOURCE_REBUILD,
+            progress.as_ref(),
+            total_chunks,
+            &mut processed_chunks,
+            &mut embedded_chunks,
+        )
+        .await?;
+    }
+
+    update_vector_index_meta(database, &model.id, "ready", "").await?;
+    emit_semantic_progress(
+        progress.as_ref(),
+        crate::seekmind::models::SemanticRebuildProgressView {
+            job_id,
+            state: "completed".to_string(),
+            message: "语义向量重建完成".to_string(),
+            source: SEMANTIC_SOURCE_REBUILD.to_string(),
+            model: load_default_model(database).await?,
+            total_chunks,
+            processed_chunks,
+            embedded_chunks,
+            current_document: current_document_path,
+            current_chunk: String::new(),
+            percent: 100,
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
+    get_embedding_model_status(database).await
+}
+
+async fn sqlite_vec_rebuild_all_embeddings(
+    database: &Database,
+    job_id: String,
+    progress: Option<SemanticProgressEmitter>,
+) -> Result<SemanticModelStatusView, String> {
     let model = load_default_model(database).await?;
     let client = PythonSemanticClient::from_env();
     if !model.available {
@@ -364,7 +555,7 @@ pub async fn rebuild_all_embeddings(
         }
 
         if current_document_id != document_id {
-            upsert_document_embeddings_from_rows(
+            sqlite_vec_upsert_document_embeddings_from_rows(
                 database,
                 &current_document_id,
                 &current_document_path,
@@ -390,7 +581,7 @@ pub async fn rebuild_all_embeddings(
     }
 
     if !current_document_id.is_empty() {
-        upsert_document_embeddings_from_rows(
+        sqlite_vec_upsert_document_embeddings_from_rows(
             database,
             &current_document_id,
             &current_document_path,
@@ -582,6 +773,199 @@ async fn upsert_document_embeddings_from_rows(
     Ok(())
 }
 
+async fn sqlite_vec_upsert_document_embeddings_from_rows(
+    database: &Database,
+    document_id: &str,
+    document_path: &str,
+    file_name: &str,
+    chunks: &[(String, String, String, String)],
+    model: &EmbeddingModelView,
+    client: &PythonSemanticClient,
+    job_id: &str,
+    source: &str,
+    progress: Option<&SemanticProgressEmitter>,
+    total_chunks: usize,
+    processed_chunks: &mut usize,
+    embedded_chunks: &mut usize,
+) -> Result<(), String> {
+    eprintln!(
+        "[SeekMind] sqlite-vec embedding document path={} chunks={}",
+        document_path,
+        chunks.len()
+    );
+    let semantic_texts: Vec<String> = chunks
+        .iter()
+        .map(|(_, file_name_value, heading, snippet)| {
+            normalize_embedding_text(&format!("{file_name_value}\n{heading}\n{snippet}"))
+        })
+        .collect();
+
+    emit_semantic_progress(
+        progress,
+        crate::seekmind::models::SemanticRebuildProgressView {
+            job_id: job_id.to_string(),
+            state: "running".to_string(),
+            message: format!("正在处理 {file_name}"),
+            source: source.to_string(),
+            model: model.clone(),
+            total_chunks,
+            processed_chunks: *processed_chunks,
+            embedded_chunks: *embedded_chunks,
+            current_document: document_path.to_string(),
+            current_chunk: String::new(),
+            percent: progress_percent(*processed_chunks, total_chunks),
+            last_error: String::new(),
+            updated_at: format_unix_ts(now_unix_ts()),
+        },
+    );
+
+    let base_processed = *processed_chunks;
+    let base_embedded = *embedded_chunks;
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        SEMANTIC_SOURCE_REBUILD,
+        model,
+        total_chunks,
+        base_processed,
+        base_embedded,
+        document_path,
+        format!("正在生成 {file_name} 的语义向量"),
+        "准备生成".to_string(),
+        0,
+    );
+
+    let vectors = client
+        .embed_texts_stream(&semantic_texts, Some(&model.name), |event| {
+            if event.kind != "event" {
+                return;
+            }
+
+            let processed_in_doc = event.processed.min(semantic_texts.len());
+            let current_chunk = if event.current.is_empty() {
+                format!("{processed_in_doc}/{}", semantic_texts.len())
+            } else {
+                event.current.clone()
+            };
+            let message = if event.message.is_empty() {
+                format!("正在生成 {file_name} 的语义向量")
+            } else {
+                event.message.clone()
+            };
+            emit_semantic_embedding_progress(
+                progress,
+                job_id,
+                source,
+                model,
+                total_chunks,
+                base_processed,
+                base_embedded,
+                document_path,
+                message,
+                current_chunk,
+                processed_in_doc,
+            );
+        })
+        .map_err(|error| error.to_string())?;
+
+    if vectors.len() != chunks.len() {
+        return Err(format!(
+            "embedding 向量数量不匹配: chunks={} vectors={}",
+            chunks.len(),
+            vectors.len()
+        ));
+    }
+
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        SEMANTIC_SOURCE_REBUILD,
+        model,
+        total_chunks,
+        base_processed,
+        base_embedded,
+        document_path,
+        format!("正在写入 {file_name} 的语义索引"),
+        String::new(),
+        semantic_texts.len(),
+    );
+
+    let mut tx = database
+        .pool()
+        .begin()
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query(
+        r#"
+        DELETE FROM chunk_embedding_vec
+        WHERE rowid IN (
+            SELECT rowid
+            FROM chunk_embedding_meta
+            WHERE document_id = ?
+        )
+        "#,
+    )
+    .bind(document_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM chunk_embedding_meta WHERE document_id = ?")
+        .bind(document_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    for (index, _chunk) in chunks.iter().enumerate() {
+        let chunk_id = format!("{document_id}:{index}");
+        let semantic_text = &semantic_texts[index];
+        let vector_json =
+            serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
+        let now = now_unix_ts();
+
+        sqlx::query(
+            r#"
+            INSERT INTO chunk_embedding_meta
+                (chunk_id, document_id, model_id, text_hash, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'ready', ?, ?)
+            "#,
+        )
+        .bind(&chunk_id)
+        .bind(document_id)
+        .bind(&model.id)
+        .bind(text_hash(semantic_text))
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+
+        let rowid: i64 = sqlx::query_scalar("SELECT last_insert_rowid()")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO chunk_embedding_vec
+                (rowid, embedding)
+            VALUES (?, vec_f32(?))
+            "#,
+        )
+        .bind(rowid)
+        .bind(vector_json)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+    }
+
+    tx.commit().await.map_err(|error| error.to_string())?;
+
+    *processed_chunks += semantic_texts.len();
+    *embedded_chunks += semantic_texts.len();
+    update_vector_index_meta(database, &model.id, "ready", "").await?;
+    Ok(())
+}
+
 fn progress_percent(processed: usize, total: usize) -> u8 {
     if total == 0 {
         return 0;
@@ -592,6 +976,60 @@ fn progress_percent(processed: usize, total: usize) -> u8 {
 }
 
 pub async fn upsert_document_embeddings(
+    database: &Database,
+    document_id: &str,
+    document: &ExtractedDocument,
+    chunks: &[ChunkRecord],
+    job_id: &str,
+    source: &str,
+    progress: Option<&SemanticProgressEmitter>,
+) -> Result<(), String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => {
+            sqlite_vec_upsert_document_embeddings(
+                database,
+                document_id,
+                document,
+                chunks,
+                job_id,
+                source,
+                progress,
+            )
+            .await
+        }
+        VectorStoreBackend::LegacyJson => {
+            legacy_upsert_document_embeddings(
+                database,
+                document_id,
+                document,
+                chunks,
+                job_id,
+                source,
+                progress,
+            )
+            .await
+        }
+        backend => {
+            // 修复：当前只接入 sqlite-vec，其他后端保持旧实现可用。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for upsert yet, using legacy-json",
+                backend.label()
+            );
+            legacy_upsert_document_embeddings(
+                database,
+                document_id,
+                document,
+                chunks,
+                job_id,
+                source,
+                progress,
+            )
+            .await
+        }
+    }
+}
+
+async fn legacy_upsert_document_embeddings(
     database: &Database,
     document_id: &str,
     document: &ExtractedDocument,
@@ -735,7 +1173,204 @@ pub async fn upsert_document_embeddings(
     Ok(())
 }
 
+async fn sqlite_vec_upsert_document_embeddings(
+    database: &Database,
+    document_id: &str,
+    document: &ExtractedDocument,
+    chunks: &[ChunkRecord],
+    job_id: &str,
+    source: &str,
+    progress: Option<&SemanticProgressEmitter>,
+) -> Result<(), String> {
+    let model = load_default_model(database).await?;
+    let client = PythonSemanticClient::from_env();
+    let runtime_status = match cached_embedding_runtime_status(&model.name) {
+        Some(status) => status,
+        None => {
+            // 修复：索引批量写入时避免每个文档都重新启动 Python sidecar 做 embedding runtime 探测。
+            let status = client
+                .embedding_status(Some(&model.name))
+                .map_err(|error| error.to_string())?;
+            remember_embedding_runtime_status(&model.name, &status);
+            sync_model_runtime(database, &model.id, status.available, &status.message).await?;
+            status
+        }
+    };
+    let model = load_default_model(database).await?;
+    if !model.enabled || !model.available {
+        return Err(format!("embedding 模型不可用: {}", runtime_status.message));
+    }
+
+    let semantic_texts: Vec<String> = chunks
+        .iter()
+        .map(|chunk| {
+            normalize_embedding_text(&format!(
+                "{}\n{}\n{}",
+                document.file_name, chunk.heading, chunk.snippet
+            ))
+        })
+        .collect();
+
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        source,
+        &model,
+        semantic_texts.len(),
+        0,
+        0,
+        &document.path,
+        format!("正在生成 {} 的语义向量", document.file_name),
+        "准备生成".to_string(),
+        0,
+    );
+
+    let vectors = client
+        .embed_texts_stream(&semantic_texts, Some(&model.name), |event| {
+            if event.kind != "event" {
+                return;
+            }
+
+            let processed_in_doc = event.processed.min(semantic_texts.len());
+            let current_chunk = if event.current.is_empty() {
+                format!("{processed_in_doc}/{}", semantic_texts.len())
+            } else {
+                event.current.clone()
+            };
+            let message = if event.message.is_empty() {
+                format!("正在生成 {} 的语义向量", document.file_name)
+            } else {
+                event.message.clone()
+            };
+            emit_semantic_embedding_progress(
+                progress,
+                job_id,
+                source,
+                &model,
+                semantic_texts.len(),
+                0,
+                0,
+                &document.path,
+                message,
+                current_chunk,
+                processed_in_doc,
+            );
+        })
+        .map_err(|error| error.to_string())?;
+
+    if vectors.len() != chunks.len() {
+        return Err(format!(
+            "embedding 向量数量不匹配: chunks={} vectors={}",
+            chunks.len(),
+            vectors.len()
+        ));
+    }
+
+    emit_semantic_embedding_progress(
+        progress,
+        job_id,
+        source,
+        &model,
+        semantic_texts.len(),
+        0,
+        0,
+        &document.path,
+        format!("正在写入 {} 的语义索引", document.file_name),
+        String::new(),
+        semantic_texts.len(),
+    );
+
+    let mut tx = database
+        .pool()
+        .begin()
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query(
+        r#"
+        DELETE FROM chunk_embedding_vec
+        WHERE rowid IN (
+            SELECT rowid
+            FROM chunk_embedding_meta
+            WHERE document_id = ?
+        )
+        "#,
+    )
+    .bind(document_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM chunk_embedding_meta WHERE document_id = ?")
+        .bind(document_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    for (index, _chunk) in chunks.iter().enumerate() {
+        let chunk_id = format!("{document_id}:{index}");
+        let semantic_text = &semantic_texts[index];
+        let vector_json =
+            serde_json::to_string(&vectors[index]).map_err(|error| error.to_string())?;
+        let now = now_unix_ts();
+
+        sqlx::query(
+            r#"
+            INSERT INTO chunk_embedding_meta
+                (chunk_id, document_id, model_id, text_hash, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'ready', ?, ?)
+            "#,
+        )
+        .bind(&chunk_id)
+        .bind(document_id)
+        .bind(&model.id)
+        .bind(text_hash(semantic_text))
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+
+        let rowid: i64 = sqlx::query_scalar("SELECT last_insert_rowid()")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO chunk_embedding_vec
+                (rowid, embedding)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind(rowid)
+        .bind(vector_json)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+    }
+
+    tx.commit().await.map_err(|error| error.to_string())?;
+    update_vector_index_meta(database, &model.id, "ready", "").await?;
+    Ok(())
+}
+
 pub async fn delete_document_embeddings(database: &Database, path: &str) -> Result<(), String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => {
+            sqlite_vec_delete_document_embeddings(database, path).await
+        }
+        VectorStoreBackend::LegacyJson => legacy_delete_document_embeddings(database, path).await,
+        backend => {
+            // 修复：删除文档时仍需保证旧实现可回退，避免后端切换期间出现残留向量。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for delete yet, using legacy-json",
+                backend.label()
+            );
+            legacy_delete_document_embeddings(database, path).await
+        }
+    }
+}
+
+async fn legacy_delete_document_embeddings(database: &Database, path: &str) -> Result<(), String> {
     sqlx::query(
         r#"
         DELETE FROM chunk_embeddings
@@ -753,7 +1388,66 @@ pub async fn delete_document_embeddings(database: &Database, path: &str) -> Resu
     Ok(())
 }
 
+async fn sqlite_vec_delete_document_embeddings(
+    database: &Database,
+    path: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        DELETE FROM chunk_embedding_vec
+        WHERE rowid IN (
+            SELECT meta.rowid
+            FROM chunk_embedding_meta meta
+            INNER JOIN documents d ON d.id = meta.document_id
+            WHERE d.path = ?
+        )
+        "#,
+    )
+    .bind(path)
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM chunk_embedding_meta
+        WHERE document_id IN (
+            SELECT id
+            FROM documents
+            WHERE path = ?
+        )
+        "#,
+    )
+    .bind(path)
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub async fn delete_directory_embeddings(
+    database: &Database,
+    dir_path: &str,
+) -> Result<(), String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => {
+            sqlite_vec_delete_directory_embeddings(database, dir_path).await
+        }
+        VectorStoreBackend::LegacyJson => {
+            legacy_delete_directory_embeddings(database, dir_path).await
+        }
+        backend => {
+            // 修复：目录删除也必须沿用可回退路径，避免向量残留影响后续搜索。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for directory delete yet, using legacy-json",
+                backend.label()
+            );
+            legacy_delete_directory_embeddings(database, dir_path).await
+        }
+    }
+}
+
+async fn legacy_delete_directory_embeddings(
     database: &Database,
     dir_path: &str,
 ) -> Result<(), String> {
@@ -774,7 +1468,59 @@ pub async fn delete_directory_embeddings(
     Ok(())
 }
 
+async fn sqlite_vec_delete_directory_embeddings(
+    database: &Database,
+    dir_path: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        DELETE FROM chunk_embedding_vec
+        WHERE rowid IN (
+            SELECT meta.rowid
+            FROM chunk_embedding_meta meta
+            INNER JOIN documents d ON d.id = meta.document_id
+            WHERE d.dir_path = ?
+        )
+        "#,
+    )
+    .bind(dir_path)
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM chunk_embedding_meta
+        WHERE document_id IN (
+            SELECT id
+            FROM documents
+            WHERE dir_path = ?
+        )
+        "#,
+    )
+    .bind(dir_path)
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub async fn clear_all_embeddings(database: &Database) -> Result<(), String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => sqlite_vec_clear_all_embeddings(database).await,
+        VectorStoreBackend::LegacyJson => legacy_clear_all_embeddings(database).await,
+        backend => {
+            // 修复：清空索引必须先保持稳定回退，直到正式向量库完成接入和验证。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for clear yet, using legacy-json",
+                backend.label()
+            );
+            legacy_clear_all_embeddings(database).await
+        }
+    }
+}
+
+async fn legacy_clear_all_embeddings(database: &Database) -> Result<(), String> {
     sqlx::query("DELETE FROM chunk_embeddings")
         .execute(database.pool())
         .await
@@ -796,7 +1542,56 @@ pub async fn clear_all_embeddings(database: &Database) -> Result<(), String> {
     Ok(())
 }
 
+async fn sqlite_vec_clear_all_embeddings(database: &Database) -> Result<(), String> {
+    sqlx::query("DELETE FROM chunk_embedding_vec")
+        .execute(database.pool())
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query("DELETE FROM chunk_embedding_meta")
+        .execute(database.pool())
+        .await
+        .map_err(|error| error.to_string())?;
+
+    sqlx::query(
+        r#"
+        UPDATE vector_index_meta
+        SET chunk_count = 0,
+            last_indexed_at = 0,
+            last_error = '',
+            status = 'idle'
+        WHERE id = 1
+        "#,
+    )
+    .execute(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub async fn semantic_debug_report(
+    database: &Database,
+    query: &str,
+    limit: usize,
+) -> Result<SemanticDebugView, String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => {
+            sqlite_vec_semantic_debug_report(database, query, limit).await
+        }
+        VectorStoreBackend::LegacyJson => {
+            legacy_semantic_debug_report(database, query, limit).await
+        }
+        backend => {
+            // 修复：调试报表应与实际运行路径一致，后端未接入时明确回退到 legacy-json。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for debug report yet, using legacy-json",
+                backend.label()
+            );
+            legacy_semantic_debug_report(database, query, limit).await
+        }
+    }
+}
+
+async fn legacy_semantic_debug_report(
     database: &Database,
     query: &str,
     limit: usize,
@@ -925,7 +1720,113 @@ pub async fn semantic_debug_report(
     })
 }
 
+async fn sqlite_vec_semantic_debug_report(
+    database: &Database,
+    query: &str,
+    limit: usize,
+) -> Result<SemanticDebugView, String> {
+    let model = load_default_model(database).await?;
+    let index_settings = database
+        .get_index_settings()
+        .await
+        .map_err(|error| error.to_string())?;
+    let normalized_query = normalize_query(query).join(" ");
+    let rewritten_terms = rewrite_query_terms(query);
+    let rewritten_query = rewrite_search_text(query);
+    let query_rewrite_applied = !query.trim().is_empty() && !rewritten_query.trim().is_empty();
+    let client = PythonSemanticClient::from_env();
+    let query_status = match client.embedding_status(Some(&model.name)) {
+        Ok(status) => status,
+        Err(error) => {
+            let message = error.to_string();
+            sync_model_runtime(database, &model.id, false, &message).await?;
+            PythonSemanticClient::from_env()
+                .embedding_status(Some(&model.name))
+                .unwrap_or(super::client::SemanticStatus {
+                    available: false,
+                    provider: "fastembed".to_string(),
+                    model_name: model.name.clone(),
+                    model_path: model.model_path.clone(),
+                    dimension: model.dimension,
+                    message,
+                })
+        }
+    };
+    sync_model_runtime(
+        database,
+        &model.id,
+        query_status.available,
+        &query_status.message,
+    )
+    .await?;
+    let model = load_default_model(database).await?;
+
+    let query_vectors = if rewritten_query.trim().is_empty() || !model.available {
+        Vec::new()
+    } else {
+        client
+            .embed_texts(&[rewritten_query.clone()], Some(&model.name))
+            .map_err(|error| error.to_string())?
+    };
+    let query_vector = query_vectors.first().cloned().unwrap_or_default();
+    let query_vector_dim = query_vector.len();
+    let query_vector_norm = vector_norm(&query_vector);
+    let query_vector_ready = !query_vector.is_empty() && query_vector_norm > 0.0;
+
+    let sqlite_chunks = count_sqlite_chunks(database).await?;
+    let embedded_chunks = count_embedded_chunks(database, &model.id).await?;
+    let meta = load_vector_meta(database).await?;
+
+    let hits = if query_vector_ready {
+        sqlite_vec_semantic_search_hits(database, query, limit).await?
+    } else {
+        Vec::new()
+    };
+
+    Ok(SemanticDebugView {
+        query: query.to_string(),
+        normalized_query,
+        rewritten_query,
+        rewritten_terms,
+        query_rewrite_applied,
+        query_vector_dim,
+        query_vector_ready,
+        query_vector_norm,
+        model,
+        sqlite_chunks,
+        embedded_chunks,
+        hit_count: hits.len(),
+        semantic_threshold: index_settings.semantic_threshold,
+        semantic_candidate_count: hits.len(),
+        semantic_filtered_count: 0,
+        hits,
+        index_status: meta.status,
+        last_error: meta.last_error,
+    })
+}
+
 pub async fn semantic_search_hits(
+    database: &Database,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SemanticDebugHitView>, String> {
+    match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => {
+            sqlite_vec_semantic_search_hits(database, query, limit).await
+        }
+        VectorStoreBackend::LegacyJson => legacy_semantic_search_hits(database, query, limit).await,
+        backend => {
+            // 修复：混合检索仍需依赖稳定的回退实现，避免正式向量库接入前搜索结果为空。
+            eprintln!(
+                "[SeekMind] vector store backend={} not wired for search yet, using legacy-json",
+                backend.label()
+            );
+            legacy_semantic_search_hits(database, query, limit).await
+        }
+    }
+}
+
+async fn legacy_semantic_search_hits(
     database: &Database,
     query: &str,
     limit: usize,
@@ -1002,6 +1903,87 @@ pub async fn semantic_search_hits(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     hits.truncate(limit.max(1));
+    Ok(hits)
+}
+
+async fn sqlite_vec_semantic_search_hits(
+    database: &Database,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SemanticDebugHitView>, String> {
+    let model = load_default_model(database).await?;
+    if !model.enabled || !model.available || query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rewritten_query = rewrite_search_text(query);
+    if rewritten_query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let client = PythonSemanticClient::from_env();
+    let query_vectors = client
+        .embed_texts(&[rewritten_query], Some(&model.name))
+        .map_err(|error| error.to_string())?;
+    let Some(query_vector) = query_vectors.first() else {
+        return Ok(Vec::new());
+    };
+    if query_vector.is_empty() || vector_norm(query_vector) <= 0.0 {
+        return Ok(Vec::new());
+    }
+
+    eprintln!(
+        "[SeekMind] sqlite-vec search query=\"{}\" limit={} model={}",
+        query, limit, model.name
+    );
+    let query_vector_json =
+        serde_json::to_string(query_vector).map_err(|error| error.to_string())?;
+    // 修复：当前先用 sqlite-vec 的 cosine scalar 做排序，避免 vec0 KNN 在联表查询下出现召回为空。
+    let rows = sqlx::query_as::<_, SqliteVecSearchRow>(
+        r#"
+        SELECT
+            meta.chunk_id AS chunk_id,
+            d.path AS document_path,
+            d.file_name AS file_name,
+            c.heading AS heading,
+            c.snippet AS snippet,
+            c.paragraph AS paragraph,
+            c.page AS page,
+            vec_distance_cosine(v.embedding, vec_f32(?)) AS distance
+        FROM chunk_embedding_vec v
+        INNER JOIN chunk_embedding_meta meta ON meta.rowid = v.rowid
+        INNER JOIN documents d ON d.id = meta.document_id
+        INNER JOIN chunks c ON c.id = meta.chunk_id
+        WHERE meta.model_id = ?
+        ORDER BY distance ASC
+        LIMIT ?
+        "#,
+    )
+    .bind(query_vector_json)
+    .bind(&model.id)
+    .bind(limit.max(1) as i64)
+    .fetch_all(database.pool())
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut hits = Vec::with_capacity(rows.len());
+    for row in rows {
+        hits.push(SemanticDebugHitView {
+            chunk_id: row.chunk_id,
+            document_path: row.document_path,
+            file_name: row.file_name,
+            heading: row.heading.clone(),
+            title_path: row.heading,
+            snippet: row.snippet,
+            paragraph: row.paragraph.map(|value| value as u32),
+            page: row.page.map(|value| value as u32),
+            score: if row.distance <= 0.0 {
+                1.0
+            } else {
+                1.0 / (1.0 + row.distance)
+            },
+        });
+    }
     Ok(hits)
 }
 
@@ -1142,17 +2124,30 @@ async fn count_sqlite_chunks(database: &Database) -> Result<usize, String> {
 }
 
 async fn count_embedded_chunks(database: &Database, model_id: &str) -> Result<usize, String> {
-    let count = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(*)
-        FROM chunk_embeddings
-        WHERE model_id = ?
-        "#,
-    )
-    .bind(model_id)
-    .fetch_one(database.pool())
-    .await
-    .map_err(|error| error.to_string())?;
+    let count = match resolve_vector_store_backend() {
+        VectorStoreBackend::SqliteVec => sqlx::query_scalar::<_, i64>(
+            r#"
+                SELECT COUNT(*)
+                FROM chunk_embedding_meta
+                WHERE model_id = ?
+                "#,
+        )
+        .bind(model_id)
+        .fetch_one(database.pool())
+        .await
+        .map_err(|error| error.to_string())?,
+        _ => sqlx::query_scalar::<_, i64>(
+            r#"
+                SELECT COUNT(*)
+                FROM chunk_embeddings
+                WHERE model_id = ?
+                "#,
+        )
+        .bind(model_id)
+        .fetch_one(database.pool())
+        .await
+        .map_err(|error| error.to_string())?,
+    };
     Ok(count.max(0) as usize)
 }
 

@@ -14,6 +14,7 @@ use crate::seekmind::storage::types::{NetworkProxySettings, QaSettings};
 
 use super::cancel::{cancel as cancel_qa_job, clear as clear_qa_job, register as register_qa_job};
 use super::python_client::{PythonQaClient, RagRequest, RagSettingsRequest};
+use crate::seekmind::storage::db::sqlite_database_path;
 use futures_util::future::{AbortHandle, Abortable};
 use reqwest::Proxy;
 use std::{
@@ -21,7 +22,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::Emitter;
-use crate::seekmind::storage::db::sqlite_database_path;
 
 fn qa_settings_to_view(settings: &QaSettings) -> QaSettingsView {
     QaSettingsView {
@@ -685,9 +685,7 @@ pub async fn ask_question(
 
     if !python_client.is_configured() {
         // 迁移期明确禁用 Rust 旧链路，避免把 sidecar 缺失误导成可回退路径。
-        eprintln!(
-            "[SeekMind] default qa sidecar unavailable; fallback qa path has been removed"
-        );
+        eprintln!("[SeekMind] default qa sidecar unavailable; fallback qa path has been removed");
         let answer = build_answer_view(
             answer_id,
             normalized_question.clone(),
@@ -881,10 +879,8 @@ pub async fn ask_question(
                 }) {
                     Ok(response) => response,
                     Err(error) => {
-                        let is_timeout = matches!(
-                            error,
-                            super::python_client::QaClientError::Timeout
-                        );
+                        let is_timeout =
+                            matches!(error, super::python_client::QaClientError::Timeout);
                         let state = if is_timeout { "cancelled" } else { "failed" };
                         let error_message = if is_timeout {
                             "Python 问答 sidecar 超时".to_string()
@@ -916,15 +912,15 @@ pub async fn ask_question(
                         );
                         let _ = app_for_task.emit(
                             "seekmind:qa:answer-progress",
-                        build_progress_view(
-                            job_id_for_task.clone(),
-                            state.to_string(),
-                            question_for_task.clone(),
-                            String::new(),
-                            String::new(),
-                            Vec::new(),
-                            answer.retrieval.clone(),
-                            answer.model.clone(),
+                            build_progress_view(
+                                job_id_for_task.clone(),
+                                state.to_string(),
+                                question_for_task.clone(),
+                                String::new(),
+                                String::new(),
+                                Vec::new(),
+                                answer.retrieval.clone(),
+                                answer.model.clone(),
                                 answer.error.clone(),
                                 answer.warning.clone(),
                             ),

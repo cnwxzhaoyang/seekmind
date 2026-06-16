@@ -410,6 +410,9 @@ fn index_schema_version_marker_path(index_dir: &PathBuf) -> PathBuf {
 
 fn write_index_schema_version_marker(index_dir: &PathBuf) -> Result<(), String> {
     let marker_path = index_schema_version_marker_path(index_dir);
-    std::fs::write(marker_path, CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION.to_string())
-        .map_err(|error| error.to_string())
+    std::fs::write(
+        marker_path,
+        CURRENT_FULLTEXT_INDEX_SCHEMA_VERSION.to_string(),
+    )
+    .map_err(|error| error.to_string())
 }

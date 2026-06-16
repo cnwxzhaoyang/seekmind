@@ -512,20 +512,17 @@ impl Database {
             .collect::<HashSet<_>>();
 
         // 修复：语义候选池不能只取很小的 topN，否则文档量一大时，相关语义结果会被关键词结果挤出最终列表。
-        let semantic_limit = limit
-            .max(1)
-            .saturating_mul(8)
-            .max(50)
-            .min(200);
+        let semantic_limit = limit.max(1).saturating_mul(8).max(50).min(200);
         let semantic_result = if semantic_enabled {
             semantic_store::semantic_search_hits(self, query, semantic_limit).await
         } else {
             Ok(Vec::new())
         };
-        let (semantic_candidates, semantic_fallback, semantic_fallback_reason) = match semantic_result {
-            Ok(hits) => (hits, false, String::new()),
-            Err(error) => (Vec::new(), true, error),
-        };
+        let (semantic_candidates, semantic_fallback, semantic_fallback_reason) =
+            match semantic_result {
+                Ok(hits) => (hits, false, String::new()),
+                Err(error) => (Vec::new(), true, error),
+            };
         let semantic_fallback_reason_text = if semantic_fallback_reason.is_empty() {
             if !semantic_enabled {
                 "语义检索已关闭".to_string()
@@ -596,7 +593,8 @@ impl Database {
         let chunk_ids_snapshot = chunk_ids.clone();
 
         let rows = self.fetch_chunks_by_ids(&chunk_ids).await?;
-        let mut preview_blocks_by_chunk_id = self.fetch_preview_blocks_for_search_rows(&rows).await?;
+        let mut preview_blocks_by_chunk_id =
+            self.fetch_preview_blocks_for_search_rows(&rows).await?;
         let mut rows_by_id = HashMap::new();
         for row in rows {
             rows_by_id.insert(row.id.clone(), row);
@@ -615,11 +613,12 @@ impl Database {
                 let semantic_score = semantic_score_map.get(chunk_id).copied().unwrap_or(0.0);
                 let keyword_rank = keyword_rank_map.get(chunk_id).copied();
                 let semantic_rank = semantic_rank_map.get(chunk_id).copied();
-                let fusion_score =
-                    keyword_rank.map(|rank| keyword_rrf_weight / (rrf_k + rank as f32)).unwrap_or(0.0)
-                        + semantic_rank
-                            .map(|rank| vector_rrf_weight / (rrf_k + rank as f32))
-                            .unwrap_or(0.0);
+                let fusion_score = keyword_rank
+                    .map(|rank| keyword_rrf_weight / (rrf_k + rank as f32))
+                    .unwrap_or(0.0)
+                    + semantic_rank
+                        .map(|rank| vector_rrf_weight / (rrf_k + rank as f32))
+                        .unwrap_or(0.0);
                 let title_score = if row.heading.trim().is_empty() {
                     0.0
                 } else if super::contains_all_terms(&row.heading, &normalized_terms) {
@@ -687,8 +686,10 @@ impl Database {
                 let weighted_title_score = title_score * settings.title_weight;
                 let weighted_filename_score = filename_score * settings.filename_weight;
                 let weighted_preference_score = preference_score * settings.preference_weight;
-                let final_score =
-                    raw_score + weighted_preference_score + weighted_title_score + weighted_filename_score;
+                let final_score = raw_score
+                    + weighted_preference_score
+                    + weighted_title_score
+                    + weighted_filename_score;
                 let mut rank_reason = rank_reason;
                 rank_reason.base_score = fusion_score;
                 rank_reason.raw_score = raw_score;
@@ -749,7 +750,9 @@ impl Database {
         let mut overflow = Vec::new();
         let mut document_counts = HashMap::<String, usize>::new();
         for candidate in ranked_candidates.into_iter() {
-            let count = document_counts.entry(candidate.document_key.clone()).or_insert(0);
+            let count = document_counts
+                .entry(candidate.document_key.clone())
+                .or_insert(0);
             if *count < same_document_cap {
                 *count += 1;
                 selected.push(candidate);
@@ -987,7 +990,10 @@ fn format_optional_rank(rank: Option<usize>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-fn candidate_source_label(keyword_rank: Option<usize>, semantic_rank: Option<usize>) -> &'static str {
+fn candidate_source_label(
+    keyword_rank: Option<usize>,
+    semantic_rank: Option<usize>,
+) -> &'static str {
     match (keyword_rank, semantic_rank) {
         (Some(_), Some(_)) => "keyword+vector",
         (Some(_), None) => "keyword",

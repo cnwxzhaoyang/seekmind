@@ -15,19 +15,22 @@ use crate::seekmind::models::{
     HighlightSpan, QaHistoryView, QaMessageView, QaModelProfileView, QaRetrievalView,
     QaSessionView, QaSourceView,
 };
+use crate::seekmind::semantic::vector_store::{
+    ensure_sqlite_vec_registered, resolve_vector_store_backend, VectorStoreBackend,
+};
 use crate::seekmind::storage::fulltext::SearchIndex;
 use crate::seekmind::storage::types::{NetworkProxySettings, QaSettings};
 
-mod rows;
-mod dirs;
 mod collections;
-mod qa;
-mod tags;
-mod search;
+mod dirs;
 mod documents;
-mod task;
-mod settings;
+mod qa;
+mod rows;
 mod schema;
+mod search;
+mod settings;
+mod tags;
+mod task;
 mod util;
 
 use self::rows::*;
@@ -84,6 +87,11 @@ impl Database {
         );
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+
+        let vector_backend = resolve_vector_store_backend();
+        if matches!(vector_backend, VectorStoreBackend::SqliteVec) {
+            ensure_sqlite_vec_registered()?;
         }
 
         let options = SqliteConnectOptions::new()

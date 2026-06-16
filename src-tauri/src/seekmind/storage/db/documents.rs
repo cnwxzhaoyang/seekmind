@@ -3,7 +3,6 @@
  * @CreatedDate 2026/06/05
  * @Description SeekMind 文档、块、OCR 任务与文档入口相关数据库逻辑。
  */
-
 use std::path::{Path, PathBuf};
 
 use sqlx::Row;
@@ -409,10 +408,7 @@ impl Database {
         Ok(())
     }
 
-    pub async fn clear_directory_failed_files(
-        &self,
-        dir_path: &str,
-    ) -> Result<(), sqlx::Error> {
+    pub async fn clear_directory_failed_files(&self, dir_path: &str) -> Result<(), sqlx::Error> {
         if is_virtual_directory(dir_path) {
             sqlx::query(
                 r#"
@@ -491,10 +487,7 @@ impl Database {
             .collect())
     }
 
-    pub async fn clear_directory_documents(
-        &self,
-        dir_path: &str,
-    ) -> Result<(), sqlx::Error> {
+    pub async fn clear_directory_documents(&self, dir_path: &str) -> Result<(), sqlx::Error> {
         self.search_index
             .delete_directory(dir_path)
             .map_err(sqlx::Error::Protocol)?;
@@ -625,10 +618,7 @@ impl Database {
         Ok(())
     }
 
-    pub async fn document_id_by_path(
-        &self,
-        path: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
+    pub async fn document_id_by_path(&self, path: &str) -> Result<Option<String>, sqlx::Error> {
         sqlx::query_scalar::<_, String>(
             r#"
             SELECT id

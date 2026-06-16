@@ -44,10 +44,10 @@ mod macos {
     use std::process::Command;
     use std::sync::OnceLock;
 
+    use objc2::msg_send;
     use objc2::rc::{autoreleasepool, Retained};
     use objc2::runtime::{AnyClass, AnyObject, NSObject};
     use objc2::AnyThread;
-    use objc2::msg_send;
     use objc2_app_kit::{NSGraphicsContext, NSImage, NSImageHintKey};
     use objc2_core_graphics::CGImage;
     use objc2_foundation::{NSArray, NSDictionary, NSError, NSRect, NSString};
@@ -181,8 +181,8 @@ mod macos {
                     None::<&NSDictionary<NSImageHintKey, AnyObject>>,
                 )
             };
-            let cg_image =
-                cg_image.ok_or_else(|| format!("failed to create CGImage for {}", path.display()))?;
+            let cg_image = cg_image
+                .ok_or_else(|| format!("failed to create CGImage for {}", path.display()))?;
 
             let request_cls = AnyClass::get(c"VNRecognizeTextRequest")
                 .ok_or_else(|| "Vision OCR request class unavailable".to_string())?;
@@ -296,6 +296,7 @@ mod windows_native {
     use std::path::{Path, PathBuf};
     use std::sync::OnceLock;
 
+    use windows::core::HSTRING;
     use windows::Globalization::Language;
     use windows::Graphics::Imaging::{
         BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat, SoftwareBitmap,
@@ -303,10 +304,7 @@ mod windows_native {
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::StorageFile;
     use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
-    use windows::Win32::System::WinRT::{
-        RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED,
-    };
-    use windows::core::HSTRING;
+    use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 
     pub fn bundled_vision_ocr_binary() -> Option<PathBuf> {
         bundled_vision_ocr_binary_path()
@@ -392,8 +390,9 @@ mod windows_native {
                     .unwrap_or(false)
             }) {
                 let tag = language_tag(language)?;
-                let engine = OcrEngine::TryCreateFromLanguage(language)
-                    .map_err(|error| format!("Windows OCR engine creation failed for {tag}: {error}"))?;
+                let engine = OcrEngine::TryCreateFromLanguage(language).map_err(|error| {
+                    format!("Windows OCR engine creation failed for {tag}: {error}")
+                })?;
                 eprintln!(
                     "[SeekMind] Windows OCR selected requested language={} resolved={}",
                     requested, tag
@@ -422,23 +421,41 @@ mod windows_native {
         let file = StorageFile::GetFileFromPathAsync(&hpath)
             .map_err(|error| format!("Windows OCR file open request failed: {error}"))?
             .get()
-            .map_err(|error| format!("Windows OCR file open failed for {}: {error}", path.display()))?;
+            .map_err(|error| {
+                format!(
+                    "Windows OCR file open failed for {}: {error}",
+                    path.display()
+                )
+            })?;
         let stream = file
             .OpenReadAsync()
             .map_err(|error| format!("Windows OCR stream open request failed: {error}"))?
             .get()
-            .map_err(|error| format!("Windows OCR stream open failed for {}: {error}", path.display()))?;
+            .map_err(|error| {
+                format!(
+                    "Windows OCR stream open failed for {}: {error}",
+                    path.display()
+                )
+            })?;
         let decoder = BitmapDecoder::CreateAsync(&stream)
             .map_err(|error| format!("Windows OCR bitmap decoder request failed: {error}"))?
             .get()
-            .map_err(|error| format!("Windows OCR bitmap decoder failed for {}: {error}", path.display()))?;
+            .map_err(|error| {
+                format!(
+                    "Windows OCR bitmap decoder failed for {}: {error}",
+                    path.display()
+                )
+            })?;
 
         match decoder
             .GetSoftwareBitmapConvertedAsync(BitmapPixelFormat::Gray8, BitmapAlphaMode::Ignore)
         {
-            Ok(operation) => operation
-                .get()
-                .map_err(|error| format!("Windows OCR bitmap conversion failed for {}: {error}", path.display())),
+            Ok(operation) => operation.get().map_err(|error| {
+                format!(
+                    "Windows OCR bitmap conversion failed for {}: {error}",
+                    path.display()
+                )
+            }),
             Err(error) => {
                 eprintln!(
                     "[SeekMind] Windows OCR gray bitmap conversion unavailable for {}: {}",
@@ -506,7 +523,8 @@ mod windows_native {
         } else {
             languages.to_vec()
         };
-        let (engine, resolved_language) = select_engine(&requested_languages, &available_languages)?;
+        let (engine, resolved_language) =
+            select_engine(&requested_languages, &available_languages)?;
         let bitmap = load_bitmap(path)?;
         let width = bitmap.PixelWidth().unwrap_or_default();
         let height = bitmap.PixelHeight().unwrap_or_default();
@@ -525,11 +543,21 @@ mod windows_native {
             .RecognizeAsync(&bitmap)
             .map_err(|error| format!("Windows OCR request failed for {}: {error}", path.display()))?
             .get()
-            .map_err(|error| format!("Windows OCR execution failed for {}: {error}", path.display()))?;
+            .map_err(|error| {
+                format!(
+                    "Windows OCR execution failed for {}: {error}",
+                    path.display()
+                )
+            })?;
         let text = result
             .Text()
             .map(|value| value.to_string())
-            .map_err(|error| format!("Windows OCR text extraction failed for {}: {error}", path.display()))?;
+            .map_err(|error| {
+                format!(
+                    "Windows OCR text extraction failed for {}: {error}",
+                    path.display()
+                )
+            })?;
         eprintln!(
             "[SeekMind] Windows OCR completed path={} language={} chars={}",
             path.display(),

@@ -3,7 +3,6 @@
  * @CreatedDate 2026/06/05
  * @Description SeekMind 数据库通用工具函数。
  */
-
 use std::path::PathBuf;
 
 use chrono::{TimeZone, Utc};
@@ -36,9 +35,7 @@ pub fn sqlite_database_path() -> PathBuf {
 }
 
 pub(crate) fn normalize_directory_path(path: &str) -> String {
-    path.trim()
-        .trim_end_matches(['/', '\\'])
-        .to_string()
+    path.trim().trim_end_matches(['/', '\\']).to_string()
 }
 
 pub(crate) fn normalize_path_for_comparison(path: &str) -> String {
@@ -89,10 +86,7 @@ pub(crate) fn format_unix_ts(timestamp: i64) -> String {
         .unwrap_or_else(|| "未知".to_string())
 }
 
-pub(crate) async fn scalar_count_no_bind(
-    pool: &SqlitePool,
-    sql: &str,
-) -> Result<i64, sqlx::Error> {
+pub(crate) async fn scalar_count_no_bind(pool: &SqlitePool, sql: &str) -> Result<i64, sqlx::Error> {
     let row = sqlx::query(sql).fetch_one(pool).await?;
     row.try_get::<i64, _>(0)
 }

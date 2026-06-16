@@ -94,8 +94,18 @@ pub fn resource_base_dirs() -> Vec<PathBuf> {
 
     if let Ok(cwd) = std::env::current_dir() {
         dirs.push(cwd.join("src-tauri").join("app-resources"));
-        dirs.push(cwd.join("src-tauri").join("target").join("debug").join("app-resources"));
-        dirs.push(cwd.join("src-tauri").join("target").join("release").join("app-resources"));
+        dirs.push(
+            cwd.join("src-tauri")
+                .join("target")
+                .join("debug")
+                .join("app-resources"),
+        );
+        dirs.push(
+            cwd.join("src-tauri")
+                .join("target")
+                .join("release")
+                .join("app-resources"),
+        );
     }
 
     dirs
@@ -381,9 +391,10 @@ pub fn office_runtime() -> OfficeRuntime {
 }
 
 pub fn writable_fastembed_cache_dir() -> PathBuf {
-    if let Some(configured) =
-        env_override(&["SEEKMIND_FASTEMBED_CACHE_DIR", "SeekMind_FASTEMBED_CACHE_DIR"])
-    {
+    if let Some(configured) = env_override(&[
+        "SEEKMIND_FASTEMBED_CACHE_DIR",
+        "SeekMind_FASTEMBED_CACHE_DIR",
+    ]) {
         return PathBuf::from(configured);
     }
 

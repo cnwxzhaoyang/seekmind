@@ -3,7 +3,6 @@
  * @CreatedDate 2026/06/05
  * @Description SeekMind 数据库设置与模型连接相关逻辑。
  */
-
 use uuid::Uuid;
 
 use crate::seekmind::models::{QaModelProfileUpsertView, QaModelProfileView};
@@ -11,7 +10,9 @@ use crate::seekmind::storage::types::{IndexSettings, NetworkProxySettings, QaSet
 
 use super::rows::{NetworkProxySettingsRow, QaModelProfileRow, QaSettingsRow};
 use super::util::{current_unix_ts, default_exclude_dirs, format_unix_ts};
-use super::{default_network_proxy_settings, default_qa_settings, qa_model_profile_row_to_view, Database};
+use super::{
+    default_network_proxy_settings, default_qa_settings, qa_model_profile_row_to_view, Database,
+};
 
 impl Database {
     pub async fn get_index_settings(&self) -> Result<IndexSettings, sqlx::Error> {

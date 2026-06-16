@@ -115,8 +115,9 @@ fn run() -> Result<(), String> {
 
     let sqlite_path = seekmind::storage::db::sqlite_database_path();
     let open_started = Instant::now();
-    let database =
-        tauri::async_runtime::block_on(seekmind::storage::Database::open_or_init_read_only_index())?;
+    let database = tauri::async_runtime::block_on(
+        seekmind::storage::Database::open_or_init_read_only_index(),
+    )?;
     let open_database_ms = open_started.elapsed().as_millis();
     eprintln!(
         "[SeekMind][Benchmark] database opened path={} elapsed_ms={open_database_ms}",
@@ -141,10 +142,9 @@ fn run() -> Result<(), String> {
     );
 
     let semantic_started = Instant::now();
-    let semantic_status =
-        tauri::async_runtime::block_on(seekmind::semantic::store::get_embedding_model_status(
-            &database,
-        ))?;
+    let semantic_status = tauri::async_runtime::block_on(
+        seekmind::semantic::store::get_embedding_model_status(&database),
+    )?;
     let load_semantic_status_ms = semantic_started.elapsed().as_millis();
     eprintln!(
         "[SeekMind][Benchmark] semantic model={} available={} elapsed_ms={load_semantic_status_ms}",
@@ -165,11 +165,9 @@ fn run() -> Result<(), String> {
         let mut hit_count = 0;
         for round in 0..options.repeat {
             let search_started = Instant::now();
-            let hits = tauri::async_runtime::block_on(database.search_documents(
-                &query,
-                options.limit,
-            ))
-            .map_err(|error| error.to_string())?;
+            let hits =
+                tauri::async_runtime::block_on(database.search_documents(&query, options.limit))
+                    .map_err(|error| error.to_string())?;
             let elapsed_ms = duration_ms(search_started.elapsed());
             hit_count = hits.len();
             samples_ms.push(elapsed_ms);
@@ -243,8 +241,8 @@ fn run() -> Result<(), String> {
         },
     };
 
-    let report_json =
-        serde_json::to_string_pretty(&report).map_err(|error| format!("serialize report: {error}"))?;
+    let report_json = serde_json::to_string_pretty(&report)
+        .map_err(|error| format!("serialize report: {error}"))?;
     if let Some(output_path) = options.output_path {
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)
@@ -360,8 +358,9 @@ fn resolve_queries(
         }
     }
 
-    let history = tauri::async_runtime::block_on(database.list_search_history(options.history_limit))
-        .map_err(|error| error.to_string())?;
+    let history =
+        tauri::async_runtime::block_on(database.list_search_history(options.history_limit))
+            .map_err(|error| error.to_string())?;
     let history_queries = history
         .into_iter()
         .map(|item| item.query)
@@ -371,12 +370,15 @@ fn resolve_queries(
         return Ok(normalized_history);
     }
 
-    Ok(DEFAULT_QUERIES.iter().map(|item| item.to_string()).collect())
+    Ok(DEFAULT_QUERIES
+        .iter()
+        .map(|item| item.to_string())
+        .collect())
 }
 
 fn read_queries_file(path: &Path) -> Result<Vec<String>, String> {
-    let content =
-        fs::read_to_string(path).map_err(|error| format!("read queries file {}: {error}", path.display()))?;
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("read queries file {}: {error}", path.display()))?;
     Ok(normalize_queries(
         content.lines().map(|line| line.to_string()).collect(),
     ))

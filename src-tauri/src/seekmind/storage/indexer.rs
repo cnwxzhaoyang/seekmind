@@ -175,9 +175,17 @@ pub async fn rebuild_pdf_ocr_queue(
         )
         .await
         .map_err(|error| error.to_string())?;
-    emit_index_progress(database, job_id, "pdf-ocr", "", "running", "正在重跑 PDF OCR", &on_progress)
-        .await
-        .map_err(|error| error.to_string())?;
+    emit_index_progress(
+        database,
+        job_id,
+        "pdf-ocr",
+        "",
+        "running",
+        "正在重跑 PDF OCR",
+        &on_progress,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
 
     for path in pending_paths {
         processed += 1;

@@ -1,15 +1,16 @@
+use super::rows::{DocumentPathRow, IndexDirRow};
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/05
  * @Description SeekMind 目录统计与目录树视图逻辑。
  */
-
 use super::util::{is_path_within_dir, is_virtual_directory, normalize_directory_path};
-use super::rows::{DocumentPathRow, IndexDirRow};
 use super::{Database, DirectoryAggregate};
 
 impl Database {
-    pub async fn list_index_dirs(&self) -> Result<Vec<crate::seekmind::models::IndexDirView>, sqlx::Error> {
+    pub async fn list_index_dirs(
+        &self,
+    ) -> Result<Vec<crate::seekmind::models::IndexDirView>, sqlx::Error> {
         let explicit_rows = sqlx::query_as::<_, IndexDirRow>(
             r#"
             SELECT path, enabled, docs, chunks, status

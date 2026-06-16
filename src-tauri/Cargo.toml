@@ -43,6 +43,8 @@ zip = "0.6"
 tantivy = "0.24"
 wait-timeout = "0.2"
 sha2 = "0.10"
+libsqlite3-sys = "0.30.1"
+sqlite-vec = "0.1.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Keep Apple runtime bindings macOS-only so Windows builds do not pull in objc2 transitively.
