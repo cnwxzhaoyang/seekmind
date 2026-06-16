@@ -16,15 +16,26 @@ import SeekMindUpdatePanel from "../components/SeekMind/SeekMindUpdatePanel.vue"
 import SeekMindToast from "../components/SeekMind/SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../services/seekMindApi";
 import { useInfoMessage } from "../composables/useInfoMessage";
-import { setLocale as setI18nLocale } from "../i18n";
+import { localeMode, setLocale as setI18nLocale } from "../i18n";
 import type { IndexSettingsView, NetworkProxySettingsView, SemanticModelStatusView } from "../types/SeekMind";
 
 const { t, locale } = useI18n();
 const { themeMode, setTheme } = useTheme();
 
-const currentLocale = ref(locale.value);
-const switchLocale = (lang: "zh-CN" | "en") => {
-  currentLocale.value = lang;
+const currentLocaleMode = computed(() => localeMode.value);
+const currentLocaleLabel = computed(() => {
+  if (currentLocaleMode.value === "system") {
+    return t("page.settings.languageSystem");
+  }
+  return currentLocaleMode.value === "zh-CN" ? "中文" : "English";
+});
+const currentLocaleModeBadgeLabel = computed(() => {
+  if (currentLocaleMode.value === "system") {
+    return t("page.settings.languageSystem");
+  }
+  return currentLocaleMode.value === "zh-CN" ? "中文" : "English";
+});
+const switchLocale = (lang: "system" | "zh-CN" | "en") => {
   setI18nLocale(lang);
 };
 
@@ -530,7 +541,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex items-center justify-between gap-3">
                 <span class="text-dim">{{ t("page.settings.language") }}</span>
-                <span class="font-medium text-primary">{{ currentLocale === "zh-CN" ? "中文" : "English" }}</span>
+                <span class="font-medium text-primary">{{ currentLocaleModeBadgeLabel }}</span>
               </div>
               <div class="flex items-center justify-between gap-3">
                 <span class="text-dim">{{ t("page.settings.theme") }}</span>
@@ -764,29 +775,41 @@ onBeforeUnmount(() => {
                 <SeekMindBadge tone="default">{{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}</SeekMindBadge>
               </div>
               <div class="grid gap-4 p-4 xl:grid-cols-2 xl:items-start">
-                <div class="rounded-lg border border-default bg-panel px-4 py-3">
-                  <div class="mb-2 seekmind-section-label">{{ t("page.settings.language") }}</div>
-                  <div class="grid gap-2">
-                    <button
-                      class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                      :class="currentLocale === 'zh-CN'
+              <div class="rounded-lg border border-default bg-panel px-4 py-3">
+                <div class="mb-2 seekmind-section-label">{{ t("page.settings.language") }}</div>
+                <div class="grid gap-2">
+                  <button
+                    class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                    :class="currentLocaleMode === 'system'
+                      ? 'border-default bg-accent text-white'
+                      : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                    @click="switchLocale('system')"
+                  >
+                    {{ t("page.settings.languageSystem") }}
+                  </button>
+                  <button
+                    class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                    :class="currentLocaleMode === 'zh-CN'
                         ? 'border-default bg-accent text-white'
                         : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                      @click="switchLocale('zh-CN')"
-                    >
-                      中文
-                    </button>
-                    <button
-                      class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
-                      :class="currentLocale === 'en'
+                    @click="switchLocale('zh-CN')"
+                  >
+                    中文
+                  </button>
+                  <button
+                    class="rounded-md border px-4 py-2.5 text-sm font-medium transition"
+                    :class="currentLocaleMode === 'en'
                         ? 'border-default bg-accent text-white'
                         : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
-                      @click="switchLocale('en')"
-                    >
-                      English
-                    </button>
-                  </div>
+                    @click="switchLocale('en')"
+                  >
+                    English
+                  </button>
                 </div>
+                <div class="mt-2 text-xs text-dim">
+                  {{ t("page.settings.languageCurrent") }}：{{ currentLocaleLabel }}
+                </div>
+              </div>
 
                 <div class="rounded-lg border border-default bg-panel px-4 py-3">
                   <div class="mb-2 seekmind-section-label">{{ t("page.settings.theme") }}</div>

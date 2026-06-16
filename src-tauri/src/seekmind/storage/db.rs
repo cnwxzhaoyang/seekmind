@@ -218,8 +218,9 @@ impl Database {
 fn default_qa_settings() -> QaSettings {
     QaSettings {
         enabled: false,
-        provider: "openai_compatible".to_string(),
-        base_url: String::new(),
+        // 修复：LLM 连接默认切到 Ollama，本地开发环境优先使用本机 OpenAI-compatible 端点。
+        provider: "ollama".to_string(),
+        base_url: "http://127.0.0.1:11434/v1".to_string(),
         api_key: String::new(),
         model: String::new(),
         temperature: 0.2,

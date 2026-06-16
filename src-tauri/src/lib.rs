@@ -6,7 +6,9 @@
 
 pub mod seekmind;
 
+use dirs::{cache_dir, data_dir};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 #[cfg(debug_assertions)]
 use tauri::Manager;
@@ -14,26 +16,67 @@ use tauri_plugin_dialog::init as dialog_init;
 use tauri_plugin_fs::init as fs_init;
 use tauri_plugin_opener::init as opener_init;
 
+fn remove_dir_if_exists(path: &Path, label: &str) -> Result<(), String> {
+    if !path.exists() {
+        eprintln!("[SeekMind] reset skip missing {} path={}", label, path.display());
+        return Ok(());
+    }
+
+    fs::remove_dir_all(path).map_err(|error| error.to_string())?;
+    eprintln!("[SeekMind] reset removed {} path={}", label, path.display());
+    Ok(())
+}
+
+fn reset_target_dirs() -> Vec<(PathBuf, &'static str)> {
+    let mut targets = Vec::new();
+
+    if let Some(parent) = seekmind::storage::db::sqlite_database_path().parent() {
+        targets.push((parent.to_path_buf(), "sqlite data root"));
+    }
+
+    if let Some(base) = data_dir() {
+        targets.push((base.join("SeekMindDev"), "legacy dev data root"));
+        targets.push((base.join("SeekMind"), "legacy release data root"));
+    }
+
+    if let Some(base) = cache_dir() {
+        targets.push((base.join("com.zhaoyang.SeekMind.dev"), "legacy dev tantivy cache root"));
+        targets.push((base.join("com.zhaoyang.seekmind"), "legacy release tantivy cache root"));
+    }
+
+    if let Some(parent) = seekmind::storage::fulltext::fulltext_index_dir().parent() {
+        targets.push((parent.to_path_buf(), "active tantivy cache root"));
+    }
+
+    if let Ok(cache_dir) = std::env::var("SEEKMIND_FASTEMBED_CACHE_DIR") {
+        let cache_dir = cache_dir.trim();
+        if !cache_dir.is_empty() {
+            let cache_path = PathBuf::from(cache_dir);
+            if let Some(parent) = cache_path.parent() {
+                targets.push((parent.to_path_buf(), "fastembed cache root"));
+            } else {
+                targets.push((cache_path, "fastembed cache root"));
+            }
+        }
+    }
+
+    targets
+}
+
 pub fn reset_local_storage() -> Result<(), String> {
-    let sqlite_path = seekmind::storage::db::sqlite_database_path();
-    let tantivy_dir = seekmind::storage::fulltext::fulltext_index_dir();
-    let legacy_tantivy_dir = {
-        let base = dirs::data_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        base.join("SeekMind").join("tantivy")
-    };
+    // 修复：首次启动/真正初始化必须同时清理 SQLite、Tantivy、fastembed 缓存和旧版本数据根，避免只删一半导致旧状态回流。
+    eprintln!("[SeekMind] reset local storage start");
+    let mut seen = std::collections::BTreeSet::new();
 
-    if sqlite_path.exists() {
-        fs::remove_file(&sqlite_path).map_err(|error| error.to_string())?;
+    for (target, label) in reset_target_dirs() {
+        let key = target.display().to_string();
+        if !seen.insert(key) {
+            continue;
+        }
+        remove_dir_if_exists(&target, label)?;
     }
 
-    if tantivy_dir.exists() {
-        fs::remove_dir_all(&tantivy_dir).map_err(|error| error.to_string())?;
-    }
-
-    if legacy_tantivy_dir.exists() {
-        fs::remove_dir_all(&legacy_tantivy_dir).map_err(|error| error.to_string())?;
-    }
-
+    eprintln!("[SeekMind] reset local storage completed");
     Ok(())
 }
 
@@ -42,6 +85,17 @@ pub fn run_vision_ocr_helper(args: &[String]) -> Result<(), String> {
 }
 
 pub fn run() {
+    if std::env::var("SEEKMIND_FORCE_FIRST_LAUNCH")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        eprintln!("[SeekMind] first launch reset requested");
+        if let Err(error) = reset_local_storage() {
+            eprintln!("[SeekMind] first launch reset failed: {error}");
+        }
+    }
+
     seekmind::sidecar::log_fastembed_cache_diagnostics();
     seekmind::sidecar::prepare_fastembed_cache_for_runtime();
 

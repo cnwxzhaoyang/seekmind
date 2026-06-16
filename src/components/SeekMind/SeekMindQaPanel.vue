@@ -22,9 +22,10 @@ const enabled = ref(true);
 type ProviderPreset = "openai_compatible" | "ollama" | "google_ai" | "deepseek" | "custom";
 
 const providerPresets: ProviderPreset[] = ["openai_compatible", "ollama", "google_ai", "deepseek", "custom"];
-const providerMode = ref<ProviderPreset>("openai_compatible");
+// 修复：LLM 连接默认切到 Ollama，本地开发环境优先使用本机服务端点。
+const providerMode = ref<ProviderPreset>("ollama");
 const customProvider = ref("");
-const baseUrl = ref("");
+const baseUrl = ref("http://127.0.0.1:11434/v1");
 const apiKey = ref("");
 const model = ref("");
 const temperature = ref(0.2);
@@ -39,8 +40,10 @@ const testing = ref(false);
 const profilesLoading = ref(false);
 const profileDeleting = ref(false);
 const errorMessage = ref("");
-const { infoMessage } = useInfoMessage();
-const profileMessage = ref("");
+// 修复：保存成功提示必须自动消失，避免右上角浮层常驻遮挡设置页内容。
+const { infoMessage: saveMessage } = useInfoMessage();
+// 修复：连接测试结果仅保留为按钮旁轻量状态，不再占用底部独立卡片空间。
+const { infoMessage: profileToastMessage } = useInfoMessage();
 const profileErrorMessage = ref("");
 const connectionResult = ref<QaConnectionTestView | null>(null);
 const profiles = ref<QaModelProfileView[]>([]);
@@ -56,6 +59,18 @@ const resolveProviderMode = (value: string): ProviderPreset => {
 };
 
 const providerValue = computed(() => (providerMode.value === "custom" ? customProvider.value.trim() : providerMode.value));
+const connectionStatus = computed(() => {
+  if (!connectionResult.value) {
+    return null;
+  }
+
+  return {
+    tone: connectionResult.value.ok ? ("success" as const) : ("error" as const),
+    label: connectionResult.value.ok
+      ? t("page.settings.qa.connectionTestPassed")
+      : t("page.settings.qa.connectionTestFailed"),
+  };
+});
 // 兼容历史连接里出现的自定义 provider，避免旧配置在切换成下拉后丢失。
 const providerLabel = (value: string) => {
   const normalized = normalizeProviderValue(value);
@@ -210,7 +225,7 @@ const buildConnectionProfileName = (settings: QaSettingsView) => {
 
 const syncCurrentProfileToList = async (settings: QaSettingsView) => {
   profileErrorMessage.value = "";
-  profileMessage.value = "";
+  profileToastMessage.value = "";
 
   try {
     const existing = profiles.value.find((item) => item.id === editingProfileId.value) ?? null;
@@ -228,7 +243,7 @@ const syncCurrentProfileToList = async (settings: QaSettingsView) => {
     profiles.value = [saved, ...profiles.value.filter((item) => item.id !== saved.id)];
     selectedProfileId.value = saved.id;
     editingProfileId.value = saved.id;
-    profileMessage.value = t("page.settings.qa.profileSaved", { name: saved.name });
+    profileToastMessage.value = t("page.settings.qa.profileSaved", { name: saved.name });
   } catch (error) {
     profileErrorMessage.value = formatSeekMindError(error, t("page.settings.qa.profileErrorSave"));
     console.error("[SeekMind] saveQaModelProfile failed", error);
@@ -238,13 +253,13 @@ const syncCurrentProfileToList = async (settings: QaSettingsView) => {
 const loadProfileToForm = (profile: QaModelProfileView) => {
   selectedProfileId.value = profile.id;
   applyProfile(profile);
-  profileMessage.value = t("page.settings.qa.profileLoaded", { name: profile.name });
+  profileToastMessage.value = t("page.settings.qa.profileLoaded", { name: profile.name });
 };
 
 const deleteProfile = async (profile: QaModelProfileView) => {
   profileDeleting.value = true;
   profileErrorMessage.value = "";
-  profileMessage.value = "";
+  profileToastMessage.value = "";
 
   try {
     await seekMindApi.removeQaModelProfile(profile.id);
@@ -256,7 +271,7 @@ const deleteProfile = async (profile: QaModelProfileView) => {
       editingProfileId.value = "";
     }
     emitQaConfigUpdated("delete-profile");
-    profileMessage.value = t("page.settings.qa.profileDeleted", { name: profile.name });
+    profileToastMessage.value = t("page.settings.qa.profileDeleted", { name: profile.name });
   } catch (error) {
     profileErrorMessage.value = formatSeekMindError(error, t("page.settings.qa.profileErrorDelete"));
     console.error("[SeekMind] removeQaModelProfile failed", error);
@@ -267,7 +282,7 @@ const deleteProfile = async (profile: QaModelProfileView) => {
 
 const setDefaultProfile = async (profile: QaModelProfileView) => {
   profileErrorMessage.value = "";
-  profileMessage.value = "";
+  profileToastMessage.value = "";
 
   try {
     const saved = await seekMindApi.setDefaultQaModelProfile(profile.id);
@@ -276,7 +291,7 @@ const setDefaultProfile = async (profile: QaModelProfileView) => {
     // 修复：默认连接即为当前启用连接，避免默认项与可用项状态不一致。
     enabled.value = true;
     emitQaConfigUpdated("set-default-profile");
-    profileMessage.value = t("page.settings.qa.profileDefaulted", { name: saved.name });
+    profileToastMessage.value = t("page.settings.qa.profileDefaulted", { name: saved.name });
   } catch (error) {
     profileErrorMessage.value = formatSeekMindError(error, t("page.settings.qa.profileErrorDefault"));
     console.error("[SeekMind] setDefaultQaModelProfile failed", error);
@@ -286,8 +301,8 @@ const setDefaultProfile = async (profile: QaModelProfileView) => {
 const buildSettingsPayload = (): QaSettingsView => ({
   // 启用状态由默认连接自动维持，这里始终按已启用保存，避免旧数据把问答入口锁死。
   enabled: true,
-  provider: providerValue.value || "openai_compatible",
-  base_url: baseUrl.value.trim(),
+  provider: providerValue.value || "ollama",
+  base_url: baseUrl.value.trim() || "http://127.0.0.1:11434/v1",
   api_key: apiKey.value,
   model: model.value.trim(),
   temperature: Math.max(0, Math.min(2, Number(temperature.value) || 0.2)),
@@ -311,7 +326,7 @@ const saveSettings = async () => {
     await syncCurrentProfileToList(settings);
     // 修复：设置页保存在 KeepAlive 场景下不会触发问答页重建，必须主动广播配置更新。
     emitQaConfigUpdated("save-settings");
-    infoMessage.value = t("page.settings.qa.saved");
+    saveMessage.value = t("page.settings.qa.saved");
   } catch (error) {
     errorMessage.value = formatSeekMindError(error, t("page.settings.qa.error.save"));
     console.error("[SeekMind] saveQaSettings failed", error);
@@ -335,7 +350,7 @@ const testConnection = async () => {
     await syncCurrentProfileToList(settings);
     emitQaConfigUpdated("test-connection");
     connectionResult.value = result;
-    infoMessage.value = t("page.settings.qa.connectionSaved", { message: result.message });
+    saveMessage.value = t("page.settings.qa.connectionSaved", { message: result.message });
   } catch (error) {
     errorMessage.value = formatSeekMindError(error, t("page.settings.qa.error.connection"));
     console.error("[SeekMind] testQaConnection failed", error);
@@ -384,7 +399,7 @@ onMounted(async () => {
 
     <div class="settings-card-body space-y-4">
       <SeekMindToast v-if="errorMessage" :message="errorMessage" tone="error" />
-      <SeekMindToast v-if="infoMessage" :message="infoMessage" tone="success" />
+      <SeekMindToast v-if="saveMessage" :message="saveMessage" tone="success" />
 
       <div v-if="loading" class="settings-empty-state">
         {{ t("common.loading") }}
@@ -554,15 +569,9 @@ onMounted(async () => {
                 <Shield :size="15" />
                 {{ testing ? t("page.settings.qa.testing") : t("page.settings.qa.testConnection") }}
               </button>
-            </div>
-
-            <div class="seekmind-item-meta">
-              {{ t("page.settings.qa.localNotice") }}
-            </div>
-
-            <div v-if="connectionResult" class="rounded-lg border border-default bg-panel px-3 py-2.5 text-sm text-secondary">
-              <div class="seekmind-section-label">{{ t("page.settings.qa.connectionResult") }}</div>
-              <div class="mt-1">{{ connectionResult.message }}</div>
+              <SeekMindBadge v-if="connectionStatus" :tone="connectionStatus.tone" class="shrink-0">
+                {{ connectionStatus.label }}
+              </SeekMindBadge>
             </div>
           </div>
 
@@ -577,7 +586,7 @@ onMounted(async () => {
               </div>
 
               <SeekMindToast v-if="profileErrorMessage" :message="profileErrorMessage" tone="error" />
-              <SeekMindToast v-if="profileMessage" :message="profileMessage" tone="success" />
+              <SeekMindToast v-if="profileToastMessage" :message="profileToastMessage" tone="success" />
 
               <div class="mt-2">
                 <div class="qa-connection-list-scroll">
