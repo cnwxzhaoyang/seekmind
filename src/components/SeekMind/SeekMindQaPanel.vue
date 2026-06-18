@@ -14,7 +14,7 @@ import { useInfoMessage } from "../../composables/useInfoMessage";
 import { emitQaConfigUpdated } from "../../utils/qaConfigEvents";
 import type { QaConnectionTestView, QaModelProfileUpsertView, QaModelProfileView, QaSettingsView } from "../../types/SeekMind";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const savedSettings = ref<QaSettingsView | null>(null);
 // 修复：模型启用状态改为自动维持，不再暴露给用户手动切换，避免默认连接与当前配置状态分裂。
@@ -34,6 +34,7 @@ const contextChunkLimit = ref(8);
 const contextTokenBudget = ref(6000);
 const minEvidenceCount = ref(2);
 const minRetrievalScore = ref(0);
+const intentSynonymRulesJson = ref("");
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
@@ -70,6 +71,31 @@ const connectionStatus = computed(() => {
       ? t("page.settings.qa.connectionTestPassed")
       : t("page.settings.qa.connectionTestFailed"),
   };
+});
+const intentRulesPlaceholder = computed(() => {
+  if (String(locale.value).startsWith("zh")) {
+    return [
+      "[",
+      "  {",
+      '    "name": "报销",',
+      '    "markers": ["报销", "发票"],',
+      '    "recall_terms": ["费用报销", "报销流程", "发票", "付款"],',
+      '    "noise_terms": ["什么", "怎么"]',
+      "  }",
+      "]",
+    ].join("\n");
+  }
+
+  return [
+    "[",
+    "  {",
+    '    "name": "expense",',
+    '    "markers": ["expense", "invoice"],',
+    '    "recall_terms": ["expense reimbursement", "reimbursement process", "invoice", "payment"],',
+    '    "noise_terms": ["what", "how"]',
+    "  }",
+    "]",
+  ].join("\n");
 });
 // 兼容历史连接里出现的自定义 provider，避免旧配置在切换成下拉后丢失。
 const providerLabel = (value: string) => {
@@ -140,7 +166,8 @@ const hasChanges = computed(() => {
     Math.floor(Number(contextChunkLimit.value) || 0) !== savedSettings.value.context_chunk_limit ||
     Math.floor(Number(contextTokenBudget.value) || 0) !== savedSettings.value.context_token_budget ||
     Math.floor(Number(minEvidenceCount.value) || 0) !== savedSettings.value.min_evidence_count ||
-    Number(minRetrievalScore.value) !== savedSettings.value.min_retrieval_score
+    Number(minRetrievalScore.value) !== savedSettings.value.min_retrieval_score ||
+    intentSynonymRulesJson.value.trim() !== (savedSettings.value.intent_synonym_rules_json ?? "").trim()
   );
 });
 
@@ -157,6 +184,7 @@ const applySettings = (settings: QaSettingsView) => {
   contextTokenBudget.value = settings.context_token_budget;
   minEvidenceCount.value = settings.min_evidence_count;
   minRetrievalScore.value = settings.min_retrieval_score;
+  intentSynonymRulesJson.value = settings.intent_synonym_rules_json ?? "";
 };
 
 const applyProfile = (profile: QaModelProfileView) => {
@@ -311,13 +339,39 @@ const buildSettingsPayload = (): QaSettingsView => ({
   context_token_budget: Math.max(1, Math.floor(Number(contextTokenBudget.value) || 6000)),
   min_evidence_count: Math.max(1, Math.floor(Number(minEvidenceCount.value) || 2)),
   min_retrieval_score: Math.max(-1, Math.min(1, Number(minRetrievalScore.value) || 0)),
+  intent_synonym_rules_json: intentSynonymRulesJson.value.trim(),
   updated_at: savedSettings.value?.updated_at ?? "",
 });
+
+const validateIntentSynonymRules = () => {
+  const raw = intentSynonymRulesJson.value.trim();
+  if (!raw) {
+    return true;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      errorMessage.value = t("page.settings.qa.intentRulesInvalid");
+      return false;
+    }
+  } catch {
+    errorMessage.value = t("page.settings.qa.intentRulesInvalid");
+    return false;
+  }
+
+  return true;
+};
 
 const saveSettings = async () => {
   saving.value = true;
   errorMessage.value = "";
   saveMessage.value = "";
+
+  if (!validateIntentSynonymRules()) {
+    saving.value = false;
+    return;
+  }
 
   try {
     const settings = await seekMindApi.saveQaSettings(buildSettingsPayload());
@@ -340,6 +394,11 @@ const testConnection = async () => {
   errorMessage.value = "";
   saveMessage.value = "";
   connectionResult.value = null;
+
+  if (!validateIntentSynonymRules()) {
+    testing.value = false;
+    return;
+  }
 
   try {
     const payload = buildSettingsPayload();
@@ -542,6 +601,31 @@ onMounted(async () => {
                 <span>{{ minRetrievalScore.toFixed(2) }}</span>
               </div>
               <input v-model.number="minRetrievalScore" type="range" min="-1" max="1" step="0.05" class="w-full accent-accent" />
+            </label>
+
+            <label class="block">
+              <div class="mb-1.5 flex items-center justify-between seekmind-section-label settings-inline-help">
+                <span class="inline-flex items-center gap-1.5">
+                  <span>{{ t("page.settings.qa.intentRules") }}</span>
+                  <button
+                    type="button"
+                    class="settings-help-trigger"
+                    :title="t('page.settings.qa.help.intentRules')"
+                    :aria-label="t('page.settings.qa.help.intentRules')"
+                  >
+                    <CircleHelp :size="14" />
+                  </button>
+                </span>
+                <SeekMindBadge tone="default">{{ intentSynonymRulesJson.trim() ? t("page.settings.qa.intentRulesCustom") : t("page.settings.qa.intentRulesBuiltin") }}</SeekMindBadge>
+              </div>
+              <textarea
+                v-model="intentSynonymRulesJson"
+                rows="6"
+                class="w-full resize-y rounded-lg border border-default bg-input px-4 py-2.5 font-mono text-xs leading-5 text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
+                :placeholder="intentRulesPlaceholder"
+                spellcheck="false"
+              />
+              <div class="mt-1 seekmind-item-meta">{{ t("page.settings.qa.intentRulesHint") }}</div>
             </label>
 
             <div class="flex flex-wrap items-center gap-2">

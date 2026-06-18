@@ -332,6 +332,7 @@ impl Database {
                 context_token_budget INTEGER NOT NULL DEFAULT 6000,
                 min_evidence_count INTEGER NOT NULL DEFAULT 2,
                 min_retrieval_score REAL NOT NULL DEFAULT 0,
+                intent_synonym_rules_json TEXT NOT NULL DEFAULT '',
                 updated_at INTEGER NOT NULL DEFAULT 0
             )
             "#,
@@ -432,6 +433,29 @@ impl Database {
         if count == 0 {
             self.save_qa_settings(&default_qa_settings()).await?;
         }
+        Ok(())
+    }
+
+    pub(crate) async fn ensure_qa_settings_columns(&self) -> Result<(), sqlx::Error> {
+        let existing = sqlx::query("PRAGMA table_info(qa_settings)")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut columns = std::collections::HashSet::new();
+        for row in existing {
+            let name: String = row.try_get("name")?;
+            columns.insert(name);
+        }
+
+        if !columns.contains("intent_synonym_rules_json") {
+            eprintln!("[SeekMind] migrate qa_settings.intent_synonym_rules_json column");
+            sqlx::query(
+                "ALTER TABLE qa_settings ADD COLUMN intent_synonym_rules_json TEXT NOT NULL DEFAULT ''",
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+
         Ok(())
     }
 

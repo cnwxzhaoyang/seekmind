@@ -397,6 +397,7 @@ export interface QaSettingsView {
   context_token_budget: number;
   min_evidence_count: number;
   min_retrieval_score: number;
+  intent_synonym_rules_json: string;
   updated_at: string;
 }
 

@@ -7,8 +7,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import sys
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .db import RagChunkRecord, RagStore
 from .models import RagRetrieval, RagSource
@@ -20,6 +21,15 @@ class RagRecallCandidate:
     query_hits: int
     best_score: float
     term_overlap: int
+    core_term_hits: int
+
+
+@dataclass
+class IntentSynonymRule:
+    name: str
+    markers: List[str]
+    recall_terms: List[str]
+    noise_terms: List[str]
 
 
 @dataclass
@@ -38,7 +48,48 @@ def normalize_query(query: str) -> List[str]:
     return tokenize_search_text(query)
 
 
-def rewrite_query_terms(query: str) -> List[str]:
+BUILTIN_INTENT_SYNONYM_RULES: List[IntentSynonymRule] = [
+    IntentSynonymRule(
+        name="offboarding",
+        markers=[
+            "离开公司",
+            "离职",
+            "辞职",
+            "离岗",
+            "离任",
+            "离司",
+            "离开单位",
+            "离开企业",
+            "离开岗位",
+            "工作交接",
+        ],
+        recall_terms=[
+            "离职",
+            "离职手续",
+            "离职流程",
+            "离职办理",
+            "辞职",
+            "离岗",
+            "离任",
+            "离司",
+            "工作交接",
+            "交接手续",
+        ],
+        noise_terms=["公司", "单位", "企业", "办理"],
+    )
+]
+
+
+def rewrite_query_terms(query: str, settings=None) -> List[str]:
+    matched_rules = match_intent_synonym_rules(query, settings)
+    if matched_rules:
+        # 修复：命中意图词表时直接使用业务同义词召回，避免二字滑窗里的泛词带偏排序。
+        return dedupe_terms(
+            term
+            for rule in matched_rules
+            for term in rule.recall_terms
+        )
+
     terms = tokenize_search_text(query)
     lower = query.lower()
     expanded: List[str] = []
@@ -108,6 +159,105 @@ def dedupe_terms(terms: Sequence[str]) -> List[str]:
     return deduped
 
 
+def _clean_rule_terms(values: Any) -> List[str]:
+    if not isinstance(values, list):
+        return []
+    return dedupe_terms(str(value).strip() for value in values if str(value).strip())
+
+
+def parse_custom_intent_synonym_rules(settings) -> List[IntentSynonymRule]:
+    raw = str(getattr(settings, "intent_synonym_rules_json", "") or "").strip()
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except Exception as error:  # noqa: BLE001
+        print(
+            f"[seekmind:rag] ignore invalid intent synonym rules json: {error}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    rules: List[IntentSynonymRule] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            continue
+        markers = _clean_rule_terms(item.get("markers"))
+        recall_terms = _clean_rule_terms(item.get("recall_terms"))
+        if not markers or not recall_terms:
+            continue
+        rules.append(
+            IntentSynonymRule(
+                name=str(item.get("name", "")).strip() or f"custom-{index + 1}",
+                markers=markers,
+                recall_terms=recall_terms,
+                noise_terms=_clean_rule_terms(item.get("noise_terms")),
+            )
+        )
+    return rules
+
+
+def all_intent_synonym_rules(settings=None) -> List[IntentSynonymRule]:
+    return [*BUILTIN_INTENT_SYNONYM_RULES, *parse_custom_intent_synonym_rules(settings)]
+
+
+def match_intent_synonym_rules(query: str, settings=None) -> List[IntentSynonymRule]:
+    normalized = query.strip().lower()
+    matched = []
+    for rule in all_intent_synonym_rules(settings):
+        if any(marker.strip().lower() in normalized for marker in rule.markers):
+            matched.append(rule)
+    return matched
+
+
+def extract_core_terms(query: str, settings=None) -> List[str]:
+    generic_terms = {
+        "什么",
+        "怎么",
+        "如何",
+        "是否",
+        "一下",
+        "介绍",
+        "解释",
+        "说明",
+        "流程",
+        "过程",
+        "步骤",
+        "方案",
+        "内容",
+        "文档",
+        "资料",
+        "相关",
+        "关于",
+        "这个",
+        "那个",
+        "哪些",
+        "以及",
+        "办理",
+    }
+    reduced_query = query
+    for generic_term in generic_terms:
+        reduced_query = reduced_query.replace(generic_term, " ")
+
+    matched_rules = match_intent_synonym_rules(query, settings)
+    for rule in matched_rules:
+        for noise_term in rule.noise_terms:
+            # 修复：意图规则里的噪声词只用于降噪，不参与核心词保护。
+            reduced_query = reduced_query.replace(noise_term, " ")
+
+    terms = [
+        term
+        for term in tokenize_search_text(reduced_query)
+        if len(term.strip()) >= 2 and term.strip() not in generic_terms
+    ]
+    for rule in matched_rules:
+        terms.extend(rule.recall_terms)
+    return dedupe_terms(terms)
+
+
 def is_han_character(ch: str) -> bool:
     code_point = ord(ch)
     return (
@@ -125,11 +275,26 @@ def _clean_scope_paths(scope_paths: Sequence[str]) -> List[str]:
     return [path.strip() for path in scope_paths if path and path.strip()]
 
 
+def normalize_scope_path(path: str) -> str:
+    # 修复：问答范围过滤需要兼容历史库里的 Windows/macOS 路径分隔符，避免目录范围在另一平台下匹配为空。
+    normalized = path.strip().replace("\\", "/")
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    if len(normalized) > 1:
+        normalized = normalized.rstrip("/")
+    return normalized.lower()
+
+
 def matches_scope(path: str, scope_paths: Sequence[str]) -> bool:
     cleaned = _clean_scope_paths(scope_paths)
     if not cleaned:
         return True
-    return any(path.startswith(scope_path) for scope_path in cleaned)
+    normalized_path = normalize_scope_path(path)
+    return any(
+        normalized_path == normalize_scope_path(scope_path)
+        or normalized_path.startswith(f"{normalize_scope_path(scope_path)}/")
+        for scope_path in cleaned
+    )
 
 
 def build_location_label(source: RagChunkRecord) -> str:
@@ -187,6 +352,14 @@ def source_term_overlap(source: RagChunkRecord, terms: Sequence[str]) -> int:
     return score
 
 
+def source_contains_terms(source: RagChunkRecord, terms: Sequence[str]) -> int:
+    if not terms:
+        return 0
+
+    haystack = f"{source.file_name} {source.heading} {source.path} {source.snippet}".lower()
+    return sum(1 for term in terms if term.strip().lower() in haystack)
+
+
 def push_unique_query(queries: List[str], seen: Set[str], query: str) -> None:
     cleaned = query.strip()
     if not cleaned:
@@ -214,7 +387,21 @@ def build_recall_queries(question: str, session_terms: Sequence[str]) -> List[st
 def qa_candidate_score(candidate: RagRecallCandidate) -> float:
     query_hit_bonus = max(candidate.query_hits - 1, 0) * 0.18
     term_overlap_bonus = min(candidate.term_overlap, 8) * 0.08
-    return candidate.best_score + query_hit_bonus + term_overlap_bonus
+    # 修复：短问题里“流程”等泛词容易把召回带偏，核心实体词命中必须显著优先。
+    core_term_bonus = min(candidate.core_term_hits, 4) * 0.65
+    return candidate.best_score + query_hit_bonus + term_overlap_bonus + core_term_bonus
+
+
+def build_candidate_rank_reason(candidate: RagRecallCandidate) -> str:
+    parts = [
+        f"SQL相关性 {candidate.best_score:.1f}",
+        f"核心词 {candidate.core_term_hits}",
+        f"词重叠 {candidate.term_overlap}",
+    ]
+    if candidate.query_hits > 1:
+        parts.append(f"多路召回 {candidate.query_hits}")
+    parts.append(f"总分 {qa_candidate_score(candidate):.2f}")
+    return " · ".join(parts)
 
 
 def collect_recall_candidates(
@@ -225,8 +412,8 @@ def collect_recall_candidates(
     limit: int,
     session_terms: Sequence[str],
 ) -> Tuple[Dict[str, RagRecallCandidate], int, List[str]]:
-    recall_limit = max(limit, 1) * 3
-    recall_limit = max(recall_limit, 20)
+    recall_limit = max(limit, 1) * 6
+    recall_limit = max(recall_limit, 50)
     recall_queries = build_recall_queries(question, session_terms)
     print(
         f"[seekmind:rag] qa recall start queries={len(recall_queries)} "
@@ -236,13 +423,33 @@ def collect_recall_candidates(
     )
 
     candidates: Dict[str, RagRecallCandidate] = {}
+    ranking_terms = dedupe_terms(list(rewrite_query_terms(question, settings)) + list(session_terms))
+    core_terms = extract_core_terms(question, settings)
     for query in recall_queries:
-        terms = rewrite_query_terms(query)
+        terms = rewrite_query_terms(query, settings)
         rows = store.search_candidate_chunks(terms, scope_paths, recall_limit)
         for row in rows:
-            merge_recall_hit(candidates, row, session_terms)
+            merge_recall_hit(candidates, row, ranking_terms, core_terms)
 
+    core_rows_count = 0
+    if core_terms:
+        # 修复：泛词（如“流程”）会在 SQL LIMIT 前挤掉核心实体命中，必须单独保护召回核心词候选。
+        core_rows = store.search_candidate_chunks(core_terms, scope_paths, max(recall_limit, 80))
+        core_rows_count = len(core_rows)
+        for row in core_rows:
+            merge_recall_hit(candidates, row, ranking_terms, core_terms)
+
+    print(
+        f"[seekmind:rag] qa recall terms query_terms={ranking_terms[:12]} "
+        f"core_terms={core_terms[:8]} core_rows={core_rows_count}",
+        file=sys.stderr,
+        flush=True,
+    )
     return candidates, recall_limit, recall_queries
+
+
+def same_document_cap(limit: int) -> int:
+    return 2 if limit <= 8 else 3
 
 
 def select_recall_hits(
@@ -254,8 +461,15 @@ def select_recall_hits(
     hits = list(candidates.values())
     hits.sort(key=lambda candidate: qa_candidate_score(candidate), reverse=True)
 
+    protected_hits = [candidate for candidate in hits if candidate.core_term_hits > 0]
+    if protected_hits:
+        hits = protected_hits + [candidate for candidate in hits if candidate.core_term_hits <= 0]
+
     selected_hits: List[RagChunkRecord] = []
     seen_chunk_ids: Set[str] = set()
+    document_counts: Dict[str, int] = {}
+    cap = same_document_cap(max(getattr(settings, "context_chunk_limit", limit), 1))
+    target_limit = max(getattr(settings, "context_chunk_limit", limit), 1) * 2
     for candidate in hits:
         if candidate.best_score < getattr(settings, "min_retrieval_score", 0.0):
             continue
@@ -264,10 +478,17 @@ def select_recall_hits(
             continue
         if hit.chunk_id in seen_chunk_ids:
             continue
+        current_document_count = document_counts.get(hit.path, 0)
+        if current_document_count >= cap:
+            continue
+        # 修复：来源摘要需要展示真实选中原因，方便定位召回和排序是否偏离预期。
+        hit.recall_reason = build_candidate_rank_reason(candidate)
         seen_chunk_ids.add(hit.chunk_id)
+        document_counts[hit.path] = current_document_count + 1
         selected_hits.append(hit)
-        if len(selected_hits) >= max(getattr(settings, "context_chunk_limit", limit), 1) * 2:
+        if len(selected_hits) >= target_limit:
             break
+
     return selected_hits
 
 
@@ -332,7 +553,7 @@ def pack_context_from_hits(
                     page=hit.page,
                     snippet=hit.snippet,
                     score=hit.score,
-                    rank_reason="Python RAG recall",
+                    rank_reason=hit.recall_reason or "Python RAG recall",
                     preview_blocks=[],
                 ),
                 block=block,
@@ -359,23 +580,27 @@ def pack_context_from_hits(
 def merge_recall_hit(
     candidates: Dict[str, RagRecallCandidate],
     hit: RagChunkRecord,
-    session_terms: Sequence[str],
+    ranking_terms: Sequence[str],
+    core_terms: Sequence[str],
 ) -> None:
-    term_overlap = source_term_overlap(hit, session_terms)
+    term_overlap = source_term_overlap(hit, ranking_terms)
+    core_term_hits = source_contains_terms(hit, core_terms)
     existing = candidates.get(hit.chunk_id)
     if existing is not None:
         existing.query_hits += 1
         existing.term_overlap = max(existing.term_overlap, term_overlap)
-        if hit.score > existing.best_score:
-            existing.best_score = hit.score
+        existing.core_term_hits = max(existing.core_term_hits, core_term_hits)
+        if hit.retrieval_score > existing.best_score:
+            existing.best_score = hit.retrieval_score
             existing.hit = hit
         return
 
     candidates[hit.chunk_id] = RagRecallCandidate(
         hit=hit,
         query_hits=1,
-        best_score=hit.score,
+        best_score=hit.retrieval_score,
         term_overlap=term_overlap,
+        core_term_hits=core_term_hits,
     )
 
 
@@ -489,7 +714,8 @@ def build_qa_context(
         limit=limit,
     )
     print(
-        f"[seekmind:rag] qa recall done candidates={candidate_count} selected_sources={len(context.sources)}",
+        f"[seekmind:rag] qa recall done candidates={candidate_count} selected_sources={len(context.sources)} "
+        f"sources={[source.source.path for source in context.sources]}",
         file=sys.stderr,
         flush=True,
     )

@@ -118,7 +118,7 @@ impl Database {
     pub async fn get_qa_settings(&self) -> Result<QaSettings, sqlx::Error> {
         let row = sqlx::query_as::<_, QaSettingsRow>(
             r#"
-            SELECT enabled, provider, base_url, api_key, model, temperature, max_output_tokens, context_chunk_limit, context_token_budget, min_evidence_count, min_retrieval_score, updated_at
+            SELECT enabled, provider, base_url, api_key, model, temperature, max_output_tokens, context_chunk_limit, context_token_budget, min_evidence_count, min_retrieval_score, intent_synonym_rules_json, updated_at
             FROM qa_settings
             WHERE id = 1
             "#,
@@ -139,6 +139,7 @@ impl Database {
                 context_token_budget: row.context_token_budget.max(1) as usize,
                 min_evidence_count: row.min_evidence_count.max(1) as usize,
                 min_retrieval_score: row.min_retrieval_score,
+                intent_synonym_rules_json: row.intent_synonym_rules_json,
             })
         } else {
             Ok(default_qa_settings())
@@ -201,9 +202,10 @@ impl Database {
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO qa_settings
-                (id, enabled, provider, base_url, api_key, model, temperature, max_output_tokens, context_chunk_limit, context_token_budget, min_evidence_count, min_retrieval_score, updated_at)
+                (id, enabled, provider, base_url, api_key, model, temperature, max_output_tokens, context_chunk_limit, context_token_budget, min_evidence_count, min_retrieval_score, intent_synonym_rules_json, updated_at)
             VALUES (
                 1,
+                ?,
                 ?,
                 ?,
                 ?,
@@ -230,6 +232,7 @@ impl Database {
         .bind(settings.context_token_budget as i64)
         .bind(settings.min_evidence_count as i64)
         .bind(settings.min_retrieval_score)
+        .bind(settings.intent_synonym_rules_json.trim())
         .bind(now)
         .execute(&self.pool)
         .await?;

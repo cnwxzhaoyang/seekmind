@@ -811,9 +811,15 @@
         "tokenBudget": "上下文 token 预算",
         "minEvidence": "最少证据数",
         "minRetrievalScore": "最低召回分数",
+        "intentRules": "检索同义词规则",
+        "intentRulesBuiltin": "内置规则",
+        "intentRulesCustom": "自定义",
+        "intentRulesHint": "填写 JSON 数组；留空时仅使用内置规则。每条规则支持 name、markers、recall_terms、noise_terms。",
+        "intentRulesInvalid": "检索同义词规则必须是合法的 JSON 数组。",
         "help": {
           "contextLimit": "单次回答最多携带多少个检索片段参与上下文构造，越高覆盖更广但更占 token。",
-          "minRetrievalScore": "低于该分数的检索结果不会进入回答阶段，用于过滤弱相关片段。"
+          "minRetrievalScore": "低于该分数的检索结果不会进入回答阶段，用于过滤弱相关片段。",
+          "intentRules": "用于把用户常用说法扩展为文档里的正式表述，例如“报销”扩展到“费用报销/发票/付款”。"
         },
         "save": "保存",
         "saving": "保存中...",

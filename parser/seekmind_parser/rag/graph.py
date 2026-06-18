@@ -262,8 +262,13 @@ def pack_evidence(
         limit=state.request.settings.context_chunk_limit,
     )
     state.context.retrieval.candidate_count = len(state.candidates)
+    source_paths = [
+        f"{source_block.source.file_name}::{source_block.source.path}"
+        for source_block in state.context.sources
+    ]
     _log(
-        f"rag request {state.request.request_id} packed sources={len(state.context.sources)}"
+        f"rag request {state.request.request_id} packed sources={len(state.context.sources)} "
+        f"source_paths={source_paths}"
     )
     if not state.context.sources:
         # 修复：召回为空时不再继续生成“看起来完整”的答案，直接标记为证据不足终态。
@@ -670,7 +675,8 @@ def _route_after_judge(state: RagGraphStateData) -> str:
     if state.get("judge_should_repair"):
         if state.get("retry_count", 0) < 1:
             return "repair"
-        return "refuse"
+        # 修复：已有证据和成稿时，引用格式二次未过不应降级成“证据不足”，继续最终输出并保留 warning。
+        return "final_stream"
     return "final_stream"
 
 

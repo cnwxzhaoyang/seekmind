@@ -72,6 +72,7 @@ class RagSettings:
     context_token_budget: int = 6000
     min_evidence_count: int = 1
     min_retrieval_score: float = 0.0
+    intent_synonym_rules_json: str = ""
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "RagSettings":
@@ -87,6 +88,7 @@ class RagSettings:
             context_token_budget=_clean_int(payload.get("context_token_budget"), 6000),
             min_evidence_count=_clean_int(payload.get("min_evidence_count"), 1),
             min_retrieval_score=_clean_float(payload.get("min_retrieval_score"), 0.0),
+            intent_synonym_rules_json=_clean_text(payload.get("intent_synonym_rules_json")),
         )
 
     def to_dict(self) -> Dict[str, Any]:

@@ -172,6 +172,10 @@ impl Database {
             .await
             .map_err(|error| error.to_string())?;
         database
+            .ensure_qa_settings_columns()
+            .await
+            .map_err(|error| error.to_string())?;
+        database
             .ensure_qa_settings_row()
             .await
             .map_err(|error| error.to_string())?;
@@ -229,6 +233,7 @@ fn default_qa_settings() -> QaSettings {
         context_token_budget: 6000,
         min_evidence_count: 1,
         min_retrieval_score: 0.0,
+        intent_synonym_rules_json: String::new(),
     }
 }
 

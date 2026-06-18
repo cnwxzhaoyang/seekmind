@@ -17,6 +17,15 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _normalize_query_path(value: str) -> str:
+    normalized = value.strip().replace("\\", "/")
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    if len(normalized) > 1:
+        normalized = normalized.rstrip("/")
+    return normalized.lower()
+
+
 @dataclass
 class RagChunkRecord:
     chunk_id: str
@@ -31,6 +40,8 @@ class RagChunkRecord:
     modified: str
     modified_at: int
     score: float
+    retrieval_score: float
+    recall_reason: str
     block_indexes_json: str
 
 
@@ -91,10 +102,11 @@ class RagStore:
         if scope_paths:
             scope_clause = []
             for scope in scope_paths:
-                trimmed = scope.strip()
+                # 修复：范围过滤先统一 Windows/macOS 分隔符，避免数据库历史路径格式不同导致 RAG 召回为空。
+                trimmed = _normalize_query_path(scope)
                 if not trimmed:
                     continue
-                scope_clause.append("d.path LIKE ? ESCAPE '\\'")
+                scope_clause.append("lower(REPLACE(d.path, '\\', '/')) LIKE ? ESCAPE '\\'")
                 where_params.append(f"{_escape_like(trimmed)}%")
             if scope_clause:
                 where_clauses.append("(" + " OR ".join(scope_clause) + ")")
@@ -107,11 +119,10 @@ class RagStore:
                 "d.file_name LIKE ? ESCAPE '\\' OR "
                 "d.path LIKE ? ESCAPE '\\' OR "
                 "c.heading LIKE ? ESCAPE '\\' OR "
-                "c.snippet LIKE ? ESCAPE '\\' OR "
-                "d.content LIKE ? ESCAPE '\\'"
+                "c.snippet LIKE ? ESCAPE '\\'"
                 ")"
             )
-            where_params.extend([pattern, pattern, pattern, pattern, pattern])
+            where_params.extend([pattern, pattern, pattern, pattern])
             score_terms.append(
                 "("
                 "CASE "
@@ -119,11 +130,11 @@ class RagStore:
                 "WHEN c.heading LIKE ? ESCAPE '\\' THEN 3 "
                 "WHEN d.path LIKE ? ESCAPE '\\' THEN 2 "
                 "WHEN c.snippet LIKE ? ESCAPE '\\' THEN 1 "
-                "WHEN d.content LIKE ? ESCAPE '\\' THEN 1 "
                 "ELSE 0 END"
                 ")"
             )
-            score_params.extend([pattern, pattern, pattern, pattern, pattern])
+            # 修复：不能用整篇文档 content 匹配来召回切片，否则文档任意位置命中会把全篇无关切片带入问答来源。
+            score_params.extend([pattern, pattern, pattern, pattern])
 
         where_clauses.append("(" + " OR ".join(match_clauses) + ")")
         sql = (
@@ -153,6 +164,7 @@ class RagStore:
         params = score_params + where_params + [int(limit)]
 
         rows = self._conn.execute(sql, params).fetchall()
+        max_sql_score = max(len(cleaned_terms) * 3, 1)
         return [
             RagChunkRecord(
                 chunk_id=row["chunk_id"],
@@ -166,7 +178,10 @@ class RagStore:
                 page=row["page"],
                 modified=row["modified"],
                 modified_at=row["modified_at"],
-                score=float(row["score"] if row["score"] is not None else row["sql_score"]),
+                # 修复：RAG 排序必须使用本次 SQL 命中的相关性，不能继续用切片质量分覆盖检索分。
+                score=min(float(row["sql_score"] or 0) / max_sql_score, 1.0),
+                retrieval_score=float(row["sql_score"] or 0),
+                recall_reason="",
                 block_indexes_json=row["block_indexes_json"] or "[]",
             )
             for row in rows
@@ -217,6 +232,8 @@ class RagStore:
                 modified=item["modified"],
                 modified_at=item["modified_at"],
                 score=float(item["score"]),
+                retrieval_score=float(item["score"]),
+                recall_reason="",
                 block_indexes_json=item["block_indexes_json"] or "[]",
             )
             for item in rows

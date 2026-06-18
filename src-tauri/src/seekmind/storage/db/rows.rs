@@ -241,6 +241,7 @@ pub(crate) struct QaSettingsRow {
     pub(crate) context_token_budget: i64,
     pub(crate) min_evidence_count: i64,
     pub(crate) min_retrieval_score: f32,
+    pub(crate) intent_synonym_rules_json: String,
     pub(crate) updated_at: i64,
 }
 

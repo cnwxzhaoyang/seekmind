@@ -36,6 +36,7 @@ fn qa_settings_to_view(settings: &QaSettings) -> QaSettingsView {
         context_token_budget: settings.context_token_budget,
         min_evidence_count: settings.min_evidence_count,
         min_retrieval_score: settings.min_retrieval_score,
+        intent_synonym_rules_json: settings.intent_synonym_rules_json.clone(),
         updated_at: String::new(),
     }
 }
@@ -176,6 +177,7 @@ pub async fn save_qa_settings(
         context_token_budget: settings.context_token_budget,
         min_evidence_count: settings.min_evidence_count,
         min_retrieval_score: settings.min_retrieval_score,
+        intent_synonym_rules_json: settings.intent_synonym_rules_json,
     };
     state
         .save_qa_settings(&payload)
@@ -814,6 +816,7 @@ pub async fn ask_question(
                         context_token_budget: settings_for_task.context_token_budget,
                         min_evidence_count: settings_for_task.min_evidence_count,
                         min_retrieval_score: settings_for_task.min_retrieval_score,
+                        intent_synonym_rules_json: settings_for_task.intent_synonym_rules_json.clone(),
                     },
                 };
 

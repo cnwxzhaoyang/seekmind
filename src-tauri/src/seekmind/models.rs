@@ -429,6 +429,7 @@ pub struct QaSettingsView {
     pub context_token_budget: usize,
     pub min_evidence_count: usize,
     pub min_retrieval_score: f32,
+    pub intent_synonym_rules_json: String,
     pub updated_at: String,
 }
 

@@ -24,6 +24,8 @@ class RagEvalCase:
     session_context: str = ""
     min_answer_chars: int = 1
     warning_contains: Optional[str] = None
+    expected_source_contains: Optional[str] = None
+    excluded_source_contains: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -40,6 +42,8 @@ class RagEvalCaseResult:
     warning: Optional[str]
     error: Optional[str]
     answer_excerpt: str = ""
+    source_count: int = 0
+    source_excerpt: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -109,6 +113,7 @@ def _default_case_settings(request: RagRequest) -> Dict[str, Any]:
         "context_token_budget": request.settings.context_token_budget,
         "min_evidence_count": request.settings.min_evidence_count,
         "min_retrieval_score": request.settings.min_retrieval_score,
+        "intent_synonym_rules_json": request.settings.intent_synonym_rules_json,
     }
 
 
@@ -157,11 +162,16 @@ def _evaluate_single_case(
     actual_state = response.state if isinstance(response, RagResponse) else "failed"
     answer = response.answer if isinstance(response, RagResponse) else ""
     warning = response.warning if isinstance(response, RagResponse) else None
+    sources = response.sources if isinstance(response, RagResponse) else []
     error = None
     if isinstance(response, RagResponse) and response.error:
         error = response.error.message or response.error.code
 
     answer_text = _normalize_text(answer)
+    source_text = "\n".join(
+        f"{source.file_name}\n{source.path}\n{source.heading}\n{source.snippet}"
+        for source in sources
+    )
     passed = actual_state == case.expected_state
     if case.expected_state == "answered":
         passed = passed and len(answer_text) >= max(case.min_answer_chars, 1)
@@ -169,6 +179,11 @@ def _evaluate_single_case(
         passed = passed and actual_state == "insufficient_evidence"
     if case.warning_contains:
         passed = passed and bool(warning and case.warning_contains in warning)
+    if case.expected_source_contains:
+        # 修复：RAG 回归不能只看回答状态，还要确认最终来源确实包含目标证据。
+        passed = passed and case.expected_source_contains in source_text
+    if case.excluded_source_contains:
+        passed = passed and case.excluded_source_contains not in source_text
 
     return RagEvalCaseResult(
         id=case.id,
@@ -180,6 +195,8 @@ def _evaluate_single_case(
         warning=warning,
         error=error,
         answer_excerpt=answer_text[:120],
+        source_count=len(sources),
+        source_excerpt=source_text[:160],
     )
 
 
@@ -232,6 +249,14 @@ def rag_eval_request_from_dict(data: Dict[str, Any]) -> tuple[RagRequest, List[R
                 min_answer_chars=int(item.get("min_answer_chars", 1) or 1),
                 warning_contains=(
                     str(item.get("warning_contains", "")).strip()
+                    or None
+                ),
+                expected_source_contains=(
+                    str(item.get("expected_source_contains", "")).strip()
+                    or None
+                ),
+                excluded_source_contains=(
+                    str(item.get("excluded_source_contains", "")).strip()
                     or None
                 ),
             )

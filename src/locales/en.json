@@ -814,9 +814,15 @@
         "tokenBudget": "Context Token Budget",
         "minEvidence": "Minimum Evidence Count",
         "minRetrievalScore": "Minimum Retrieval Score",
+        "intentRules": "Retrieval Synonym Rules",
+        "intentRulesBuiltin": "Built-in",
+        "intentRulesCustom": "Custom",
+        "intentRulesHint": "Enter a JSON array. Leave empty to use built-in rules only. Each rule supports name, markers, recall_terms, and noise_terms.",
+        "intentRulesInvalid": "Retrieval synonym rules must be a valid JSON array.",
         "help": {
           "contextLimit": "The maximum number of retrieved chunks to include in one answer context. Higher values cover more but cost more tokens.",
-          "minRetrievalScore": "Retrieved results below this score are filtered out before answer generation."
+          "minRetrievalScore": "Retrieved results below this score are filtered out before answer generation.",
+          "intentRules": "Expands common user wording into terms used in documents, such as mapping expense questions to reimbursement, invoice, and payment terms."
         },
         "save": "Save",
         "saving": "Saving...",
