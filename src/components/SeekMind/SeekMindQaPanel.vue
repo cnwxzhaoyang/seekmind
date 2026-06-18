@@ -4,9 +4,10 @@
  * @CreatedDate 2026/06/02
  * @Description 设置页中的 LLM 连接配置面板，负责模型、参数与连通性测试。
  */
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { Check, ChevronDown, CircleHelp, MessageSquareText, RefreshCw, Save, Shield, Trash2 } from "lucide-vue-next";
+import { Check, ChevronDown, CircleHelp, MessageSquareText, Plus, RefreshCw, Save, Shield, SlidersHorizontal, Trash2 } from "lucide-vue-next";
+import SeekMindConfirmDialog from "./SeekMindConfirmDialog.vue";
 import SeekMindBadge from "./SeekMindBadge.vue";
 import SeekMindToast from "./SeekMindToast.vue";
 import { seekMindApi, formatSeekMindError } from "../../services/seekMindApi";
@@ -14,7 +15,7 @@ import { useInfoMessage } from "../../composables/useInfoMessage";
 import { emitQaConfigUpdated } from "../../utils/qaConfigEvents";
 import type { QaConnectionTestView, QaModelProfileUpsertView, QaModelProfileView, QaSettingsView } from "../../types/SeekMind";
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 const savedSettings = ref<QaSettingsView | null>(null);
 // 修复：模型启用状态改为自动维持，不再暴露给用户手动切换，避免默认连接与当前配置状态分裂。
@@ -34,7 +35,6 @@ const contextChunkLimit = ref(8);
 const contextTokenBudget = ref(6000);
 const minEvidenceCount = ref(2);
 const minRetrievalScore = ref(0);
-const intentSynonymRulesJson = ref("");
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
@@ -51,6 +51,22 @@ const profiles = ref<QaModelProfileView[]>([]);
 const selectedProfileId = ref("");
 const editingProfileId = ref("");
 const profilesReady = ref(false);
+
+interface IntentSynonymRuleForm {
+  id: string;
+  name: string;
+  markersText: string;
+  recallTermsText: string;
+  noiseTermsText: string;
+}
+
+const cloneIntentRule = (rule: IntentSynonymRuleForm): IntentSynonymRuleForm => ({
+  id: rule.id,
+  name: rule.name,
+  markersText: rule.markersText,
+  recallTermsText: rule.recallTermsText,
+  noiseTermsText: rule.noiseTermsText,
+});
 
 const normalizeProviderValue = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 
@@ -72,31 +88,105 @@ const connectionStatus = computed(() => {
       : t("page.settings.qa.connectionTestFailed"),
   };
 });
-const intentRulesPlaceholder = computed(() => {
-  if (String(locale.value).startsWith("zh")) {
-    return [
-      "[",
-      "  {",
-      '    "name": "报销",',
-      '    "markers": ["报销", "发票"],',
-      '    "recall_terms": ["费用报销", "报销流程", "发票", "付款"],',
-      '    "noise_terms": ["什么", "怎么"]',
-      "  }",
-      "]",
-    ].join("\n");
+const intentRules = ref<IntentSynonymRuleForm[]>([]);
+const savedIntentRules = ref<IntentSynonymRuleForm[]>([]);
+const intentRulesSaving = ref(false);
+const intentRuleDeleteTarget = ref<IntentSynonymRuleForm | null>(null);
+const intentRulesScrollRef = ref<HTMLElement | null>(null);
+const splitRuleTerms = (value: string) =>
+  value
+    .split(/[\n,，、;；]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const joinRuleTerms = (values: unknown) => {
+  if (!Array.isArray(values)) {
+    return "";
+  }
+  return values.map((item) => String(item).trim()).filter(Boolean).join("\n");
+};
+
+const createEmptyIntentRule = (): IntentSynonymRuleForm => ({
+  id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  name: "",
+  markersText: "",
+  recallTermsText: "",
+  noiseTermsText: "",
+});
+
+const parseIntentRules = (raw: string): IntentSynonymRuleForm[] => {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return [];
   }
 
-  return [
-    "[",
-    "  {",
-    '    "name": "expense",',
-    '    "markers": ["expense", "invoice"],',
-    '    "recall_terms": ["expense reimbursement", "reimbursement process", "invoice", "payment"],',
-    '    "noise_terms": ["what", "how"]',
-    "  }",
-    "]",
-  ].join("\n");
-});
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)))
+      .map((item, index) => ({
+        id: String(item.id ?? `${index}-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        name: String(item.name ?? "").trim(),
+        markersText: joinRuleTerms(item.markers),
+        recallTermsText: joinRuleTerms(item.recall_terms),
+        noiseTermsText: joinRuleTerms(item.noise_terms),
+      }));
+  } catch {
+    return [];
+  }
+};
+
+const serializeIntentRules = () => {
+  const rules = intentRules.value
+    .map((rule) => ({
+      name: rule.name.trim(),
+      markers: splitRuleTerms(rule.markersText),
+      recall_terms: splitRuleTerms(rule.recallTermsText),
+      noise_terms: splitRuleTerms(rule.noiseTermsText),
+    }))
+    .filter((rule) => rule.name || rule.markers.length > 0 || rule.recall_terms.length > 0 || rule.noise_terms.length > 0);
+
+  if (rules.length === 0) {
+    return "";
+  }
+  return JSON.stringify(rules, null, 2);
+};
+
+const savedIntentRulesJson = computed(() => savedSettings.value?.intent_synonym_rules_json?.trim() ?? "");
+const currentIntentRulesJson = computed(() => serializeIntentRules());
+const isIntentRuleBlank = (rule: IntentSynonymRuleForm) =>
+  !rule.name.trim() && !rule.markersText.trim() && !rule.recallTermsText.trim() && !rule.noiseTermsText.trim();
+const isIntentRuleDirty = (rule: IntentSynonymRuleForm) => {
+  const savedRule = savedIntentRules.value.find((item) => item.id === rule.id);
+  if (!savedRule) {
+    return !isIntentRuleBlank(rule);
+  }
+
+  return (
+    rule.name.trim() !== savedRule.name.trim() ||
+    rule.markersText.trim() !== savedRule.markersText.trim() ||
+    rule.recallTermsText.trim() !== savedRule.recallTermsText.trim() ||
+    rule.noiseTermsText.trim() !== savedRule.noiseTermsText.trim()
+  );
+};
+const addIntentRule = async () => {
+  intentRules.value = [...intentRules.value, createEmptyIntentRule()];
+  // 修复：规则条目超过一屏时，新增后自动滚动到底部，让新建行立即可见并可继续编辑。
+  await nextTick();
+  intentRulesScrollRef.value?.scrollTo({
+    top: intentRulesScrollRef.value.scrollHeight,
+    behavior: "auto",
+  });
+};
+const requestRemoveIntentRule = (rule: IntentSynonymRuleForm) => {
+  intentRuleDeleteTarget.value = cloneIntentRule(rule);
+};
+const cancelRemoveIntentRule = () => {
+  intentRuleDeleteTarget.value = null;
+};
 // 兼容历史连接里出现的自定义 provider，避免旧配置在切换成下拉后丢失。
 const providerLabel = (value: string) => {
   const normalized = normalizeProviderValue(value);
@@ -167,7 +257,7 @@ const hasChanges = computed(() => {
     Math.floor(Number(contextTokenBudget.value) || 0) !== savedSettings.value.context_token_budget ||
     Math.floor(Number(minEvidenceCount.value) || 0) !== savedSettings.value.min_evidence_count ||
     Number(minRetrievalScore.value) !== savedSettings.value.min_retrieval_score ||
-    intentSynonymRulesJson.value.trim() !== (savedSettings.value.intent_synonym_rules_json ?? "").trim()
+    currentIntentRulesJson.value !== savedIntentRulesJson.value
   );
 });
 
@@ -184,7 +274,8 @@ const applySettings = (settings: QaSettingsView) => {
   contextTokenBudget.value = settings.context_token_budget;
   minEvidenceCount.value = settings.min_evidence_count;
   minRetrievalScore.value = settings.min_retrieval_score;
-  intentSynonymRulesJson.value = settings.intent_synonym_rules_json ?? "";
+  intentRules.value = parseIntentRules(settings.intent_synonym_rules_json ?? "");
+  savedIntentRules.value = intentRules.value.map(cloneIntentRule);
 };
 
 const applyProfile = (profile: QaModelProfileView) => {
@@ -339,28 +430,115 @@ const buildSettingsPayload = (): QaSettingsView => ({
   context_token_budget: Math.max(1, Math.floor(Number(contextTokenBudget.value) || 6000)),
   min_evidence_count: Math.max(1, Math.floor(Number(minEvidenceCount.value) || 2)),
   min_retrieval_score: Math.max(-1, Math.min(1, Number(minRetrievalScore.value) || 0)),
-  intent_synonym_rules_json: intentSynonymRulesJson.value.trim(),
+  intent_synonym_rules_json: currentIntentRulesJson.value,
   updated_at: savedSettings.value?.updated_at ?? "",
 });
 
-const validateIntentSynonymRules = () => {
-  const raw = intentSynonymRulesJson.value.trim();
-  if (!raw) {
-    return true;
+const buildIntentRulesPayload = (): QaSettingsView | null => {
+  if (!savedSettings.value) {
+    return null;
   }
 
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
+  return {
+    ...savedSettings.value,
+    enabled: true,
+    intent_synonym_rules_json: currentIntentRulesJson.value,
+  };
+};
+
+const validateIntentSynonymRules = () => {
+  for (const rule of intentRules.value) {
+    const isBlank = !rule.name.trim() && !rule.markersText.trim() && !rule.recallTermsText.trim() && !rule.noiseTermsText.trim();
+    if (isBlank) {
+      continue;
+    }
+    if (splitRuleTerms(rule.markersText).length === 0 || splitRuleTerms(rule.recallTermsText).length === 0) {
       errorMessage.value = t("page.settings.qa.intentRulesInvalid");
       return false;
     }
-  } catch {
+  }
+
+  return true;
+};
+
+const validateIntentSynonymRule = (rule: IntentSynonymRuleForm) => {
+  if (isIntentRuleBlank(rule)) {
+    return true;
+  }
+
+  if (splitRuleTerms(rule.markersText).length === 0 || splitRuleTerms(rule.recallTermsText).length === 0) {
     errorMessage.value = t("page.settings.qa.intentRulesInvalid");
     return false;
   }
 
   return true;
+};
+
+const persistIntentRules = async (reason: string, messageKey: string) => {
+  if (intentRulesSaving.value) {
+    return;
+  }
+
+  if (!validateIntentSynonymRules()) {
+    return;
+  }
+
+  const payload = buildIntentRulesPayload();
+  if (!payload) {
+    errorMessage.value = t("page.settings.qa.error.save");
+    return;
+  }
+
+  intentRulesSaving.value = true;
+  errorMessage.value = "";
+  saveMessage.value = "";
+
+  try {
+    const settings = await seekMindApi.saveQaSettings(payload);
+    savedSettings.value = settings;
+    savedIntentRules.value = intentRules.value.map(cloneIntentRule);
+    // 修复：同义词规则改为独立持久化，不再依赖 LLM 连接卡片的总保存按钮。
+    emitQaConfigUpdated(reason);
+    saveMessage.value = t(messageKey);
+  } catch (error) {
+    errorMessage.value = formatSeekMindError(error, t("page.settings.qa.error.save"));
+    console.error("[SeekMind] saveIntentRules failed", { reason, error });
+  } finally {
+    intentRulesSaving.value = false;
+  }
+};
+
+const saveIntentRule = async (ruleId: string) => {
+  const rule = intentRules.value.find((item) => item.id === ruleId);
+  if (!rule || isIntentRuleBlank(rule)) {
+    return;
+  }
+
+  if (!validateIntentSynonymRule(rule)) {
+    return;
+  }
+
+  await persistIntentRules("save-intent-rule", "page.settings.qa.intentRuleSaved");
+};
+
+const confirmRemoveIntentRule = async () => {
+  const target = intentRuleDeleteTarget.value;
+  if (!target) {
+    return;
+  }
+
+  intentRuleDeleteTarget.value = null;
+  intentRules.value = intentRules.value.filter((rule) => rule.id !== target.id);
+
+  if (intentRules.value.length === 0) {
+    savedIntentRules.value = [];
+    if (savedSettings.value) {
+      await persistIntentRules("delete-intent-rule", "page.settings.qa.intentRuleDeleted");
+    }
+    return;
+  }
+
+  await persistIntentRules("delete-intent-rule", "page.settings.qa.intentRuleDeleted");
 };
 
 const saveSettings = async () => {
@@ -377,6 +555,7 @@ const saveSettings = async () => {
     const settings = await seekMindApi.saveQaSettings(buildSettingsPayload());
     savedSettings.value = settings;
     applySettings(settings);
+    savedIntentRules.value = intentRules.value.map(cloneIntentRule);
     await syncCurrentProfileToList(settings);
     // 修复：设置页保存在 KeepAlive 场景下不会触发问答页重建，必须主动广播配置更新。
     emitQaConfigUpdated("save-settings");
@@ -406,6 +585,7 @@ const testConnection = async () => {
     const settings = await seekMindApi.saveQaSettings(payload);
     savedSettings.value = settings;
     applySettings(settings);
+    savedIntentRules.value = intentRules.value.map(cloneIntentRule);
     await syncCurrentProfileToList(settings);
     emitQaConfigUpdated("test-connection");
     connectionResult.value = result;
@@ -603,31 +783,6 @@ onMounted(async () => {
               <input v-model.number="minRetrievalScore" type="range" min="-1" max="1" step="0.05" class="w-full accent-accent" />
             </label>
 
-            <label class="block">
-              <div class="mb-1.5 flex items-center justify-between seekmind-section-label settings-inline-help">
-                <span class="inline-flex items-center gap-1.5">
-                  <span>{{ t("page.settings.qa.intentRules") }}</span>
-                  <button
-                    type="button"
-                    class="settings-help-trigger"
-                    :title="t('page.settings.qa.help.intentRules')"
-                    :aria-label="t('page.settings.qa.help.intentRules')"
-                  >
-                    <CircleHelp :size="14" />
-                  </button>
-                </span>
-                <SeekMindBadge tone="default">{{ intentSynonymRulesJson.trim() ? t("page.settings.qa.intentRulesCustom") : t("page.settings.qa.intentRulesBuiltin") }}</SeekMindBadge>
-              </div>
-              <textarea
-                v-model="intentSynonymRulesJson"
-                rows="6"
-                class="w-full resize-y rounded-lg border border-default bg-input px-4 py-2.5 font-mono text-xs leading-5 text-primary outline-none transition focus:border-[var(--color-text-dim)] focus:bg-surface"
-                :placeholder="intentRulesPlaceholder"
-                spellcheck="false"
-              />
-              <div class="mt-1 seekmind-item-meta">{{ t("page.settings.qa.intentRulesHint") }}</div>
-            </label>
-
             <div class="flex flex-wrap items-center gap-2">
               <button
                 class="inline-flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
@@ -730,6 +885,139 @@ onMounted(async () => {
       </div>
     </div>
   </section>
+
+  <section id="settings-qa-rules" class="settings-card-shell scroll-mt-4 mt-4">
+    <div class="settings-card-head">
+      <div class="settings-card-head-left">
+        <span class="settings-card-icon settings-card-icon--plain">
+          <SlidersHorizontal :size="18" />
+        </span>
+        <div class="min-w-0">
+          <div class="settings-card-title">{{ t("page.settings.qa.intentRules") }}</div>
+        </div>
+      </div>
+      <SeekMindBadge tone="default">{{ intentRules.length > 0 ? t("page.settings.qa.intentRulesCustom") : t("page.settings.qa.intentRulesBuiltin") }}</SeekMindBadge>
+    </div>
+
+    <div class="settings-card-body space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="seekmind-item-meta">{{ t("page.settings.qa.intentRulesHint") }}</div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-md border border-default bg-surface px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-hover"
+          @click="addIntentRule"
+        >
+          <Plus :size="15" />
+          {{ t("page.settings.qa.intentRuleAdd") }}
+        </button>
+      </div>
+
+      <div v-if="intentRules.length === 0" class="rounded-lg border border-dashed border-default bg-panel px-3 py-3 text-xs leading-5 text-secondary">
+        {{ t("page.settings.qa.intentRulesEmpty") }}
+      </div>
+
+      <div
+        v-else
+        class="qa-intent-rules-shell overflow-hidden rounded-lg border border-default bg-panel"
+      >
+        <div ref="intentRulesScrollRef" class="qa-intent-rules-scroll">
+          <table class="qa-intent-rules-table">
+            <thead>
+              <tr>
+                <th>{{ t("page.settings.qa.intentRuleName") }}</th>
+                <th>{{ t("page.settings.qa.intentRuleMarkers") }}</th>
+                <th>{{ t("page.settings.qa.intentRuleRecallTerms") }}</th>
+                <th>{{ t("page.settings.qa.intentRuleNoiseTerms") }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(rule, index) in intentRules" :key="rule.id">
+                <td>
+                  <input
+                    type="text"
+                    v-model="rule.name"
+                    class="qa-intent-cell-editor qa-intent-cell-editor--name"
+                    :placeholder="t('page.settings.qa.intentRuleNamePlaceholder')"
+                    :aria-label="t('page.settings.qa.intentRuleItem', { index: index + 1 })"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    v-model="rule.markersText"
+                    class="qa-intent-cell-editor"
+                    :placeholder="t('page.settings.qa.intentRuleMarkersPlaceholder')"
+                    :aria-label="t('page.settings.qa.intentRuleMarkers')"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    v-model="rule.recallTermsText"
+                    class="qa-intent-cell-editor"
+                    :placeholder="t('page.settings.qa.intentRuleRecallTermsPlaceholder')"
+                    :aria-label="t('page.settings.qa.intentRuleRecallTerms')"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    v-model="rule.noiseTermsText"
+                    class="qa-intent-cell-editor"
+                    :placeholder="t('page.settings.qa.intentRuleNoiseTermsPlaceholder')"
+                    :aria-label="t('page.settings.qa.intentRuleNoiseTerms')"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </td>
+                <td class="qa-intent-delete-cell">
+                  <div class="qa-intent-row-actions">
+                    <button
+                      type="button"
+                      class="qa-intent-save-button"
+                      :disabled="intentRulesSaving || !isIntentRuleDirty(rule)"
+                      :title="t('page.settings.qa.intentRuleSave')"
+                      :aria-label="t('page.settings.qa.intentRuleSave')"
+                      @click="saveIntentRule(rule.id)"
+                    >
+                      <Save :size="13" />
+                    </button>
+                    <button
+                      type="button"
+                      class="qa-intent-delete-button"
+                      :title="t('common.delete')"
+                      :aria-label="t('common.delete')"
+                      @click="requestRemoveIntentRule(rule)"
+                    >
+                      <Trash2 :size="13" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <SeekMindConfirmDialog
+    :visible="Boolean(intentRuleDeleteTarget)"
+    :title="t('page.settings.qa.intentRuleDeleteTitle')"
+    :message="t('page.settings.qa.intentRuleDeleteConfirm', { name: intentRuleDeleteTarget?.name?.trim() || t('page.settings.qa.intentRuleUntitled') })"
+    :confirm-text="t('common.delete')"
+    :cancel-text="t('common.cancel')"
+    danger
+    @confirm="confirmRemoveIntentRule"
+    @cancel="cancelRemoveIntentRule"
+  />
 </template>
 
 <style scoped>
@@ -832,6 +1120,135 @@ onMounted(async () => {
   color: var(--color-text-muted);
 }
 
+.qa-intent-rules-shell {
+  display: flex;
+  flex-direction: column;
+  height: clamp(332px, 44vh, 408px);
+  min-height: 332px;
+}
+
+/* 修复：规则列表改成固定高度的表格式编辑区，超出部分只在表体滚动，避免卡片跟着条目无限增长。 */
+.qa-intent-rules-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.qa-intent-rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.qa-intent-rules-table th,
+.qa-intent-rules-table td {
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.qa-intent-rules-table th:last-child,
+.qa-intent-rules-table td:last-child {
+  border-right: 0;
+}
+
+.qa-intent-rules-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-panel-bg);
+  padding: 8px 9px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.qa-intent-rules-table td {
+  padding: 0;
+  background: var(--color-panel-bg);
+}
+
+.qa-intent-cell-editor {
+  width: 100%;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 10px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 40px;
+  color: var(--color-text-primary);
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  display: block;
+}
+
+.qa-intent-cell-editor--name {
+  font-weight: 600;
+}
+
+.qa-intent-cell-editor::placeholder {
+  color: var(--color-text-muted);
+}
+
+.qa-intent-cell-editor:focus {
+  background: color-mix(in srgb, var(--color-surface) 65%, var(--color-input-bg) 35%);
+}
+
+.qa-intent-delete-cell {
+  width: 72px;
+  padding: 5px 6px;
+  text-align: center;
+}
+
+.qa-intent-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.qa-intent-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 44%, var(--color-border) 56%);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-panel-bg) 88%);
+  color: var(--color-accent);
+}
+
+.qa-intent-save-button:not(:disabled):hover {
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-panel-bg) 82%);
+}
+
+.qa-intent-save-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.qa-intent-delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-danger-border);
+  border-radius: 6px;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.qa-intent-delete-button:hover {
+  opacity: 0.9;
+}
+
 html:not(.dark) .settings-card-shell {
   background: rgba(255, 255, 255, 0.92);
 }
@@ -861,6 +1278,17 @@ html:not(.dark) .qa-connection-list-empty {
 
   .settings-card-body {
     padding: 10px 12px 12px;
+  }
+
+  .qa-intent-rules-shell {
+    height: clamp(300px, 48vh, 380px);
+    min-height: 300px;
+  }
+
+  .qa-intent-cell-editor {
+    height: 38px;
+    line-height: 38px;
+    padding: 0 8px;
   }
 }
 </style>

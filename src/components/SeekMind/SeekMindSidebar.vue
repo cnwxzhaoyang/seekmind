@@ -40,8 +40,14 @@ const items = computed(() => [
   { key: "collections", label: t("sidebar.collections"), icon: BookMarked, to: "/collections" },
   { key: "chunks", label: t("sidebar.chunks"), icon: Layers3, to: "/chunks" },
   { key: "status", label: t("sidebar.status"), icon: ShieldCheck, to: "/status" },
-  { key: "settings", label: t("sidebar.settings"), icon: Settings, to: "/settings" },
 ]);
+
+const settingsItem = computed(() => ({
+  key: "settings",
+  label: t("sidebar.settings"),
+  icon: Settings,
+  to: "/settings",
+}));
 
 const activeKey = computed(() => {
   const path = route.path;
@@ -165,7 +171,8 @@ onBeforeUnmount(() => {
         :class="[
           sidebarCollapsed ? 'justify-center px-2' : 'gap-2.5 px-3',
           activeKey === item.key
-            ? 'bg-[#007AFF] !text-white shadow-card'
+            // 修复：全局侧栏选中态改为主题 token，避免设置页出现过重的亮蓝色块。
+            ? 'bg-surface-active !text-primary'
             : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
         :title="sidebarCollapsed ? item.label : undefined"
@@ -177,118 +184,144 @@ onBeforeUnmount(() => {
       </RouterLink>
     </nav>
 
+    <RouterLink
+      v-if="sidebarCollapsed"
+      :to="settingsItem.to"
+      class="mt-auto flex h-10 w-full items-center justify-center rounded-[12px] text-[13px] transition"
+      :class="activeKey === settingsItem.key
+        ? 'bg-surface-active !text-primary'
+        : '!text-secondary hover:bg-surface-hover hover:!text-primary'"
+      :title="settingsItem.label"
+      :aria-label="settingsItem.label"
+    >
+      <component :is="settingsItem.icon" :size="17" class="shrink-0" :stroke-width="2" />
+    </RouterLink>
+
     <div v-if="!sidebarCollapsed" class="mt-3 min-h-0 flex-1 overflow-hidden border-t border-default pt-3">
       <!-- 侧栏内容区压缩密度，改成扁平分区，避免每块都像独立卡片。 -->
-      <div class="grid h-full min-h-0 grid-rows-[minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.56fr)] gap-2 overflow-hidden pr-1">
-        <section class="flex min-h-0 flex-col overflow-hidden">
-          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
-            <Clock3 :size="12" class="shrink-0" />
-            {{ t("page.appSearch.section.recentSearch") }}
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
-            <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
-              {{ t("page.appSearch.section.noHistory") }}
+      <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden pr-1">
+        <div class="grid min-h-0 flex-1 grid-rows-[minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.68fr)_minmax(0,0.56fr)] gap-2 overflow-hidden">
+          <section class="flex min-h-0 flex-col overflow-hidden">
+            <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
+              <Clock3 :size="12" class="shrink-0" />
+              {{ t("page.appSearch.section.recentSearch") }}
             </div>
-            <div v-else class="space-y-1">
-              <div
-                v-for="item in searchHistory"
-                :key="item.query"
-                class="group flex items-center gap-1"
-              >
-                <button
-                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
-                  :title="item.query"
-                  @click="openSearchQuery(item.query)"
+            <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+              <div v-if="searchHistory.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
+                {{ t("page.appSearch.section.noHistory") }}
+              </div>
+              <div v-else class="space-y-1">
+                <div
+                  v-for="item in searchHistory"
+                  :key="item.query"
+                  class="group flex items-center gap-1"
                 >
-                  <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.query }}</div>
-                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ formatSeekMindDateOnly(item.last_hit_at, locale.value) }}</div>
-                </button>
-                <button
-                  class="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
-                  :title="t('page.appSearch.section.remove')"
-                  :disabled="panelActionTarget === `history:${item.query}`"
-                  @click.stop="removeSearchHistory(item.query)"
-                >
-                  <Trash2 :size="12" class="shrink-0" />
-                </button>
+                  <button
+                    class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
+                    :title="item.query"
+                    @click="openSearchQuery(item.query)"
+                  >
+                    <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.query }}</div>
+                    <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ formatSeekMindDateOnly(item.last_hit_at, locale.value) }}</div>
+                  </button>
+                  <button
+                    class="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
+                    :title="t('page.appSearch.section.remove')"
+                    :disabled="panelActionTarget === `history:${item.query}`"
+                    @click.stop="removeSearchHistory(item.query)"
+                  >
+                    <Trash2 :size="12" class="shrink-0" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <!-- 这里把三个历史区块拆开，避免浅色/深色主题下内容贴得太紧。 -->
-        <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
-          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
-            <FileClock :size="12" class="shrink-0" />
-            {{ t("page.appSearch.section.recentOpen") }}
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
-            <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
-              {{ t("page.appSearch.section.noRecent") }}
+          <!-- 这里把三个历史区块拆开，避免浅色/深色主题下内容贴得太紧。 -->
+          <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
+            <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
+              <FileClock :size="12" class="shrink-0" />
+              {{ t("page.appSearch.section.recentOpen") }}
             </div>
-            <div v-else class="space-y-1">
-              <div
-                v-for="item in recentDocuments"
-                :key="item.path"
-                class="group flex items-start gap-1"
-              >
-                <button
-                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
-                  :title="t('page.appSearch.section.recentOpenTip', { title: item.title, path: item.path })"
-                  @click="openRecentDocument(item.path)"
+            <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+              <div v-if="recentDocuments.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
+                {{ t("page.appSearch.section.noRecent") }}
+              </div>
+              <div v-else class="space-y-1">
+                <div
+                  v-for="item in recentDocuments"
+                  :key="item.path"
+                  class="group flex items-start gap-1"
                 >
-                  <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.title }}</div>
-                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
-                </button>
-                <button
-                  class="mt-0.5 inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
-                  :title="t('page.appSearch.section.remove')"
-                  :disabled="panelActionTarget === `recent:${item.path}`"
-                  @click.stop="removeRecentDocument(item.path)"
-                >
-                  <Trash2 :size="12" class="shrink-0" />
-                </button>
+                  <button
+                    class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
+                    :title="t('page.appSearch.section.recentOpenTip', { title: item.title, path: item.path })"
+                    @click="openRecentDocument(item.path)"
+                  >
+                    <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.title }}</div>
+                    <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
+                  </button>
+                  <button
+                    class="mt-0.5 inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
+                    :title="t('page.appSearch.section.remove')"
+                    :disabled="panelActionTarget === `recent:${item.path}`"
+                    @click.stop="removeRecentDocument(item.path)"
+                  >
+                    <Trash2 :size="12" class="shrink-0" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
-          <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
-            <Star :size="12" class="shrink-0" />
-            {{ t("page.appSearch.section.favorites") }}
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto pt-2">
-            <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
-              {{ t("page.appSearch.section.noFavorites") }}
+          <section class="flex min-h-0 flex-col overflow-hidden border-t border-default pt-3">
+            <div class="flex items-center gap-1.5 border-b border-default pb-2 text-[12px] font-semibold text-secondary">
+              <Star :size="12" class="shrink-0" />
+              {{ t("page.appSearch.section.favorites") }}
             </div>
-            <div v-else class="space-y-1">
-              <div
-                v-for="item in favoriteResults"
-                :key="item.target"
-                class="group flex items-start gap-1"
-              >
-                <button
-                  class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
-                  :title="t('page.appSearch.section.favoriteTip', { title: item.title, path: item.path })"
-                  @click="openFavoriteDocument(item.path)"
+            <div class="min-h-0 flex-1 overflow-y-auto pt-2">
+              <div v-if="favoriteResults.length === 0" class="rounded-md border border-dashed border-default bg-surface px-3 py-3 text-[12px] text-muted">
+                {{ t("page.appSearch.section.noFavorites") }}
+              </div>
+              <div v-else class="space-y-1">
+                <div
+                  v-for="item in favoriteResults"
+                  :key="item.target"
+                  class="group flex items-start gap-1"
                 >
-                  <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.title }}</div>
-                  <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
-                </button>
-                <button
-                  class="mt-0.5 inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
-                  :title="t('page.appSearch.section.remove')"
-                  :disabled="panelActionTarget === `favorite:${item.target}`"
-                  @click.stop="removeFavorite(item.target)"
-                >
-                  <Trash2 :size="12" class="shrink-0" />
-                </button>
+                  <button
+                    class="min-w-0 flex-1 rounded-md px-2 py-1 text-left text-[13px] leading-5 text-secondary transition hover:bg-panel hover:text-primary"
+                    :title="t('page.appSearch.section.favoriteTip', { title: item.title, path: item.path })"
+                    @click="openFavoriteDocument(item.path)"
+                  >
+                    <div class="truncate text-[13px] font-medium leading-5 text-primary">{{ item.title }}</div>
+                    <div class="mt-0.5 truncate text-[11px] leading-4 text-muted">{{ item.path }}</div>
+                  </button>
+                  <button
+                    class="mt-0.5 inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-hover hover:text-danger group-hover:opacity-100"
+                    :title="t('page.appSearch.section.remove')"
+                    :disabled="panelActionTarget === `favorite:${item.target}`"
+                    @click.stop="removeFavorite(item.target)"
+                  >
+                    <Trash2 :size="12" class="shrink-0" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
 
+        <RouterLink
+          :to="settingsItem.to"
+          class="mt-auto flex h-10 w-full items-center gap-2 rounded-[12px] px-3 text-[13px] transition"
+          :class="activeKey === settingsItem.key
+            ? 'bg-surface-active !text-primary'
+            : '!text-secondary hover:bg-surface-hover hover:!text-primary'"
+          :aria-label="settingsItem.label"
+        >
+          <component :is="settingsItem.icon" :size="17" class="shrink-0" :stroke-width="2" />
+          <span class="min-w-0 flex-1 truncate text-left leading-none">{{ settingsItem.label }}</span>
+        </RouterLink>
       </div>
     </div>
 

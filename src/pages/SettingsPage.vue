@@ -6,7 +6,8 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { CircleHelp, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Settings, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
+import { useRouter } from "vue-router";
+import { ArrowLeft, CircleHelp, Globe, Languages, MessageSquareText, Moon, Monitor, RefreshCw, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-vue-next";
 import { useTheme } from "../composables/useTheme";
 import SeekMindBadge from "../components/SeekMind/SeekMindBadge.vue";
 import SeekMindConfirmDialog from "../components/SeekMind/SeekMindConfirmDialog.vue";
@@ -20,16 +21,11 @@ import { localeMode, setLocale as setI18nLocale } from "../i18n";
 import type { IndexSettingsView, NetworkProxySettingsView, SemanticModelStatusView } from "../types/SeekMind";
 
 const { t, locale } = useI18n();
+const router = useRouter();
 const { themeMode, setTheme } = useTheme();
 
 const currentLocaleMode = computed(() => localeMode.value);
 const currentLocaleLabel = computed(() => {
-  if (currentLocaleMode.value === "system") {
-    return t("page.settings.languageSystem");
-  }
-  return currentLocaleMode.value === "zh-CN" ? "中文" : "English";
-});
-const currentLocaleModeBadgeLabel = computed(() => {
   if (currentLocaleMode.value === "system") {
     return t("page.settings.languageSystem");
   }
@@ -80,7 +76,8 @@ const clearing = ref(false);
 const showClearConfirm = ref(false);
 const errorMessage = ref("");
 const { infoMessage } = useInfoMessage();
-const activeSection = ref("settings-rules");
+const activeSection = ref("settings-semantic");
+const settingsFilterText = ref("");
 const mainScrollEl = ref<HTMLElement | null>(null);
 const semanticModelStatus = ref<SemanticModelStatusView | null>(null);
 const semanticModelStatusReady = ref(false);
@@ -316,14 +313,11 @@ const scrollToSection = (id: string) => {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
+const returnToApp = async () => {
+  await router.push("/");
+};
+
 const settingsNavItems = computed(() => [
-  {
-    id: "settings-rules",
-    label: t("page.settings.section.rules"),
-    hint: t("page.settings.rulesDesc"),
-    // 规则分区保留滑杆图标，和配置含义保持一致。
-    icon: SlidersHorizontal,
-  },
   {
     id: "settings-semantic",
     label: t("page.settings.semantic.title"),
@@ -335,6 +329,12 @@ const settingsNavItems = computed(() => [
     label: t("page.settings.qa.title"),
     hint: t("page.settings.qa.desc"),
     icon: MessageSquareText,
+  },
+  {
+    id: "settings-qa-rules",
+    label: t("page.settings.qa.intentRules"),
+    hint: t("page.settings.qa.help.intentRules"),
+    icon: SlidersHorizontal,
   },
   {
     id: "settings-appearance",
@@ -362,6 +362,17 @@ const settingsNavItems = computed(() => [
     danger: true,
   },
 ] as const);
+
+const filteredSettingsNavItems = computed(() => {
+  const keyword = settingsFilterText.value.trim().toLocaleLowerCase();
+  if (!keyword) {
+    return settingsNavItems.value;
+  }
+
+  return settingsNavItems.value.filter((item) =>
+    `${item.label} ${item.hint}`.toLocaleLowerCase().includes(keyword),
+  );
+});
 
 const syncActiveSection = () => {
   if (sectionObserver) {
@@ -463,98 +474,57 @@ onBeforeUnmount(() => {
 
       <div v-else class="settings-workbench grid w-full gap-5 xl:grid-cols-[248px_minmax(0,1fr)]">
         <aside class="settings-prototype-sidebar settings-sidebar-rail hidden min-h-0 min-w-0 self-start xl:sticky xl:top-4 xl:block">
-          <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
-            <div class="settings-sidebar-head flex items-center justify-between border-b border-default px-4 py-2.5">
-              <div>
-                <div class="seekmind-section-label">导航</div>
-                <div class="seekmind-item-meta mt-1">{{ t("page.settings.instructions.effective") }}</div>
-              </div>
-              <SeekMindBadge tone="success">{{ t("status.savedLocally") }}</SeekMindBadge>
+          <section class="settings-sidebar-shell">
+            <div class="settings-sidebar-head px-2 pb-3">
+              <button class="settings-back-button" type="button" @click="returnToApp">
+                <ArrowLeft :size="14" />
+                <span>{{ t("page.settings.backToApp") }}</span>
+              </button>
+              <label class="settings-search-field">
+                <Search :size="14" />
+                <input v-model="settingsFilterText" type="search" :placeholder="t('page.settings.searchPlaceholder')" />
+              </label>
+              <div class="settings-nav-group-label">{{ t("page.settings.navGroupPersonal") }}</div>
             </div>
-            <div class="settings-sidebar-nav space-y-2 p-3">
+            <div class="settings-sidebar-nav space-y-1">
               <button
-                v-for="item in settingsNavItems"
+                v-for="item in filteredSettingsNavItems"
                 :key="item.id"
-                class="w-full rounded-lg border px-3 py-2 text-left transition"
+                class="settings-sidebar-nav-item w-full rounded-md px-2.5 py-2 text-left transition"
+                :title="item.hint"
                 :class="activeSection === item.id
                   ? item.danger
-                    ? 'border-danger-soft bg-danger-soft text-danger'
-                    : 'border-accent bg-accent-soft text-primary'
+                    ? 'text-danger'
+                    : 'text-primary'
                   : item.danger
-                    ? 'border-danger-soft bg-danger-soft opacity-80 text-secondary hover:opacity-100'
-                    : 'border-default bg-surface text-secondary hover:bg-surface-hover'"
+                    ? 'text-secondary hover:text-danger'
+                    : 'text-secondary hover:text-primary'"
                 @click="scrollToSection(item.id)"
               >
-                <div class="flex items-start gap-3">
+                <div class="flex items-center gap-2.5">
                   <span
-                    class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border"
+                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
                     :class="activeSection === item.id
                       ? item.danger
-                        ? 'border-danger-soft bg-danger text-white'
-                        : 'border-accent bg-accent text-white'
+                        ? 'text-danger'
+                        : 'text-primary'
                       : item.danger
-                        ? 'border-danger-soft bg-danger-soft text-danger'
-                        : 'border-default bg-surface text-muted'"
+                        ? 'text-danger'
+                        : 'text-muted'"
                   >
                     <component :is="item.icon" :size="15" />
                   </span>
                   <span class="min-w-0">
-                    <span class="block text-[12px] font-medium leading-5">{{ item.label }}</span>
-                    <span class="mt-0.5 block text-[10px] leading-4 text-dim">{{ item.hint }}</span>
+                    <span class="block text-[13px] font-medium leading-5">{{ item.label }}</span>
                   </span>
                 </div>
               </button>
             </div>
           </section>
-
-          <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
-            <div class="border-b border-default px-4 py-2.5">
-              <div class="seekmind-section-label">快捷</div>
-            </div>
-            <div class="grid gap-2 p-3">
-              <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-default bg-surface px-3 py-2.5 text-sm font-medium text-secondary transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-70"
-                :disabled="loading || saving"
-                @click="resetToDefaults"
-              >
-                <RefreshCw :size="15" />
-                {{ t("page.settings.btn.reset") }}
-              </button>
-              <button
-                class="inline-flex items-center justify-center gap-2 rounded-md border border-danger-soft bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger transition hover:opacity-90"
-                @click="scrollToSection('settings-danger')"
-              >
-                <Trash2 :size="15" />
-                {{ t("page.settings.section.danger") }}
-              </button>
-            </div>
-          </section>
-
-          <section class="settings-sidebar-shell rounded-lg border border-default bg-surface">
-            <div class="border-b border-default px-4 py-2.5">
-              <div class="seekmind-section-label">状态</div>
-            </div>
-            <div class="space-y-3 p-3 text-sm">
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-dim">{{ t("page.settings.status.synced") }}</span>
-                <SeekMindBadge :tone="hasChanges ? 'warning' : 'success'">{{ hasChanges ? t("page.settings.status.changed") : t("page.settings.status.synced") }}</SeekMindBadge>
-              </div>
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-dim">{{ t("page.settings.language") }}</span>
-                <span class="font-medium text-primary">{{ currentLocaleModeBadgeLabel }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-dim">{{ t("page.settings.theme") }}</span>
-                <span class="font-medium text-primary">
-                  {{ themeMode === "light" ? t("page.settings.themeLight") : themeMode === "dark" ? t("page.settings.themeDark") : t("page.settings.themeSystem") }}
-                </span>
-              </div>
-            </div>
-          </section>
         </aside>
 
-        <div class="min-w-0 space-y-4">
-          <div id="settings-semantic" class="scroll-mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
+        <div class="settings-content-column min-w-0 space-y-4">
+          <div id="settings-semantic" class="settings-section-stack scroll-mt-4 grid gap-4 xl:items-start">
               <section class="min-w-0 rounded-lg border border-default bg-surface">
                 <div class="settings-section-head">
                   <div class="settings-section-head-left">
@@ -1439,6 +1409,427 @@ html:not(.dark) .settings-prototype-main .border-default {
 
   .settings-prototype-subtitle {
     font-size: 13px;
+  }
+}
+
+/* Codex 风格收敛：安静背景、轻量导航、少卡片层级。 */
+.settings-prototype-shell {
+  color: var(--color-text-primary);
+  background: var(--color-page-bg);
+}
+
+.settings-prototype-topbar {
+  min-height: 50px;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-page-bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.settings-prototype-main {
+  padding: 22px 26px 56px;
+}
+
+.settings-workbench {
+  max-width: 1040px;
+  margin: 0 auto;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 30px;
+}
+
+.settings-content-column {
+  max-width: 760px;
+}
+
+.settings-section-stack {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.settings-prototype-title,
+html:not(.dark) .settings-prototype-title {
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.settings-prototype-subtitle,
+html:not(.dark) .settings-prototype-subtitle {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.settings-prototype-title-icon {
+  color: var(--color-text-secondary);
+}
+
+.settings-prototype-header-right > button,
+html:not(.dark) .settings-prototype-header-right > button {
+  height: 34px;
+  border-radius: 8px;
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.settings-sidebar-rail,
+html:not(.dark) .settings-sidebar-rail {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.settings-sidebar-shell,
+.settings-sidebar-rail > section,
+html:not(.dark) .settings-sidebar-rail > section {
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
+
+.settings-sidebar-head {
+  padding: 0 6px 8px;
+}
+
+.settings-sidebar-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-prototype-sidebar button,
+html:not(.dark) .settings-prototype-sidebar button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  box-shadow: none;
+}
+
+.settings-prototype-sidebar button:hover,
+html:not(.dark) .settings-prototype-sidebar button:hover {
+  background: var(--color-surface-hover);
+  border-color: transparent;
+}
+
+.settings-prototype-sidebar button[class*="text-primary"],
+html:not(.dark) .settings-prototype-sidebar button[class*="text-primary"] {
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-surface) 96%, var(--color-page-bg) 4%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.settings-sidebar-nav-item {
+  font-size: 13px;
+}
+
+.settings-prototype-sidebar .seekmind-section-label,
+.settings-prototype-main .seekmind-section-label,
+html:not(.dark) .settings-prototype-sidebar .seekmind-section-label,
+html:not(.dark) .settings-prototype-main .seekmind-section-label {
+  color: var(--color-text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-prototype-sidebar .seekmind-item-meta,
+.settings-prototype-main .seekmind-item-meta,
+html:not(.dark) .settings-prototype-sidebar .seekmind-item-meta,
+html:not(.dark) .settings-prototype-main .seekmind-item-meta {
+  color: var(--color-text-muted);
+}
+
+.settings-prototype-main section,
+.settings-prototype-sidebar > section,
+html:not(.dark) .settings-prototype-main section,
+html:not(.dark) .settings-prototype-sidebar > section,
+:deep(.settings-card-shell) {
+  border: 1px solid var(--color-border) !important;
+  border-radius: 10px !important;
+  background: var(--color-surface) !important;
+  box-shadow: none !important;
+}
+
+.settings-prototype-main section,
+html:not(.dark) .settings-prototype-main section,
+:deep(.settings-card-shell) {
+  overflow: hidden;
+}
+
+.settings-prototype-main section + section,
+.settings-prototype-main > div > .min-w-0 > * + * {
+  margin-top: 0;
+}
+
+.settings-section-head,
+:deep(.settings-card-head) {
+  min-height: 40px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-section-title,
+:deep(.settings-card-title),
+html:not(.dark) .settings-section-title {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.settings-section-icon,
+:deep(.settings-card-icon) {
+  color: var(--color-text-secondary);
+}
+
+.settings-prototype-main input:not([type="checkbox"]):not([type="range"]),
+.settings-prototype-main textarea,
+.settings-prototype-main .rounded-lg.border.border-default.bg-input,
+.settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main input:not([type="checkbox"]):not([type="range"]),
+html:not(.dark) .settings-prototype-main textarea,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-input,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+:deep(.settings-card-shell input:not([type="checkbox"]):not([type="range"])),
+:deep(.settings-card-shell textarea),
+:deep(.settings-card-shell .bg-panel) {
+  border-color: var(--color-border) !important;
+  background: var(--color-input-bg, var(--color-surface)) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: none !important;
+}
+
+.settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+.settings-prototype-main .rounded-md.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-md.border.border-default.bg-panel {
+  background: var(--color-panel-bg, var(--color-surface)) !important;
+}
+
+.settings-prototype-main .space-y-5.p-4,
+.settings-prototype-main .space-y-2.p-4,
+:deep(.settings-card-body) {
+  padding: 16px !important;
+}
+
+.settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+.settings-prototype-main .rounded-md.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-md.border.border-default.bg-panel,
+:deep(.settings-card-shell .bg-panel) {
+  border-radius: 8px !important;
+  background: var(--color-page-bg) !important;
+}
+
+.settings-prototype-main .grid.gap-4.xl\:grid-cols-\[180px_minmax\(0\,1fr\)\],
+.settings-prototype-main .grid.gap-4.xl\:grid-cols-\[160px_minmax\(0\,1fr\)\],
+.settings-prototype-main .grid.gap-4.xl\:grid-cols-\[minmax\(0\,1fr\)_minmax\(0\,1fr\)\] {
+  gap: 12px;
+}
+
+.settings-prototype-main .bg-accent,
+html:not(.dark) .settings-prototype-main .bg-accent {
+  background: var(--color-accent) !important;
+}
+
+.settings-prototype-main .text-primary,
+html:not(.dark) .settings-prototype-main .text-primary {
+  color: var(--color-text-primary) !important;
+}
+
+.settings-prototype-main .text-secondary,
+.settings-prototype-main .text-dim,
+.settings-prototype-main .text-muted,
+html:not(.dark) .settings-prototype-main .text-secondary,
+html:not(.dark) .settings-prototype-main .text-dim,
+html:not(.dark) .settings-prototype-main .text-muted {
+  color: var(--color-text-muted) !important;
+}
+
+@media (max-width: 768px) {
+  .settings-prototype-main {
+    padding: 16px;
+  }
+}
+
+/* Codex 设置页结构：独立设置侧栏 + 居中的窄表单流。 */
+.settings-prototype-topbar {
+  display: none;
+}
+
+.settings-prototype-shell,
+html:not(.dark) .settings-prototype-shell {
+  background: var(--color-page-bg);
+}
+
+html.dark .settings-prototype-shell {
+  background: var(--color-page-bg);
+}
+
+.settings-prototype-main {
+  padding: 0 !important;
+}
+
+.settings-workbench,
+.settings-workbench.grid {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  gap: 0;
+  grid-template-columns: 292px minmax(0, 1fr);
+}
+
+.settings-sidebar-rail,
+html:not(.dark) .settings-sidebar-rail {
+  position: sticky;
+  top: 0;
+  display: block;
+  width: 292px;
+  min-height: 100vh;
+  padding: 38px 8px 24px;
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
+    color-mix(in srgb, var(--color-sidebar-bg) 88%, transparent);
+}
+
+html.dark .settings-sidebar-rail {
+  background: color-mix(in srgb, var(--color-sidebar-bg) 88%, var(--color-surface) 12%);
+}
+
+.settings-content-column {
+  width: min(100%, 860px);
+  max-width: 860px;
+  margin: 62px auto 96px;
+}
+
+.settings-section-stack {
+  gap: 18px;
+}
+
+.settings-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  min-height: 28px !important;
+  padding: 0 8px !important;
+  border-radius: 7px !important;
+  color: var(--color-text-muted) !important;
+  font-size: 13px;
+  background: transparent !important;
+}
+
+.settings-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  margin-top: 12px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  border-radius: 8px;
+  background: var(--color-input-bg);
+  color: var(--color-text-muted);
+}
+
+html.dark .settings-search-field {
+  background: var(--color-input-bg);
+}
+
+.settings-search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  color: var(--color-text-primary) !important;
+  font-size: 13px;
+}
+
+.settings-nav-group-label {
+  margin: 18px 8px 7px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-sidebar-head {
+  padding: 0 0 5px;
+}
+
+.settings-sidebar-nav {
+  gap: 1px;
+}
+
+.settings-prototype-sidebar button,
+html:not(.dark) .settings-prototype-sidebar button {
+  min-height: 32px;
+  padding: 0 9px !important;
+  border-radius: 8px;
+}
+
+.settings-prototype-sidebar button[class*="text-primary"],
+html:not(.dark) .settings-prototype-sidebar button[class*="text-primary"] {
+  background: color-mix(in srgb, var(--color-surface) 96%, var(--color-page-bg) 4%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.settings-section-head,
+:deep(.settings-card-head) {
+  min-height: 44px;
+  padding: 12px 14px;
+}
+
+.settings-prototype-main section,
+html:not(.dark) .settings-prototype-main section,
+:deep(.settings-card-shell) {
+  border-radius: 9px !important;
+  background: var(--color-surface) !important;
+}
+
+html.dark .settings-prototype-main section,
+html.dark :deep(.settings-card-shell) {
+  background: var(--color-surface) !important;
+}
+
+.settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+.settings-prototype-main .rounded-md.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-lg.border.border-default.bg-panel,
+html:not(.dark) .settings-prototype-main .rounded-md.border.border-default.bg-panel,
+:deep(.settings-card-shell .bg-panel) {
+  background: var(--color-panel-bg) !important;
+}
+
+.settings-prototype-main .bg-accent,
+html:not(.dark) .settings-prototype-main .bg-accent {
+  background: var(--color-accent) !important;
+}
+
+.settings-prototype-main input[type="checkbox"],
+.settings-prototype-main input[type="range"] {
+  accent-color: var(--color-accent);
+}
+
+@media (max-width: 1024px) {
+  .settings-workbench,
+  .settings-workbench.grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-sidebar-rail {
+    display: none;
+  }
+
+  .settings-content-column {
+    width: min(100% - 32px, 672px);
+    margin-top: 28px;
   }
 }
 </style>
