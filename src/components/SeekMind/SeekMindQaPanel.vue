@@ -1158,7 +1158,7 @@ onMounted(async () => {
   z-index: 1;
   background: var(--color-panel-bg);
   padding: 8px 9px;
-  text-align: left;
+  text-align: center;
   font-size: 11px;
   font-weight: 700;
   color: var(--color-text-muted);

@@ -167,14 +167,15 @@ onBeforeUnmount(() => {
         v-for="item in items"
         :key="item.key"
         :to="item.to"
-        class="group relative flex h-10 w-full items-center rounded-[12px] text-[13px] transition"
+        class="group relative flex h-10 w-full items-center overflow-hidden rounded-[12px] text-[13px] transition"
         :class="[
           sidebarCollapsed ? 'justify-center px-2' : 'gap-2.5 px-3',
           activeKey === item.key
-            // 修复：全局侧栏选中态改为主题 token，避免设置页出现过重的亮蓝色块。
-            ? 'bg-surface-active !text-primary'
+            // 修复：全局侧栏选中态增加左侧强调条和更强的底色，避免“点了但看不出来”的问题。
+            ? 'bg-accent-soft !text-primary font-semibold ring-1 ring-accent/20 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-1 before:rounded-r-full before:bg-accent'
             : '!text-secondary hover:bg-surface-hover hover:!text-primary',
         ]"
+        :aria-current="activeKey === item.key ? 'page' : undefined"
         :title="sidebarCollapsed ? item.label : undefined"
         :aria-label="item.label"
       >
@@ -187,10 +188,11 @@ onBeforeUnmount(() => {
     <RouterLink
       v-if="sidebarCollapsed"
       :to="settingsItem.to"
-      class="mt-auto flex h-10 w-full items-center justify-center rounded-[12px] text-[13px] transition"
+      class="mt-auto flex h-10 w-full items-center justify-center overflow-hidden rounded-[12px] text-[13px] transition"
       :class="activeKey === settingsItem.key
-        ? 'bg-surface-active !text-primary'
+        ? 'bg-accent-soft !text-primary ring-1 ring-accent/20 before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-1 before:rounded-r-full before:bg-accent'
         : '!text-secondary hover:bg-surface-hover hover:!text-primary'"
+      :aria-current="activeKey === settingsItem.key ? 'page' : undefined"
       :title="settingsItem.label"
       :aria-label="settingsItem.label"
     >
