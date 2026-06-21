@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use crate::seekmind::models::{
-    SemanticDebugView, SemanticModelStatusView, SemanticRebuildProgressView,
-    SemanticRebuildStartView,
+    SemanticDebugView, SemanticDownloadModelView, SemanticModelStatusView,
+    SemanticRebuildProgressView, SemanticRebuildStartView,
 };
+use crate::seekmind::semantic::download;
 use crate::seekmind::semantic::store;
 use crate::seekmind::storage::Database;
 use tauri::Emitter;
@@ -21,6 +22,27 @@ pub async fn list_embedding_models(
     state: tauri::State<'_, Database>,
 ) -> Result<Vec<crate::seekmind::models::EmbeddingModelView>, String> {
     store::list_embedding_models(&state).await
+}
+
+#[tauri::command]
+pub async fn list_semantic_download_models() -> Result<Vec<SemanticDownloadModelView>, String> {
+    Ok(download::list_semantic_download_models())
+}
+
+#[tauri::command]
+pub async fn download_semantic_model(
+    app: tauri::AppHandle,
+    model_id: String,
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<SemanticDownloadModelView>, String> {
+    download::download_semantic_model(app, state.inner().clone(), model_id).await
+}
+
+#[tauri::command]
+pub async fn delete_semantic_model(
+    model_id: String,
+) -> Result<Vec<SemanticDownloadModelView>, String> {
+    download::delete_semantic_model(model_id).await
 }
 
 #[tauri::command]

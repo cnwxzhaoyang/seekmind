@@ -1,5 +1,6 @@
 pub mod client;
 pub mod commands;
+pub mod download;
 pub mod embedding;
 pub mod models;
 pub mod store;

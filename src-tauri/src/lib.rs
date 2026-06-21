@@ -217,7 +217,10 @@ pub fn run() {
             crate::seekmind::semantic::commands::get_semantic_debug_report,
             crate::seekmind::semantic::commands::rebuild_semantic_embeddings,
             crate::seekmind::semantic::commands::list_embedding_models,
-            crate::seekmind::semantic::commands::set_default_embedding_model
+            crate::seekmind::semantic::commands::set_default_embedding_model,
+            crate::seekmind::semantic::commands::list_semantic_download_models,
+            crate::seekmind::semantic::commands::download_semantic_model,
+            crate::seekmind::semantic::commands::delete_semantic_model
         ])
         .run(tauri::generate_context!())
         .expect("error while running SeekMind application");

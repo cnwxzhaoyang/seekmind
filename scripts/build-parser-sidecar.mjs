@@ -1,7 +1,7 @@
 /**
  * @author MorningSun
  * @CreatedDate 2026/06/13
- * @Description SeekMind 跨平台 parser sidecar 打包脚本，统一构建 OCR helper、PyInstaller 产物与 fastembed 资源。
+ * @Description SeekMind 跨平台 parser sidecar 打包脚本，统一构建 OCR helper 与 PyInstaller 产物。
  */
 
 import fs from "node:fs/promises";
@@ -17,11 +17,6 @@ import {
 
 const args = process.argv.slice(2);
 const pythonCommand = process.env.SEEKMIND_PARSER_BIN || defaultPythonCommand();
-const fastembedCacheDir =
-  process.env.SEEKMIND_FASTEMBED_CACHE_DIR ||
-  path.join(rootDir, ".SeekMind-cache", "fastembed");
-const fastembedModelCacheDirName = "models--Qdrant--bge-small-zh-v1.5";
-const fastembedModelCacheDir = path.join(fastembedCacheDir, fastembedModelCacheDirName);
 const appResourceDir = path.join(rootDir, "src-tauri", "app-resources");
 const resourceDir = path.join(rootDir, "src-tauri", "resources");
 const buildDir = path.join(rootDir, ".seekmind-build", "parser-sidecar");
@@ -203,48 +198,12 @@ async function buildParserSidecar(outputName) {
   console.info(`[SeekMind] built parser sidecar: ${bundledOutputDir}`);
 }
 
-async function warmupFastembedCache() {
-  // 修复：Windows 打包前如果没有主动预热 FastEmbed 模型缓存，安装包里会只有 sidecar 壳子，
-  // 首次启动仍然要在线下载 embedding 模型，离线或弱网场景就会表现成“embedding 没打进去”。
-  console.info(`[SeekMind] warming up FastEmbed cache for ${fastembedModelCacheDirName}...`);
-  await runCommand(
-    pythonCommand,
-    [
-      path.join(rootDir, "parser", "seekmind_parser", "__main__.py"),
-      "warmup-embedding",
-      "BAAI/bge-small-zh-v1.5",
-    ],
-  );
-
-  if (!(await pathExists(fastembedModelCacheDir))) {
-    const message =
-      `[SeekMind] FastEmbed warmup completed but model cache is still missing: ${fastembedModelCacheDir}`;
-    if (process.env.SEEKMIND_ALLOW_MISSING_FASTEMBED_CACHE === "1") {
-      console.warn(`${message}; continuing because SEEKMIND_ALLOW_MISSING_FASTEMBED_CACHE=1`);
-      return;
-    }
-    throw new Error(
-      `${message}. Refusing to build a sidecar bundle without the embedding model cache.`,
-    );
-  }
-
-  console.info(`[SeekMind] FastEmbed cache ready: ${fastembedModelCacheDir}`);
-}
-
-async function bundleFastembedCache() {
+async function cleanupBundledFastembedCache() {
   const bundledFastembedDir = path.join(appResourceDir, "fastembed");
   await removeIfExists(path.join(appResourceDir, "fastembed-cache.tar.gz"));
   await removeIfExists(bundledFastembedDir);
-
-  if (!(await pathExists(fastembedModelCacheDir))) {
-    console.info(
-      `[SeekMind] FastEmbed model cache not found at ${fastembedModelCacheDir}; semantic model may need runtime download`,
-    );
-    return;
-  }
-
-  await fs.cp(fastembedCacheDir, bundledFastembedDir, { recursive: true });
-  console.info(`[SeekMind] bundled FastEmbed cache dir: ${bundledFastembedDir}`);
+  // 修复：语义模型改为 GitHub Release 按需下载，打包脚本必须主动清理旧的内置缓存，避免安装包意外变大。
+  console.info("[SeekMind] skipped bundled FastEmbed cache; semantic model is downloaded on demand");
 }
 
 async function runTauriBuild() {
@@ -291,8 +250,7 @@ console.info(`[SeekMind] using python command for sidecar build: ${pythonCommand
 
 await buildVisionOcrHelper(effectiveTarget);
 await buildParserSidecar(outputName);
-await warmupFastembedCache();
-await bundleFastembedCache();
+await cleanupBundledFastembedCache();
 
 if (args.includes("--tauri-build")) {
   await runTauriBuild();

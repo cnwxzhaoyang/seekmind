@@ -596,3 +596,40 @@ export interface SemanticDebugView {
   index_status: string;
   last_error: string;
 }
+
+export interface SemanticDownloadFileView {
+  name: string;
+  url: string;
+  sha256: string;
+  size_bytes: number;
+}
+
+export interface SemanticDownloadModelView {
+  id: string;
+  name: string;
+  provider: string;
+  version: string;
+  runtime: string;
+  dimension: number;
+  languages: string[];
+  size_bytes: number;
+  recommended: boolean;
+  description: string;
+  download_ready: boolean;
+  downloaded: boolean;
+  status: string;
+  local_dir: string;
+  files: SemanticDownloadFileView[];
+}
+
+export interface SemanticModelDownloadProgressView {
+  model_id: string;
+  state: string;
+  code: string;
+  params: Record<string, unknown>;
+  downloaded_bytes: number;
+  total_bytes: number;
+  percent: number;
+  message: string;
+  updated_at: string;
+}

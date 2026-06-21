@@ -36,6 +36,7 @@ import type {
   TagView,
   SemanticRebuildStartView,
   SemanticDebugView,
+  SemanticDownloadModelView,
   SemanticModelStatusView,
   IndexRefreshStartView,
   ImportPathsView,
@@ -186,6 +187,12 @@ export const seekMindApi = {
     invoke<SemanticRebuildStartView>("rebuild_semantic_embeddings"),
   getSemanticDebugReport: (query: string, limit = 12) =>
     invoke<SemanticDebugView>("get_semantic_debug_report", { query, limit }),
+  listSemanticDownloadModels: () =>
+    invoke<SemanticDownloadModelView[]>("list_semantic_download_models"),
+  downloadSemanticModel: (modelId: string) =>
+    invoke<SemanticDownloadModelView[]>("download_semantic_model", { model_id: modelId }),
+  deleteSemanticModel: (modelId: string) =>
+    invoke<SemanticDownloadModelView[]>("delete_semantic_model", { model_id: modelId }),
   refreshIndex: () => invoke<IndexRefreshStartView>("refresh_index"),
   refreshIndexDir: (path: string) =>
     invoke<IndexRefreshStartView>("refresh_index_dir", { path }),

@@ -47,7 +47,9 @@
     "category": "Productivity",
     "createUpdaterArtifacts": false,
     "resources": [
-      "app-resources"
+      "app-resources/ocr/*",
+      "app-resources/seekmind-parser-*/*",
+      "app-resources/seekmind-parser-*/_internal/*"
     ],
     "icon": [
       "icons/32x32.png",

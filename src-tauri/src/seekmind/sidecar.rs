@@ -4,15 +4,9 @@
  * @Description SeekMind sidecar 启动配置、模型缓存准备与运行时诊断。
  */
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
-
-#[cfg(unix)]
-use std::os::unix::fs::symlink;
-
-use flate2::read::GzDecoder;
-use tar::Archive;
 
 use crate::seekmind::process_utils::configure_hidden_child_process;
 use crate::seekmind::runtime_paths::{
@@ -267,43 +261,10 @@ fn ensure_fastembed_cache_dir() -> PathBuf {
     let model_cache_dir = fastembed_model_cache_dir(&cache_dir);
     if model_cache_dir.exists() {
         eprintln!("[SeekMind] fastembed cache hit dir={}", cache_dir.display());
-    } else if let Some(archive) = bundled_fastembed_cache_archive() {
-        match extract_fastembed_cache_archive(&archive, &cache_dir) {
-            Ok(()) => {
-                eprintln!(
-                    "[SeekMind] restored fastembed cache from archive {} to {}",
-                    archive.display(),
-                    cache_dir.display()
-                );
-            }
-            Err(error) => {
-                eprintln!(
-                    "[SeekMind] failed to extract bundled FastEmbed cache from {} to {}: {error}",
-                    archive.display(),
-                    cache_dir.display()
-                );
-            }
-        }
-    } else if let Some(bundled_cache) = bundled_fastembed_cache_dir() {
-        match copy_dir_missing(&bundled_cache, &cache_dir) {
-            Ok(()) => {
-                eprintln!(
-                    "[SeekMind] restored fastembed cache from dir {} to {}",
-                    bundled_cache.display(),
-                    cache_dir.display()
-                );
-            }
-            Err(error) => {
-                eprintln!(
-                    "[SeekMind] failed to copy bundled FastEmbed cache from {} to {}: {error}",
-                    bundled_cache.display(),
-                    cache_dir.display()
-                );
-            }
-        }
     } else {
+        // 修复：上架版本不再从安装包资源自动恢复语义模型，缺失时交给设置页的按需下载流程处理。
         eprintln!(
-            "[SeekMind] fastembed cache miss dir={} and no bundled cache source found",
+            "[SeekMind] fastembed cache miss dir={}, waiting for user-managed semantic model download",
             cache_dir.display()
         );
     }
@@ -359,49 +320,4 @@ pub fn log_fastembed_cache_diagnostics() {
             .map(|path| path.display().to_string())
             .unwrap_or_default()
     );
-}
-
-fn extract_fastembed_cache_archive(archive: &Path, target: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(target)?;
-    let file = std::fs::File::open(archive)?;
-    let decoder = GzDecoder::new(file);
-    let mut tar = Archive::new(decoder);
-    tar.unpack(target)
-}
-
-fn copy_dir_missing(source: &Path, target: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(target)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let target_path = target.join(entry.file_name());
-
-        if target_path.exists() {
-            continue;
-        }
-
-        let metadata = std::fs::symlink_metadata(&source_path)?;
-        let file_type = metadata.file_type();
-        if file_type.is_dir() {
-            copy_dir_missing(&source_path, &target_path)?;
-        } else if file_type.is_symlink() {
-            copy_symlink(&source_path, &target_path)?;
-        } else if file_type.is_file() {
-            std::fs::copy(&source_path, &target_path)?;
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(unix)]
-fn copy_symlink(source: &Path, target: &Path) -> std::io::Result<()> {
-    let link_target = std::fs::read_link(source)?;
-    symlink(link_target, target)
-}
-
-#[cfg(not(unix))]
-fn copy_symlink(source: &Path, target: &Path) -> std::io::Result<()> {
-    let resolved = std::fs::canonicalize(source)?;
-    std::fs::copy(resolved, target).map(|_| ())
 }

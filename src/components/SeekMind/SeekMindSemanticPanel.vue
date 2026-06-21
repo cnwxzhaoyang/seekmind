@@ -6,7 +6,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { RefreshCw, Save, Search, Sparkles } from "lucide-vue-next";
+import { Download, RefreshCw, Save, Search, Sparkles, Trash2 } from "lucide-vue-next";
 import { listen } from "@tauri-apps/api/event";
 import SeekMindBadge from "./SeekMindBadge.vue";
 import SeekMindToast from "./SeekMindToast.vue";
@@ -15,6 +15,8 @@ import { useInfoMessage } from "../../composables/useInfoMessage";
 import type {
   EmbeddingModelView,
   SemanticDebugView,
+  SemanticDownloadModelView,
+  SemanticModelDownloadProgressView,
   SemanticModelStatusView,
   SemanticRebuildProgressView,
 } from "../../types/SeekMind";
@@ -30,7 +32,10 @@ const selectedEmbeddingModelId = ref("");
 const semanticQuery = ref("");
 const semanticDebug = ref<SemanticDebugView | null>(null);
 const semanticRebuildProgress = ref<SemanticRebuildProgressView | null>(null);
+const semanticDownloadModels = ref<SemanticDownloadModelView[]>([]);
+const semanticDownloadProgress = ref<SemanticModelDownloadProgressView | null>(null);
 const semanticRebuildJobId = ref("");
+const downloadingModelId = ref("");
 const loadingSemanticDebug = ref(false);
 const loading = ref(false);
 const saving = ref(false);
@@ -38,6 +43,7 @@ const errorMessage = ref("");
 const semanticProbeError = ref("");
 const { infoMessage } = useInfoMessage();
 let unlistenSemanticProgress: null | (() => void) = null;
+let unlistenSemanticDownloadProgress: null | (() => void) = null;
 let unlistenStorageReset: null | (() => void) = null;
 
 const buildFallbackSemanticStatus = (message: string): SemanticModelStatusView | null => {
@@ -84,10 +90,18 @@ const loadEmbeddingModels = async () => {
   }
 };
 
+const loadSemanticDownloadModels = async () => {
+  try {
+    semanticDownloadModels.value = await seekMindApi.listSemanticDownloadModels();
+  } catch (error) {
+    console.error("[SeekMind] listSemanticDownloadModels failed", error);
+  }
+};
+
 const refreshAll = async () => {
   loading.value = true;
   try {
-    await loadEmbeddingModels();
+    await Promise.all([loadEmbeddingModels(), loadSemanticDownloadModels()]);
     await loadSemanticStatus();
     if (!semanticStatus.value && embeddingModels.value.length > 0) {
       semanticStatus.value = buildFallbackSemanticStatus(
@@ -100,6 +114,40 @@ const refreshAll = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return t("semantic.download.sizeUnknown");
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+};
+
+const semanticDownloadStatusLabel = (model: SemanticDownloadModelView) => {
+  if (model.downloaded) {
+    return t("semantic.download.downloaded");
+  }
+  if (!model.download_ready) {
+    return t("semantic.download.sourceNotConfigured");
+  }
+  return t("semantic.download.notDownloaded");
+};
+
+const semanticDownloadStatusTone = (model: SemanticDownloadModelView) => {
+  if (model.downloaded) {
+    return "success" as const;
+  }
+  if (!model.download_ready) {
+    return "warning" as const;
+  }
+  return "default" as const;
 };
 
 const listenStorageReset = async () => {
@@ -180,6 +228,59 @@ const runSemanticDebug = async () => {
     console.error("[SeekMind] getSemanticDebugReport failed", error);
   } finally {
     loadingSemanticDebug.value = false;
+  }
+};
+
+const downloadSemanticModel = async (model: SemanticDownloadModelView) => {
+  if (!model.download_ready || model.downloaded || downloadingModelId.value) {
+    return;
+  }
+
+  downloadingModelId.value = model.id;
+  errorMessage.value = "";
+  infoMessage.value = t("semantic.download.started");
+  semanticDownloadProgress.value = {
+    model_id: model.id,
+    state: "running",
+    code: "semantic_model.download.running",
+    params: {},
+    downloaded_bytes: 0,
+    total_bytes: model.size_bytes,
+    percent: 0,
+    message: "semantic_model.download.running",
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    // 修复：模型下载独立于默认模型保存，避免用户修改其他语义配置时误触发下载状态变化。
+    semanticDownloadModels.value = await seekMindApi.downloadSemanticModel(model.id);
+    infoMessage.value = t("semantic.download.completed");
+    await refreshAll();
+  } catch (error) {
+    errorMessage.value = formatSeekMindError(error, t("semantic.download.failed"));
+    console.error("[SeekMind] downloadSemanticModel failed", error);
+  } finally {
+    downloadingModelId.value = "";
+  }
+};
+
+const deleteSemanticModel = async (model: SemanticDownloadModelView) => {
+  if (!model.downloaded) {
+    return;
+  }
+  const confirmed = window.confirm(t("semantic.download.deleteConfirm", { name: model.name }));
+  if (!confirmed) {
+    return;
+  }
+
+  errorMessage.value = "";
+  try {
+    semanticDownloadModels.value = await seekMindApi.deleteSemanticModel(model.id);
+    infoMessage.value = t("semantic.download.deleted");
+    await refreshAll();
+  } catch (error) {
+    errorMessage.value = formatSeekMindError(error, t("semantic.download.deleteFailed"));
+    console.error("[SeekMind] deleteSemanticModel failed", error);
   }
 };
 
@@ -265,9 +366,34 @@ const installSemanticProgressListener = async () => {
   );
 };
 
+const installSemanticDownloadProgressListener = async () => {
+  if (unlistenSemanticDownloadProgress) {
+    return;
+  }
+
+  unlistenSemanticDownloadProgress = await listen<SemanticModelDownloadProgressView>(
+    "seekmind:semantic:model-download-progress",
+    (event) => {
+      const payload = event.payload;
+      semanticDownloadProgress.value = payload;
+
+      if (payload.state === "completed") {
+        downloadingModelId.value = "";
+        infoMessage.value = t("semantic.download.completed");
+        void refreshAll();
+      } else if (payload.state === "failed") {
+        downloadingModelId.value = "";
+        errorMessage.value = t("semantic.download.failed");
+        void refreshAll();
+      }
+    },
+  );
+};
+
 onMounted(async () => {
   await refreshAll();
   await installSemanticProgressListener();
+  await installSemanticDownloadProgressListener();
   await listenStorageReset();
 });
 
@@ -275,6 +401,10 @@ onBeforeUnmount(() => {
   if (unlistenSemanticProgress) {
     unlistenSemanticProgress();
     unlistenSemanticProgress = null;
+  }
+  if (unlistenSemanticDownloadProgress) {
+    unlistenSemanticDownloadProgress();
+    unlistenSemanticDownloadProgress = null;
   }
   if (unlistenStorageReset) {
     unlistenStorageReset();
@@ -386,6 +516,92 @@ onBeforeUnmount(() => {
         <div class="mt-1">{{ t("semantic.availability", { status: semanticStatus.model.available ? t("semantic.yes") : t("semantic.no") }) }}</div>
         <div class="mt-1">{{ t("semantic.lastIndexed", { time: semanticStatus.last_indexed_at || t("semantic.none") }) }}</div>
         <div class="mt-1">{{ t("semantic.lastError", { msg: semanticStatus.last_error || t("semantic.noError") }) }}</div>
+      </div>
+
+      <div class="rounded-lg border border-default bg-panel">
+        <div class="flex items-center justify-between gap-3 border-b border-default px-4 py-3">
+          <div class="min-w-0">
+            <div class="seekmind-section-label">{{ t("semantic.download.title") }}</div>
+            <div class="mt-1 truncate text-xs text-muted" :title="t('semantic.download.desc')">
+              {{ t("semantic.download.desc") }}
+            </div>
+          </div>
+          <button
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-default bg-surface text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
+            :title="t('semantic.download.refresh')"
+            :disabled="loading"
+            @click="loadSemanticDownloadModels"
+          >
+            <RefreshCw :size="15" />
+          </button>
+        </div>
+
+        <div v-if="semanticDownloadModels.length === 0" class="px-4 py-5 text-sm text-muted">
+          {{ t("semantic.download.empty") }}
+        </div>
+        <div v-else class="divide-y divide-[var(--color-border)]">
+          <div
+            v-for="model in semanticDownloadModels"
+            :key="model.id"
+            class="px-4 py-3"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium text-primary">{{ model.name }}</span>
+                  <SeekMindBadge v-if="model.recommended" tone="success">{{ t("semantic.download.recommended") }}</SeekMindBadge>
+                  <SeekMindBadge :tone="semanticDownloadStatusTone(model)">
+                    {{ semanticDownloadStatusLabel(model) }}
+                  </SeekMindBadge>
+                </div>
+                <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+                  <span>{{ model.provider }} · {{ model.version }}</span>
+                  <span>{{ t("semantic.dimension", { dim: model.dimension }) }}</span>
+                  <span>{{ t("semantic.download.size", { size: formatBytes(model.size_bytes) }) }}</span>
+                  <span>{{ t("semantic.download.languages", { languages: model.languages.join(" / ") || t("semantic.none") }) }}</span>
+                </div>
+                <div class="mt-1 line-clamp-2 text-xs text-secondary">{{ model.description }}</div>
+                <div v-if="!model.download_ready" class="mt-1 text-xs text-muted">
+                  {{ t("semantic.download.sourceNotConfiguredHint") }}
+                </div>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  class="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="!model.download_ready || model.downloaded || !!downloadingModelId"
+                  @click="downloadSemanticModel(model)"
+                >
+                  <Download :size="14" />
+                  {{ downloadingModelId === model.id ? t("semantic.download.downloading") : t("semantic.download.download") }}
+                </button>
+                <button
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-danger hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  :title="t('semantic.download.delete')"
+                  :disabled="!model.downloaded || !!downloadingModelId"
+                  @click="deleteSemanticModel(model)"
+                >
+                  <Trash2 :size="14" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-if="semanticDownloadProgress?.model_id === model.id && semanticDownloadProgress.state === 'running'"
+              class="mt-3"
+            >
+              <div class="mb-1 flex items-center justify-between text-xs text-muted">
+                <span>{{ t("semantic.download.progress") }}</span>
+                <span>{{ semanticDownloadProgress.percent }}%</span>
+              </div>
+              <div class="h-1.5 overflow-hidden rounded-full bg-surface-active">
+                <div
+                  class="h-full rounded-full bg-accent transition-all"
+                  :style="{ width: `${semanticDownloadProgress.percent}%` }"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="grid gap-2 md:grid-cols-2">

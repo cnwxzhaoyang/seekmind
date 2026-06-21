@@ -663,3 +663,45 @@ pub struct SemanticDebugView {
     pub index_status: String,
     pub last_error: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticDownloadFileView {
+    pub name: String,
+    pub url: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticDownloadModelView {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub version: String,
+    pub runtime: String,
+    pub dimension: usize,
+    pub languages: Vec<String>,
+    pub size_bytes: u64,
+    pub recommended: bool,
+    pub description: String,
+    pub download_ready: bool,
+    pub downloaded: bool,
+    pub status: String,
+    pub local_dir: String,
+    pub files: Vec<SemanticDownloadFileView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticModelDownloadProgressView {
+    pub model_id: String,
+    pub state: String,
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub params: Value,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub percent: u8,
+    pub message: String,
+    pub updated_at: String,
+}
