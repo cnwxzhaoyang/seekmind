@@ -12,7 +12,8 @@ use crate::seekmind::process_utils::configure_hidden_child_process;
 #[cfg(target_os = "windows")]
 use crate::seekmind::process_utils::run_hidden_powershell_script;
 
-pub const FASTEMBED_MODEL_CACHE_DIRNAME: &str = "models--Qdrant--bge-small-zh-v1.5";
+pub const FASTEMBED_ZH_MODEL_CACHE_DIRNAME: &str = "models--Qdrant--bge-small-zh-v1.5";
+pub const FASTEMBED_EN_MODEL_CACHE_DIRNAME: &str = "models--xenova--jina-embeddings-v2-small-en";
 
 #[derive(Debug, Clone)]
 pub struct OfficeRuntime {
@@ -406,5 +407,9 @@ pub fn writable_fastembed_cache_dir() -> PathBuf {
 }
 
 pub fn fastembed_model_cache_dir(base_dir: &Path) -> PathBuf {
-    base_dir.join(FASTEMBED_MODEL_CACHE_DIRNAME)
+    fastembed_model_cache_dir_by_name(base_dir, FASTEMBED_ZH_MODEL_CACHE_DIRNAME)
+}
+
+pub fn fastembed_model_cache_dir_by_name(base_dir: &Path, cache_dirname: &str) -> PathBuf {
+    base_dir.join(cache_dirname)
 }

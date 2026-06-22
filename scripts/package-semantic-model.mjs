@@ -11,12 +11,24 @@ import { spawn } from "node:child_process";
 
 import { rootDir } from "./seekmind-runtime-env.mjs";
 
-const modelCacheDirName = "models--Qdrant--bge-small-zh-v1.5";
+const args = process.argv.slice(2);
+const argValue = (name, fallback = "") => {
+  const index = args.indexOf(name);
+  return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
+};
+const modelName = argValue("--model", "BAAI/bge-small-zh-v1.5");
+const knownCacheDirNames = {
+  "BAAI/bge-small-zh-v1.5": "models--Qdrant--bge-small-zh-v1.5",
+  "jinaai/jina-embeddings-v2-small-en": "models--xenova--jina-embeddings-v2-small-en",
+};
+const modelCacheDirName =
+  argValue("--cache-dirname", knownCacheDirNames[modelName]) ||
+  `models--${modelName.replace("/", "--")}`;
 const fastembedCacheDir =
   process.env.SEEKMIND_FASTEMBED_CACHE_DIR ||
   path.join(rootDir, ".SeekMind-cache", "fastembed");
 const outputDir = path.join(rootDir, ".seekmind-build", "semantic-models");
-const archiveName = "fastembed-cache.tar.gz";
+const archiveName = argValue("--archive-name", "fastembed-cache.tar.gz");
 const archivePath = path.join(outputDir, archiveName);
 const shaPath = `${archivePath}.sha256`;
 
@@ -79,7 +91,7 @@ async function sha256File(targetPath) {
 const modelCacheDir = path.join(fastembedCacheDir, modelCacheDirName);
 if (!(await pathExists(modelCacheDir))) {
   throw new Error(
-    `[SeekMind] FastEmbed cache missing: ${modelCacheDir}. Run npm run semantic:warmup:mirror first.`,
+    `[SeekMind] FastEmbed cache missing: ${modelCacheDir}. Run npm run semantic:warmup -- --model ${modelName} first.`,
   );
 }
 

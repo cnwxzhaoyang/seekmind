@@ -41,6 +41,7 @@ EMBEDDING_DIMENSION_HINTS = {
     "BAAI/bge-small-zh-v1.5": 512,
     "BAAI/bge-small-en-v1.5": 384,
     "sentence-transformers/all-MiniLM-L6-v2": 384,
+    "jinaai/jina-embeddings-v2-small-en": 512,
     "jinaai/jina-embeddings-v2-base-zh": 768,
 }
 

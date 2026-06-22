@@ -548,8 +548,8 @@ impl Database {
     pub(crate) async fn ensure_embedding_models_row(&self) -> Result<(), sqlx::Error> {
         let count =
             scalar_count_no_bind(&self.pool, "SELECT COUNT(*) FROM embedding_models").await?;
+        let now = current_unix_ts();
         if count == 0 {
-            let now = current_unix_ts();
             sqlx::query(
                 r#"
                 INSERT INTO embedding_models
@@ -562,21 +562,34 @@ impl Database {
             .bind(now)
             .execute(&self.pool)
             .await?;
-        } else {
-            let now = current_unix_ts();
-            sqlx::query(
-                r#"
-                UPDATE embedding_models
-                SET provider = 'fastembed',
-                    dimension = 512,
-                    updated_at = ?
-                WHERE name = 'BAAI/bge-small-zh-v1.5'
-                "#,
-            )
-            .bind(now)
-            .execute(&self.pool)
-            .await?;
         }
+
+        // 修复：升级已有数据库时也要补充英文模型候选，但不能覆盖用户当前默认模型。
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO embedding_models
+                (id, name, provider, model_path, dimension, enabled, available, is_default, status, created_at, updated_at)
+            VALUES
+                ('jina-small-en-local-embedding', 'jinaai/jina-embeddings-v2-small-en', 'fastembed', '', 512, 1, 0, 0, 'unknown', ?, ?)
+            "#,
+        )
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE embedding_models
+            SET provider = 'fastembed',
+                dimension = 512,
+                updated_at = ?
+            WHERE name IN ('BAAI/bge-small-zh-v1.5', 'jinaai/jina-embeddings-v2-small-en')
+            "#,
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 

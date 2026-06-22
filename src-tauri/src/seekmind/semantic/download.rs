@@ -20,7 +20,8 @@ use crate::seekmind::models::{
     SemanticDownloadFileView, SemanticDownloadModelView, SemanticModelDownloadProgressView,
 };
 use crate::seekmind::runtime_paths::{
-    fastembed_model_cache_dir, writable_fastembed_cache_dir, FASTEMBED_MODEL_CACHE_DIRNAME,
+    fastembed_model_cache_dir_by_name, writable_fastembed_cache_dir,
+    FASTEMBED_EN_MODEL_CACHE_DIRNAME, FASTEMBED_ZH_MODEL_CACHE_DIRNAME,
 };
 use crate::seekmind::storage::types::NetworkProxySettings;
 use crate::seekmind::storage::Database;
@@ -31,6 +32,12 @@ const DEFAULT_SEMANTIC_MODEL_URL: &str =
 const DEFAULT_SEMANTIC_MODEL_SHA256: &str =
     "f9d6c509bbefacfdcc40b0b4aa1bbb7e83d3af6c662b6e842d6a3b2e386e2cf3";
 const DEFAULT_SEMANTIC_MODEL_SIZE_BYTES: u64 = 55_371_779;
+const ENGLISH_SEMANTIC_MODEL_ID: &str = "jina-small-en-fastembed-cache";
+const ENGLISH_SEMANTIC_MODEL_URL: &str =
+    "https://github.com/cnwxzhaoyang/seekmind/releases/download/semantic-models-v1/fastembed-jina-embeddings-v2-small-en.tar.gz";
+const ENGLISH_SEMANTIC_MODEL_SHA256: &str =
+    "f7055da0aa65dee1ab092c60c4a09c37189995929f9544d56e37a7e22837e472";
+const ENGLISH_SEMANTIC_MODEL_SIZE_BYTES: u64 = 76_373_053;
 
 #[derive(Debug, Clone)]
 struct SemanticDownloadModelManifest {
@@ -51,26 +58,45 @@ struct SemanticDownloadModelManifest {
 }
 
 fn semantic_model_manifest() -> Vec<SemanticDownloadModelManifest> {
-    vec![SemanticDownloadModelManifest {
-        id: DEFAULT_SEMANTIC_MODEL_ID,
-        name: "BGE Small 中文",
-        provider: "Qdrant / BAAI",
-        version: "1.5",
-        runtime: "fastembed",
-        dimension: 512,
-        languages: &["zh", "en"],
-        size_bytes: DEFAULT_SEMANTIC_MODEL_SIZE_BYTES,
-        recommended: true,
-        description: "体积较小，适合普通电脑，中文知识库检索优先推荐。",
-        archive_dirname: FASTEMBED_MODEL_CACHE_DIRNAME,
-        file_name: "fastembed-cache.tar.gz",
-        url: DEFAULT_SEMANTIC_MODEL_URL,
-        sha256: DEFAULT_SEMANTIC_MODEL_SHA256,
-    }]
+    vec![
+        SemanticDownloadModelManifest {
+            id: DEFAULT_SEMANTIC_MODEL_ID,
+            name: "BGE Small 中文",
+            provider: "Qdrant / BAAI",
+            version: "1.5",
+            runtime: "fastembed",
+            dimension: 512,
+            languages: &["zh", "en"],
+            size_bytes: DEFAULT_SEMANTIC_MODEL_SIZE_BYTES,
+            recommended: true,
+            description: "体积较小，适合普通电脑，中文知识库检索优先推荐。",
+            archive_dirname: FASTEMBED_ZH_MODEL_CACHE_DIRNAME,
+            file_name: "fastembed-cache.tar.gz",
+            url: DEFAULT_SEMANTIC_MODEL_URL,
+            sha256: DEFAULT_SEMANTIC_MODEL_SHA256,
+        },
+        SemanticDownloadModelManifest {
+            id: ENGLISH_SEMANTIC_MODEL_ID,
+            name: "Jina Small 英文",
+            provider: "Jina AI",
+            version: "v2-small-en",
+            runtime: "fastembed",
+            dimension: 512,
+            languages: &["en"],
+            size_bytes: ENGLISH_SEMANTIC_MODEL_SIZE_BYTES,
+            recommended: false,
+            description: "适合英文或以英文为主的知识库，保持 512 维以兼容当前本地向量索引。",
+            archive_dirname: FASTEMBED_EN_MODEL_CACHE_DIRNAME,
+            file_name: "fastembed-jina-embeddings-v2-small-en.tar.gz",
+            url: ENGLISH_SEMANTIC_MODEL_URL,
+            sha256: ENGLISH_SEMANTIC_MODEL_SHA256,
+        },
+    ]
 }
 
 fn manifest_to_view(item: &SemanticDownloadModelManifest) -> SemanticDownloadModelView {
-    let local_dir = fastembed_model_cache_dir(&writable_fastembed_cache_dir());
+    let local_dir =
+        fastembed_model_cache_dir_by_name(&writable_fastembed_cache_dir(), item.archive_dirname);
     let downloaded = local_dir.exists();
     let download_ready = !item.url.trim().is_empty() && item.sha256.len() == 64;
 
@@ -293,7 +319,8 @@ pub async fn download_semantic_model(
         fs::rename(&temp_archive_path, &archive_path).map_err(|error| error.to_string())?;
         extract_fastembed_archive(&archive_path, &writable_fastembed_cache_dir())?;
 
-        let model_dir = fastembed_model_cache_dir(&writable_fastembed_cache_dir());
+        let model_dir =
+            fastembed_model_cache_dir_by_name(&writable_fastembed_cache_dir(), manifest.archive_dirname);
         if !model_dir.exists() {
             return Err(format!(
                 "model_incompatible: archive missing {}",
@@ -348,7 +375,8 @@ pub async fn delete_semantic_model(model_id: String) -> Result<Vec<SemanticDownl
         .find(|item| item.id == model_id.trim())
         .ok_or_else(|| format!("model_incompatible: {}", model_id.trim()))?;
 
-    let model_dir = fastembed_model_cache_dir(&writable_fastembed_cache_dir());
+    let model_dir =
+        fastembed_model_cache_dir_by_name(&writable_fastembed_cache_dir(), manifest.archive_dirname);
     if model_dir.ends_with(manifest.archive_dirname) && model_dir.exists() {
         fs::remove_dir_all(&model_dir).map_err(|error| error.to_string())?;
         eprintln!(

@@ -10,6 +10,11 @@ import { defaultPythonCommand, rootDir, runCommand } from "./seekmind-runtime-en
 
 const args = process.argv.slice(2);
 const extraEnv = {};
+const modelArgIndex = args.indexOf("--model");
+const modelName =
+  modelArgIndex >= 0 && args[modelArgIndex + 1]
+    ? args[modelArgIndex + 1]
+    : args.find((arg) => !arg.startsWith("--")) || "BAAI/bge-small-zh-v1.5";
 
 if (args.includes("--mirror")) {
   extraEnv.HF_ENDPOINT = "https://hf-mirror.com";
@@ -20,7 +25,7 @@ await runCommand(
   [
     path.join(rootDir, "parser", "seekmind_parser", "__main__.py"),
     "warmup-embedding",
-    "BAAI/bge-small-zh-v1.5",
+    modelName,
   ],
   extraEnv,
 );
